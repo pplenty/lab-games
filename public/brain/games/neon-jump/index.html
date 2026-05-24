@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>네온 점프 | 5분 퍼즐</title>
+<meta name="description" content="네온 플랫폼을 밟고 끝없이 위로">
+<meta property="og:title" content="네온 점프">
+<meta property="og:description" content="네온 플랫폼을 밟고 끝없이 위로">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/neon-jump/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#5cd6ea; --accent-dark:#2a9aae; --accent-soft:#bff0f7; }
+  main{ max-width: 520px; }
+  .arena-wrap{ position:relative; margin: 0 auto; max-width: 480px; }
+  canvas#stage{
+    display:block;
+    width: 100%;
+    height: auto;
+    background: #050314;
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(40,10,80,.4), 0 4px 14px rgba(0,0,0,.45);
+    touch-action: none;
+  }
+  .hud{ display:flex; gap:8px; margin-bottom:10px; }
+  .hud .stat{
+    background:var(--card); padding:8px 10px; border-radius:20px;
+    box-shadow:var(--shadow); flex:1; text-align:center;
+    font-variant-numeric:tabular-nums;
+  }
+  .hud .stat .label{ color:var(--ink-faint); font-size:10px; letter-spacing:.18em; display:block; font-weight:700; }
+  .hud .stat .value{ color:var(--accent-dark); font-size:18px; font-weight:800; line-height:1.1; }
+  .hint{ text-align:center; color:var(--ink-dim); font-size:13px; margin-top:10px; }
+  .tap-zone{ position:absolute; top:0; bottom:0; width:50%; pointer-events:auto; }
+  .overlay{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background: rgba(5,3,20,.6); color: white; border-radius: 12px;
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    text-align:center; padding: 18px; pointer-events: none;
+  }
+  .overlay:empty{ display: none; }
+  .overlay.interactive{ pointer-events: auto; }
+  .overlay h2{ font-size:22px; margin-bottom: 6px; }
+  .overlay p{ opacity:.85; font-size:14px; margin-bottom: 12px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+'use strict';
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const KEY = 'neon_jump_stats';
+const app = document.getElementById('app');
+
+const W = 480, H = 640;
+const PLAYER_W = 24, PLAYER_H = 24;
+const GRAVITY = 0.42;
+const JUMP_V = -12.4;
+const SPRING_V = -22;
+const MOVE_SPEED = 5.4;
+const PLAT_W = 70, PLAT_H = 10;
+const START_Y = H * 0.78;
+const CAM_FOLLOW_Y = H * 0.42;
+const PLATFORM_MIN_GAP = 38;
+const PLATFORM_MAX_GAP = 78;
+
+function pickType(height){
+  const r = Math.random();
+  // height(점수)가 높을수록 까다로워짐
+  const tier = Math.min(4, Math.floor(height / 800));
+  if (tier === 0){
+    if (r < 0.84) return 'normal';
+    if (r < 0.92) return 'spring';
+    if (r < 0.96) return 'fragile';
+    return 'moving';
+  }
+  if (tier === 1){
+    if (r < 0.72) return 'normal';
+    if (r < 0.82) return 'spring';
+    if (r < 0.92) return 'fragile';
+    return 'moving';
+  }
+  if (tier === 2){
+    if (r < 0.60) return 'normal';
+    if (r < 0.68) return 'spring';
+    if (r < 0.84) return 'fragile';
+    return 'moving';
+  }
+  if (tier === 3){
+    if (r < 0.50) return 'normal';
+    if (r < 0.58) return 'spring';
+    if (r < 0.78) return 'fragile';
+    return 'moving';
+  }
+  // tier 4+ 가장 어려움
+  if (r < 0.42) return 'normal';
+  if (r < 0.50) return 'spring';
+  if (r < 0.74) return 'fragile';
+  return 'moving';
+}
+
+const PLAT_STYLE = {
+  normal:  { hue: 200, label: '일반' },
+  moving:  { hue: 170, label: '이동' },
+  fragile: { hue: 30,  label: '깨짐' },
+  spring:  { hue: 50,  label: '스프링' }
+};
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id = 'title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🚀</div>
+    <h1 class="hero-title">네온 <span style="color:var(--accent);">점프</span></h1>
+    <div class="hero-sub">네온 플랫폼을 밟고 더 높이.<br>좌우 이동만 신경 쓰면 됩니다.</div>
+    ${stats.bestScore>0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}m</div></div>` : ''}
+    <div class="rule-card">
+      <h3>R U L E S</h3>
+      <div>· 자동 점프. ← → · A D · 화면 좌우 탭으로 이동.</div>
+      <div>· 화면 좌우는 wrap (왼쪽 끝 → 오른쪽 끝으로 등장).</div>
+      <div>· 🟦 일반 / 🟦 이동 / 🟧 깨짐 (1회 후 부서짐) / 🟨 스프링 (큰 점프).</div>
+      <div>· 화면 아래로 떨어지면 끝.</div>
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">출 발</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  clear(app);
+
+  const hud = $el('div', 'hud');
+  hud.innerHTML = `
+    <div class="stat"><span class="label">HEIGHT</span><span class="value" id="hud-h">0m</span></div>
+    <div class="stat"><span class="label">SCORE</span><span class="value" id="hud-s">0</span></div>
+    <div class="stat"><span class="label">BEST</span><span class="value" id="hud-b">${loadStats(KEY,{bestScore:0}).bestScore||0}</span></div>
+  `;
+  app.appendChild(hud);
+
+  const arenaWrap = $el('div', 'arena-wrap');
+  arenaWrap.innerHTML = `
+    <canvas id="stage" width="${W}" height="${H}"></canvas>
+    <div class="tap-zone" id="zone-l" style="left:0"></div>
+    <div class="tap-zone" id="zone-r" style="right:0"></div>
+    <div class="overlay" id="overlay"></div>
+  `;
+  app.appendChild(arenaWrap);
+
+  const hint = $el('div', 'hint', '← → · A D · 화면 좌우 탭(누름 유지) · 좌우는 wrap');
+  app.appendChild(hint);
+
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+
+  const overlay = document.getElementById('overlay');
+  const hudH = document.getElementById('hud-h');
+  const hudS = document.getElementById('hud-s');
+
+  // 별 두 층 (파럴랙스)
+  const starsFar = makeStars(60, 0.25);
+  const starsNear = makeStars(30, 0.7);
+
+  const state = {
+    player: {
+      x: W / 2 - PLAYER_W / 2,
+      y: START_Y,
+      vx: 0,
+      vy: JUMP_V,
+      trail: [],
+      hueShift: 0,
+      squash: 1
+    },
+    platforms: [],
+    particles: [],
+    cameraY: 0,
+    minPlayerY: START_Y,
+    score: 0,
+    running: true,
+    keyL: false,
+    keyR: false,
+    tapL: false,
+    tapR: false,
+    frame: 0
+  };
+
+  // 초기 플랫폼 채우기 (출발 발판 포함)
+  state.platforms.push({
+    x: W/2 - PLAT_W/2, y: START_Y + PLAYER_H + 6,
+    type: 'normal', vx: 0, alive: true
+  });
+  let py = START_Y + PLAYER_H + 6;
+  while (py > -200){
+    py -= PLATFORM_MIN_GAP + Math.random() * (PLATFORM_MAX_GAP - PLATFORM_MIN_GAP);
+    const type = Math.random() < 0.92 ? 'normal' : 'spring'; // 초반 쉽게
+    addPlatform(state, Math.random() * (W - PLAT_W), py, type);
+  }
+
+  function onKey(e){
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA'){ state.keyL = true; e.preventDefault(); }
+    else if (e.code === 'ArrowRight' || e.code === 'KeyD'){ state.keyR = true; e.preventDefault(); }
+  }
+  function onKeyUp(e){
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') state.keyL = false;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keyR = false;
+  }
+  document.addEventListener('keydown', onKey);
+  document.addEventListener('keyup', onKeyUp);
+
+  function press(side, on){
+    if (side === 'l') state.tapL = on;
+    else state.tapR = on;
+  }
+  const zL = document.getElementById('zone-l');
+  const zR = document.getElementById('zone-r');
+  zL.addEventListener('touchstart', (e)=>{ e.preventDefault(); press('l', true); }, { passive: false });
+  zL.addEventListener('touchend',   (e)=>{ e.preventDefault(); press('l', false); }, { passive: false });
+  zL.addEventListener('touchcancel',()=> press('l', false));
+  zR.addEventListener('touchstart', (e)=>{ e.preventDefault(); press('r', true); }, { passive: false });
+  zR.addEventListener('touchend',   (e)=>{ e.preventDefault(); press('r', false); }, { passive: false });
+  zR.addEventListener('touchcancel',()=> press('r', false));
+  zL.addEventListener('mousedown', ()=> press('l', true));
+  zL.addEventListener('mouseup',   ()=> press('l', false));
+  zL.addEventListener('mouseleave',()=> press('l', false));
+  zR.addEventListener('mousedown', ()=> press('r', true));
+  zR.addEventListener('mouseup',   ()=> press('r', false));
+  zR.addEventListener('mouseleave',()=> press('r', false));
+
+  let raf = null;
+  function loop(){
+    if (!state.running) return;
+    step();
+    render();
+    raf = requestAnimationFrame(loop);
+  }
+
+  function step(){
+    state.frame += 1;
+    const p = state.player;
+    // 좌우 가속
+    const leftHeld = state.keyL || state.tapL;
+    const rightHeld = state.keyR || state.tapR;
+    if (leftHeld && !rightHeld) p.vx = -MOVE_SPEED;
+    else if (rightHeld && !leftHeld) p.vx = MOVE_SPEED;
+    else p.vx *= 0.78;
+
+    // 중력
+    p.vy += GRAVITY;
+    if (p.vy > 16) p.vy = 16;
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // 좌우 wrap
+    if (p.x + PLAYER_W < 0) p.x += W + PLAYER_W;
+    if (p.x > W) p.x -= W + PLAYER_W;
+
+    // 플랫폼 이동
+    for (const pl of state.platforms){
+      if (pl.type === 'moving' && pl.alive){
+        pl.x += pl.vx;
+        if (pl.x < 0){ pl.x = 0; pl.vx *= -1; }
+        if (pl.x + PLAT_W > W){ pl.x = W - PLAT_W; pl.vx *= -1; }
+      }
+    }
+
+    // 충돌 (떨어질 때만, 발 끝점이 플랫폼 윗변을 통과)
+    if (p.vy > 0){
+      const footPrev = p.y + PLAYER_H - p.vy;
+      const footNow = p.y + PLAYER_H;
+      for (const pl of state.platforms){
+        if (!pl.alive) continue;
+        const top = pl.y;
+        // 폭 겹침
+        let xOverlap =
+          (p.x + PLAYER_W > pl.x && p.x < pl.x + PLAT_W);
+        // wrap-around 케이스도 잡아주기
+        if (!xOverlap){
+          if (p.x < 0 && pl.x + PLAT_W > p.x + W) xOverlap = true;
+          if (p.x + PLAYER_W > W && pl.x < p.x + PLAYER_W - W) xOverlap = true;
+        }
+        if (!xOverlap) continue;
+        if (footPrev <= top + 1 && footNow >= top){
+          // 점프!
+          if (pl.type === 'spring'){
+            p.vy = SPRING_V;
+            spawnSpringParticles(state, pl.x + PLAT_W/2, pl.y);
+          } else {
+            p.vy = JUMP_V;
+          }
+          p.y = top - PLAYER_H;
+          p.squash = 0.6;
+          if (pl.type === 'fragile'){
+            pl.alive = false;
+            spawnBreakParticles(state, pl);
+          }
+          break;
+        }
+      }
+    }
+
+    // 카메라
+    if (p.y < state.cameraY + CAM_FOLLOW_Y){
+      state.cameraY = p.y - CAM_FOLLOW_Y;
+    }
+    if (p.y < state.minPlayerY) state.minPlayerY = p.y;
+
+    // 새 플랫폼 spawn
+    while (true){
+      const top = topPlatformY(state);
+      if (top > state.cameraY - 80) break;
+      const newY = top - (PLATFORM_MIN_GAP + Math.random() * (PLATFORM_MAX_GAP - PLATFORM_MIN_GAP));
+      const newX = Math.random() * (W - PLAT_W);
+      const type = pickType(state.score);
+      addPlatform(state, newX, newY, type);
+    }
+    // 아래로 빠진 플랫폼 제거
+    state.platforms = state.platforms.filter(pl => pl.y < state.cameraY + H + 80);
+
+    // 점수
+    const heightPx = Math.max(0, START_Y - state.minPlayerY);
+    state.score = Math.floor(heightPx / 5);
+    hudH.textContent = state.score + 'm';
+    hudS.textContent = state.score;
+
+    // 트레일
+    p.trail.push({ x: p.x + PLAYER_W/2, y: p.y + PLAYER_H/2 });
+    if (p.trail.length > 7) p.trail.shift();
+
+    // squash 회복
+    p.squash = p.squash + (1 - p.squash) * 0.18;
+
+    // 파티클
+    for (const pa of state.particles){
+      pa.x += pa.vx;
+      pa.y += pa.vy;
+      pa.vy += 0.12;
+      pa.life -= 1;
+    }
+    state.particles = state.particles.filter(pa => pa.life > 0);
+
+    // 죽음 체크
+    if (p.y > state.cameraY + H + 60){
+      die();
+    }
+  }
+
+  function die(){
+    state.running = false;
+    cancelAnimationFrame(raf);
+    document.removeEventListener('keydown', onKey);
+    document.removeEventListener('keyup', onKeyUp);
+    // 폭발 파티클
+    const p = state.player;
+    for (let i = 0; i < 50; i++){
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1 + Math.random() * 5;
+      state.particles.push({
+        x: p.x + PLAYER_W/2, y: p.y + PLAYER_H/2,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        size: 2 + Math.random() * 3,
+        hue: 180 + Math.random() * 180,
+        life: 35 + Math.random() * 20,
+        maxLife: 55
+      });
+    }
+    // 짧은 잔재 렌더 후 결과
+    let frames = 30;
+    function fadeoutLoop(){
+      ctx.fillStyle = 'rgba(5,3,20,.10)';
+      ctx.fillRect(0, 0, W, H);
+      for (const pa of state.particles){
+        const a = Math.max(0, pa.life / pa.maxLife);
+        pa.x += pa.vx;
+        pa.y += pa.vy;
+        pa.vy += 0.12;
+        pa.life -= 1;
+        ctx.fillStyle = `hsla(${pa.hue}, 95%, 65%, ${a})`;
+        ctx.shadowColor = `hsla(${pa.hue}, 100%, 70%, ${a})`;
+        ctx.shadowBlur = 10;
+        ctx.fillRect(pa.x - pa.size/2 - state.cameraY * 0, pa.y - pa.size/2 - state.cameraY, pa.size, pa.size);
+      }
+      ctx.shadowBlur = 0;
+      frames -= 1;
+      if (frames > 0) requestAnimationFrame(fadeoutLoop);
+      else finishUI();
+    }
+    fadeoutLoop();
+  }
+
+  function finishUI(){
+    const final = state.score;
+    const stats = recordBestScore(KEY, final);
+    const isBest = stats.bestScore === final && final > 0;
+    clear(app);
+    const r = $el('div', 'result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${final >= 2500 ? '🏆' : final >= 1000 ? '🎉' : '👏'}</div>
+      <div class="result-title">바닥에 닿음</div>
+      <div class="result-big">${final}m</div>
+      <div class="result-sub">${isBest ? '🌟 최고 기록 갱신' : ''}</div>
+      ${isBest ? '<div class="ribbon">NEW BEST</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(
+      '네온 점프\n🚀 ' + final + 'm' + (isBest ? ' 🌟' : '') +
+      '\nhttps://games.jdgrid.com/brain/games/neon-jump/',
+      e.target
+    );
+  }
+
+  function render(){
+    // 배경 그라데이션 (hue 살짝 변화)
+    const baseHue = (state.score * 0.05 + state.frame * 0.04) % 360;
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, `hsl(${(baseHue + 260) % 360}, 50%, 14%)`);
+    bg.addColorStop(1, `hsl(${(baseHue + 320) % 360}, 55%, 6%)`);
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // 파럴랙스 별: 카메라 이동의 일부분만 적용
+    drawStars(ctx, starsFar, state.cameraY, 0.22);
+    drawStars(ctx, starsNear, state.cameraY, 0.55);
+
+    // 플랫폼 그리기
+    for (const pl of state.platforms){
+      if (!pl.alive) continue;
+      drawPlatform(ctx, pl, state.cameraY, state.frame);
+    }
+
+    // 플레이어 트레일
+    const p = state.player;
+    for (let i = 0; i < p.trail.length; i++){
+      const t = p.trail[i];
+      const a = (i + 1) / p.trail.length * 0.45;
+      const sy = t.y - state.cameraY;
+      ctx.fillStyle = `hsla(${(state.frame * 0.4 + 180) % 360}, 95%, 70%, ${a})`;
+      ctx.beginPath();
+      ctx.arc(t.x, sy, 4 + i * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 플레이어 (큐브)
+    drawPlayer(ctx, p, state.cameraY, state.frame);
+
+    // 파티클
+    for (const pa of state.particles){
+      const a = Math.max(0, pa.life / pa.maxLife);
+      ctx.fillStyle = `hsla(${pa.hue}, 95%, 65%, ${a})`;
+      ctx.shadowColor = `hsla(${pa.hue}, 100%, 70%, ${a})`;
+      ctx.shadowBlur = 10;
+      ctx.fillRect(pa.x - pa.size/2, pa.y - pa.size/2 - state.cameraY, pa.size, pa.size);
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  raf = requestAnimationFrame(loop);
+}
+
+function addPlatform(state, x, y, type){
+  const pl = { x, y, type, alive: true, vx: 0 };
+  if (type === 'moving') pl.vx = (Math.random() < 0.5 ? -1 : 1) * (0.7 + Math.random() * 0.8);
+  state.platforms.push(pl);
+  if (state._topY === undefined || y < state._topY) state._topY = y;
+}
+
+function topPlatformY(state){
+  let t = Infinity;
+  for (const pl of state.platforms){
+    if (pl.y < t) t = pl.y;
+  }
+  return t;
+}
+
+function spawnBreakParticles(state, pl){
+  for (let i = 0; i < 8; i++){
+    const a = Math.random() * Math.PI * 2;
+    const sp = 1 + Math.random() * 3;
+    state.particles.push({
+      x: pl.x + PLAT_W/2 + (Math.random() - 0.5) * PLAT_W,
+      y: pl.y + (Math.random() - 0.5) * PLAT_H,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp - 1,
+      size: 2 + Math.random() * 2,
+      hue: PLAT_STYLE.fragile.hue,
+      life: 26 + Math.random() * 12,
+      maxLife: 38
+    });
+  }
+}
+
+function spawnSpringParticles(state, x, y){
+  for (let i = 0; i < 14; i++){
+    const a = -Math.PI/2 + (Math.random() - 0.5) * Math.PI;
+    const sp = 2 + Math.random() * 4;
+    state.particles.push({
+      x, y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      size: 2 + Math.random() * 2,
+      hue: PLAT_STYLE.spring.hue,
+      life: 30 + Math.random() * 14,
+      maxLife: 44
+    });
+  }
+}
+
+function makeStars(n, depth){
+  const arr = [];
+  for (let i = 0; i < n; i++){
+    arr.push({
+      x: Math.random() * W,
+      y: Math.random() * H * 4 - H,
+      r: depth > 0.5 ? (Math.random() < 0.5 ? 1.5 : 2.4) : (Math.random() < 0.5 ? 0.8 : 1.4),
+      tw: Math.random() * Math.PI * 2,
+      depth
+    });
+  }
+  return arr;
+}
+
+function drawStars(ctx, stars, cameraY, factor){
+  // cameraY가 작아질수록(위로) 별이 살짝만 따라옴 → 무한 wrap
+  const off = -cameraY * factor;
+  for (const s of stars){
+    let sy = (s.y + off) % (H * 2);
+    if (sy < -H) sy += H * 2;
+    if (sy > H) sy -= H * 2;
+    const tw = 0.5 + 0.5 * Math.sin(s.tw + cameraY * 0.001);
+    ctx.fillStyle = `rgba(255,255,255,${(0.25 + tw * 0.5) * s.depth})`;
+    ctx.fillRect(s.x, sy, s.r, s.r);
+  }
+}
+
+function drawPlatform(ctx, pl, cameraY, frame){
+  const sy = pl.y - cameraY;
+  const style = PLAT_STYLE[pl.type];
+  const hue = style.hue + (pl.type === 'normal' ? Math.sin(frame * 0.04 + pl.x * 0.01) * 30 : 0);
+  // 외곽 글로우
+  ctx.save();
+  ctx.shadowColor = `hsl(${hue}, 95%, 65%)`;
+  ctx.shadowBlur = 14;
+  const grad = ctx.createLinearGradient(pl.x, sy, pl.x, sy + PLAT_H);
+  grad.addColorStop(0, `hsl(${hue}, 95%, 78%)`);
+  grad.addColorStop(1, `hsl(${(hue + 20) % 360}, 90%, 50%)`);
+  ctx.fillStyle = grad;
+  roundRect(ctx, pl.x, sy, PLAT_W, PLAT_H, PLAT_H / 2);
+  ctx.fill();
+  ctx.restore();
+
+  // type 표식
+  if (pl.type === 'spring'){
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('▲', pl.x + PLAT_W/2, sy + PLAT_H/2);
+  } else if (pl.type === 'moving'){
+    ctx.fillStyle = 'rgba(255,255,255,.5)';
+    ctx.fillRect(pl.x + 4, sy + PLAT_H/2 - 0.5, PLAT_W - 8, 1);
+  } else if (pl.type === 'fragile'){
+    ctx.fillStyle = 'rgba(0,0,0,.3)';
+    for (let i = 0; i < 3; i++){
+      ctx.fillRect(pl.x + 10 + i * 20, sy + 2, 4, PLAT_H - 4);
+    }
+  }
+}
+
+function drawPlayer(ctx, p, cameraY, frame){
+  const sy = p.y - cameraY;
+  const cx = p.x + PLAYER_W/2;
+  const cy = sy + PLAYER_H/2;
+  const sq = p.squash;
+  const sw = PLAYER_W * (2 - sq) * 0.95;
+  const sh = PLAYER_H * sq;
+  const hue = (frame * 0.6) % 360;
+  ctx.save();
+  // 글로우
+  ctx.shadowColor = `hsl(${hue}, 100%, 70%)`;
+  ctx.shadowBlur = 20;
+  const grad = ctx.createLinearGradient(cx - sw/2, cy - sh/2, cx - sw/2, cy + sh/2);
+  grad.addColorStop(0, `hsl(${(hue + 30) % 360}, 100%, 80%)`);
+  grad.addColorStop(1, `hsl(${hue}, 100%, 55%)`);
+  ctx.fillStyle = grad;
+  roundRect(ctx, cx - sw/2, cy - sh/2, sw, sh, 5);
+  ctx.fill();
+  // 눈
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#08001a';
+  ctx.fillRect(cx - 5, cy - 2, 3, 4);
+  ctx.fillRect(cx + 2, cy - 2, 3, 4);
+  ctx.restore();
+
+  // wrap 효과: 화면 가장자리 근처면 반대편에도 그림자
+  if (p.x < 0){
+    drawPlayerMirror(ctx, p, cameraY, frame, W);
+  } else if (p.x + PLAYER_W > W){
+    drawPlayerMirror(ctx, p, cameraY, frame, -W);
+  }
+}
+
+function drawPlayerMirror(ctx, p, cameraY, frame, dx){
+  const sy = p.y - cameraY;
+  const cx = p.x + PLAYER_W/2 + dx;
+  const cy = sy + PLAYER_H/2;
+  const sq = p.squash;
+  const sw = PLAYER_W * (2 - sq) * 0.95;
+  const sh = PLAYER_H * sq;
+  const hue = (frame * 0.6) % 360;
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.shadowColor = `hsl(${hue}, 100%, 70%)`;
+  ctx.shadowBlur = 16;
+  const grad = ctx.createLinearGradient(cx - sw/2, cy - sh/2, cx - sw/2, cy + sh/2);
+  grad.addColorStop(0, `hsl(${(hue + 30) % 360}, 100%, 80%)`);
+  grad.addColorStop(1, `hsl(${hue}, 100%, 55%)`);
+  ctx.fillStyle = grad;
+  roundRect(ctx, cx - sw/2, cy - sh/2, sw, sh, 5);
+  ctx.fill();
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+showTitle();
+window.__GAME__ = { KEY };
+</script>
+</body>
+</html>

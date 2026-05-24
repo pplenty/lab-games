@@ -1237,6 +1237,26 @@
       "path": "games/gravity-slingshot/"
     },
     {
+      "id": "neon-jump",
+      "title": "네온 점프",
+      "short": "네온 플랫폼을 밟고 끝없이 위로",
+      "icon": "🚀",
+      "tags": [
+        "arcade",
+        "reflex",
+        "focus"
+      ],
+      "tagLabels": [
+        "아케이드",
+        "순발",
+        "집중"
+      ],
+      "accent": "#5cd6ea",
+      "duration": "2~5분",
+      "slug": "neon-jump",
+      "path": "games/neon-jump/"
+    },
+    {
       "id": "mirror-match",
       "title": "거울상 찾기",
       "short": "좌우 반전 도형 고르기",
