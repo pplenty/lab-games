@@ -1257,6 +1257,26 @@
       "path": "games/neon-jump/"
     },
     {
+      "id": "falling-sand",
+      "title": "픽셀 시뮬",
+      "short": "모래·물·식물·불 픽셀 시뮬레이션 샌드박스",
+      "icon": "⏳",
+      "tags": [
+        "mix",
+        "space",
+        "focus"
+      ],
+      "tagLabels": [
+        "종합",
+        "공간",
+        "집중"
+      ],
+      "accent": "#e6c068",
+      "duration": "자유",
+      "slug": "falling-sand",
+      "path": "games/falling-sand/"
+    },
+    {
       "id": "mirror-match",
       "title": "거울상 찾기",
       "short": "좌우 반전 도형 고르기",

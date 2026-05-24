@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>픽셀 시뮬 | 5분 퍼즐</title>
+<meta name="description" content="모래·물·식물·불 픽셀 시뮬레이션 샌드박스">
+<meta property="og:title" content="픽셀 시뮬">
+<meta property="og:description" content="모래·물·식물·불 픽셀 시뮬레이션 샌드박스">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/falling-sand/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#e6c068; --accent-dark:#9d8035; --accent-soft:#f3e0a3; }
+  main{ max-width: 520px; }
+  .arena-wrap{ position:relative; margin: 0 auto; max-width: 480px; }
+  canvas#stage{
+    display:block;
+    width: 100%;
+    height: auto;
+    background: #040814;
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(40,30,10,.3), 0 4px 14px rgba(0,0,0,.4);
+    touch-action: none;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+  }
+  .toolbar{
+    display:grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 8px;
+  }
+  .tool-btn{
+    padding: 10px 4px;
+    background: var(--card);
+    border-radius: 10px;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    border: 2px solid transparent;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--ink-dim);
+    transition: all .15s;
+    box-shadow: var(--shadow);
+  }
+  .tool-btn.active{ border-color: var(--accent); color: var(--accent-dark); background: var(--accent-soft); }
+  .tool-btn .swatch{
+    display: block; width: 18px; height: 18px;
+    border-radius: 4px; margin: 0 auto 4px;
+    border: 1px solid rgba(0,0,0,.15);
+  }
+  .hud{ display:flex; gap:6px; margin-bottom:10px; }
+  .hud .stat{
+    background:var(--card); padding:6px 6px; border-radius:14px;
+    box-shadow:var(--shadow); flex:1; text-align:center;
+    font-variant-numeric:tabular-nums;
+  }
+  .hud .stat .label{ color:var(--ink-faint); font-size:9px; letter-spacing:.15em; display:block; font-weight:700; }
+  .hud .stat .value{ color:var(--accent-dark); font-size:15px; font-weight:800; line-height:1.1; }
+  .achievements{
+    display: flex; gap: 6px; margin-bottom: 10px; justify-content: center;
+    flex-wrap: wrap;
+  }
+  .chip{
+    padding: 4px 10px; border-radius: 14px;
+    background: var(--bg); color: var(--ink-faint);
+    font-size: 11px; font-weight: 700; letter-spacing: .04em;
+    border: 1px solid var(--ink-faint);
+    opacity: 0.55;
+    transition: all .3s;
+  }
+  .chip.done{
+    background: var(--accent-soft); color: var(--accent-dark);
+    border-color: var(--accent);
+    opacity: 1;
+  }
+  .controls{ display:flex; gap:8px; justify-content:center; margin-top:10px; }
+  .controls .btn{ padding:10px 18px; }
+  .hint{ text-align:center; color:var(--ink-dim); font-size:13px; margin-top:10px; }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+'use strict';
+const { $el, clear, loadStats, saveStats, injectBackLink } = Brain;
+injectBackLink('../../');
+
+const KEY = 'falling_sand_stats';
+const app = document.getElementById('app');
+
+const W = 480, H = 640;
+const CELL = 5;
+const CW = W / CELL; // 96
+const CH = H / CELL; // 128
+
+const EMPTY = 0;
+const SAND = 1;
+const WATER = 2;
+const WALL = 3;
+const FIRE = 4;
+const PLANT = 5;
+const STEAM = 6;
+
+const TOOLS = [
+  { id: SAND,  label: '모래',  color: '#e6c068' },
+  { id: WATER, label: '물',   color: '#4a8fc0' },
+  { id: WALL,  label: '벽',   color: '#787878' },
+  { id: FIRE,  label: '불',   color: '#ff6033' },
+  { id: PLANT, label: '식물', color: '#5d8a4a' },
+  { id: EMPTY, label: '지움', color: '#1a1426' },
+];
+
+const NEIGHBORS4 = [[1,0],[-1,0],[0,1],[0,-1]];
+const GROW_DIRS = [[0,-1],[1,-1],[-1,-1]];
+
+function showTitle(){
+  clear(app);
+  const ts = $el('div'); ts.id = 'title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">⏳</div>
+    <h1 class="hero-title">픽셀 <span style="color:var(--accent);">시뮬</span></h1>
+    <div class="hero-sub">모래·물·식물·불을 픽셀 단위로 자유롭게 그려보세요.<br>탭/드래그로 원소를 떨어뜨리면 알아서 흘러갑니다.</div>
+    <div class="rule-card">
+      <h3>R U L E S</h3>
+      <div>· 위 도구를 고르고 캔버스에 드래그.</div>
+      <div>· 🟨 모래는 아래로 떨어져 비탈을 만들고, 🟦 물은 빠르게 흐릅니다.</div>
+      <div>· 🟧 불은 위로 솟고, 🟩 식물을 만나면 번지며, 물을 만나면 💨 증기가 됩니다.</div>
+      <div>· 🟩 식물은 물 옆에서 자랍니다.</div>
+      <div>· ⬛ 벽은 움직이지 않는 고체 블록.</div>
+      <div>· 도전: 한 화면에 5종 원소를 동시에!</div>
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  clear(app);
+
+  const tools = $el('div', 'toolbar');
+  tools.innerHTML = TOOLS.map(t => `
+    <div class="tool-btn" data-tool="${t.id}">
+      <span class="swatch" style="background:${t.color}"></span>${t.label}
+    </div>
+  `).join('');
+  app.appendChild(tools);
+
+  const hud = $el('div', 'hud');
+  hud.innerHTML = `
+    <div class="stat"><span class="label">SAND</span><span class="value" id="c-sand">0</span></div>
+    <div class="stat"><span class="label">WATER</span><span class="value" id="c-water">0</span></div>
+    <div class="stat"><span class="label">PLANT</span><span class="value" id="c-plant">0</span></div>
+    <div class="stat"><span class="label">FIRE</span><span class="value" id="c-fire">0</span></div>
+    <div class="stat"><span class="label">STEAM</span><span class="value" id="c-steam">0</span></div>
+  `;
+  app.appendChild(hud);
+
+  const ach = $el('div', 'achievements');
+  ach.innerHTML = `
+    <span class="chip" data-key="sand">모래 100+</span>
+    <span class="chip" data-key="water">물 100+</span>
+    <span class="chip" data-key="plant">식물 자라기</span>
+    <span class="chip" data-key="steam">증기 만들기</span>
+    <span class="chip" data-key="all5">5종 동시</span>
+  `;
+  app.appendChild(ach);
+
+  const arenaWrap = $el('div', 'arena-wrap');
+  arenaWrap.innerHTML = `<canvas id="stage" width="${W}" height="${H}"></canvas>`;
+  app.appendChild(arenaWrap);
+
+  const controls = $el('div', 'controls');
+  controls.innerHTML = `
+    <button class="btn ghost" id="btn-clear">전 체 지 우 기</button>
+    <button class="btn ghost" id="btn-quit">홈</button>
+  `;
+  app.appendChild(controls);
+
+  const hint = $el('div', 'hint', '도구 선택 → 화면 드래그로 원소 떨어뜨리기');
+  app.appendChild(hint);
+
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.imageSmoothingEnabled = false;
+
+  const off = document.createElement('canvas');
+  off.width = CW; off.height = CH;
+  const offCtx = off.getContext('2d');
+  const imageData = offCtx.createImageData(CW, CH);
+  const pixels = imageData.data;
+
+  const grid = new Uint8Array(CW * CH);
+  const meta = new Int16Array(CW * CH);
+  const visited = new Uint8Array(CW * CH);
+  let currentTool = SAND;
+  let drawing = false;
+  let lastPaint = null;
+  let frame = 0;
+
+  // achievement state
+  const stats = loadStats(KEY, { ach: {} });
+  const achState = { ...(stats.ach || {}) };
+  function setAch(key){
+    if (achState[key]) return;
+    achState[key] = true;
+    saveStats(KEY, { ach: achState });
+    const chip = ach.querySelector('.chip[data-key="' + key + '"]');
+    if (chip) chip.classList.add('done');
+  }
+  // pre-mark
+  for (const key of Object.keys(achState)){
+    const chip = ach.querySelector('.chip[data-key="' + key + '"]');
+    if (chip) chip.classList.add('done');
+  }
+
+  const toolButtons = tools.querySelectorAll('.tool-btn');
+  function setTool(id){
+    currentTool = id;
+    toolButtons.forEach(b => {
+      const t = parseInt(b.dataset.tool, 10);
+      b.classList.toggle('active', t === id);
+    });
+  }
+  toolButtons.forEach(b => {
+    b.addEventListener('click', ()=> setTool(parseInt(b.dataset.tool, 10)));
+  });
+  setTool(SAND);
+
+  function localCell(clientX, clientY){
+    const r = canvas.getBoundingClientRect();
+    const x = (clientX - r.left) * (W / r.width);
+    const y = (clientY - r.top) * (H / r.height);
+    return { cx: Math.floor(x / CELL), cy: Math.floor(y / CELL) };
+  }
+
+  function paintAt(cx, cy, brush, element){
+    for (let dy = -brush; dy <= brush; dy++){
+      for (let dx = -brush; dx <= brush; dx++){
+        if (dx*dx + dy*dy > brush * brush) continue;
+        const x = cx + dx, y = cy + dy;
+        if (x < 0 || x >= CW || y < 0 || y >= CH) continue;
+        const i = y * CW + x;
+        if (element === EMPTY){
+          grid[i] = EMPTY; meta[i] = 0;
+        } else if (grid[i] === EMPTY){
+          grid[i] = element;
+          if (element === FIRE) meta[i] = 40 + Math.floor(Math.random() * 30);
+          else if (element === STEAM) meta[i] = 60;
+          else meta[i] = 0;
+        }
+      }
+    }
+  }
+
+  function paintLine(p1, p2){
+    const dx = p2.cx - p1.cx;
+    const dy = p2.cy - p1.cy;
+    const steps = Math.max(Math.abs(dx), Math.abs(dy)) + 1;
+    for (let i = 0; i <= steps; i++){
+      const t = i / steps;
+      const cx = Math.round(p1.cx + dx * t);
+      const cy = Math.round(p1.cy + dy * t);
+      paintAt(cx, cy, 2, currentTool);
+    }
+  }
+
+  function pointerDown(e){
+    e.preventDefault();
+    const p = e.touches ? e.touches[0] : e;
+    if (!p) return;
+    const cell = localCell(p.clientX, p.clientY);
+    drawing = true;
+    paintAt(cell.cx, cell.cy, 2, currentTool);
+    lastPaint = cell;
+  }
+  function pointerMove(e){
+    if (!drawing) return;
+    e.preventDefault();
+    const p = e.touches ? e.touches[0] : e;
+    if (!p) return;
+    const cell = localCell(p.clientX, p.clientY);
+    if (lastPaint) paintLine(lastPaint, cell);
+    else paintAt(cell.cx, cell.cy, 2, currentTool);
+    lastPaint = cell;
+  }
+  function pointerUp(){
+    drawing = false;
+    lastPaint = null;
+  }
+
+  canvas.addEventListener('mousedown', pointerDown);
+  canvas.addEventListener('mousemove', pointerMove);
+  canvas.addEventListener('mouseup', pointerUp);
+  canvas.addEventListener('mouseleave', pointerUp);
+  canvas.addEventListener('touchstart', pointerDown, { passive: false });
+  canvas.addEventListener('touchmove', pointerMove, { passive: false });
+  canvas.addEventListener('touchend', pointerUp, { passive: false });
+  canvas.addEventListener('touchcancel', pointerUp);
+
+  document.getElementById('btn-clear').onclick = ()=>{
+    grid.fill(0);
+    meta.fill(0);
+  };
+
+  let raf = null;
+  document.getElementById('btn-quit').onclick = ()=>{
+    cancelAnimationFrame(raf);
+    raf = null;
+    showTitle();
+  };
+
+  function swap(a, b){
+    const ge = grid[a]; grid[a] = grid[b]; grid[b] = ge;
+    const me = meta[a]; meta[a] = meta[b]; meta[b] = me;
+  }
+
+  function step(){
+    frame += 1;
+    visited.fill(0);
+
+    for (let y = CH - 1; y >= 0; y--){
+      const lr = ((frame + y) & 1) === 0;
+      const xs = lr ? 0 : CW - 1;
+      const xe = lr ? CW : -1;
+      const xd = lr ? 1 : -1;
+
+      for (let x = xs; x !== xe; x += xd){
+        const i = y * CW + x;
+        if (visited[i]) continue;
+        const el = grid[i];
+        if (el === EMPTY || el === WALL) continue;
+
+        if (el === SAND){
+          if (y < CH - 1){
+            const di = (y+1)*CW + x;
+            if (!visited[di] && (grid[di] === EMPTY || grid[di] === WATER)){
+              swap(i, di); visited[di] = 1; continue;
+            }
+            const dirs = (Math.random() < 0.5) ? -1 : 1;
+            for (let k = 0; k < 2; k++){
+              const dx = k === 0 ? dirs : -dirs;
+              const nx = x + dx;
+              if (nx < 0 || nx >= CW) continue;
+              const ni = (y+1)*CW + nx;
+              if (!visited[ni] && (grid[ni] === EMPTY || grid[ni] === WATER)){
+                swap(i, ni); visited[ni] = 1; break;
+              }
+            }
+          }
+        }
+        else if (el === WATER){
+          if (y < CH - 1){
+            const di = (y+1)*CW + x;
+            if (!visited[di] && grid[di] === EMPTY){
+              swap(i, di); visited[di] = 1; continue;
+            }
+            const dirs = (Math.random() < 0.5) ? -1 : 1;
+            let moved = false;
+            for (let k = 0; k < 2; k++){
+              const dx = k === 0 ? dirs : -dirs;
+              const nx = x + dx;
+              if (nx < 0 || nx >= CW) continue;
+              const ni = (y+1)*CW + nx;
+              if (!visited[ni] && grid[ni] === EMPTY){
+                swap(i, ni); visited[ni] = 1; moved = true; break;
+              }
+            }
+            if (moved) continue;
+          }
+          const dirs = (Math.random() < 0.5) ? -1 : 1;
+          for (let k = 0; k < 2; k++){
+            const dx = k === 0 ? dirs : -dirs;
+            const nx = x + dx;
+            if (nx < 0 || nx >= CW) continue;
+            const ni = y*CW + nx;
+            if (!visited[ni] && grid[ni] === EMPTY){
+              swap(i, ni); visited[ni] = 1; break;
+            }
+          }
+        }
+        else if (el === FIRE){
+          meta[i] -= 1;
+          if (meta[i] <= 0){ grid[i] = EMPTY; continue; }
+          if (y > 0 && grid[(y-1)*CW + x] === EMPTY && Math.random() < 0.6){
+            swap(i, (y-1)*CW + x); visited[(y-1)*CW + x] = 1;
+          }
+          let consumed = false;
+          for (let k = 0; k < 4; k++){
+            const dx = NEIGHBORS4[k][0], dy = NEIGHBORS4[k][1];
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= CW || ny < 0 || ny >= CH) continue;
+            const ni = ny*CW + nx;
+            if (grid[ni] === PLANT && Math.random() < 0.18){
+              grid[ni] = FIRE;
+              meta[ni] = 35 + Math.floor(Math.random() * 25);
+            }
+            if (grid[ni] === WATER && Math.random() < 0.35){
+              grid[ni] = STEAM;
+              meta[ni] = 55;
+              grid[i] = EMPTY; meta[i] = 0;
+              consumed = true; break;
+            }
+          }
+          if (consumed) continue;
+        }
+        else if (el === PLANT){
+          if (Math.random() > 0.0035) continue;
+          let hasWater = false;
+          for (let k = 0; k < 4; k++){
+            const dx = NEIGHBORS4[k][0], dy = NEIGHBORS4[k][1];
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= CW || ny < 0 || ny >= CH) continue;
+            if (grid[ny*CW + nx] === WATER){ hasWater = true; break; }
+          }
+          if (!hasWater) continue;
+          for (let k = 0; k < 3; k++){
+            const dx = GROW_DIRS[k][0], dy = GROW_DIRS[k][1];
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= CW || ny < 0 || ny >= CH) continue;
+            if (grid[ny*CW + nx] === EMPTY){
+              grid[ny*CW + nx] = PLANT;
+              setAch('plant');
+              break;
+            }
+          }
+        }
+        else if (el === STEAM){
+          meta[i] -= 1;
+          if (meta[i] <= 0){ grid[i] = EMPTY; continue; }
+          if (y > 0 && grid[(y-1)*CW + x] === EMPTY){
+            swap(i, (y-1)*CW + x); visited[(y-1)*CW + x] = 1; continue;
+          }
+          const dirs = (Math.random() < 0.5) ? -1 : 1;
+          for (let k = 0; k < 2; k++){
+            const dx = k === 0 ? dirs : -dirs;
+            const nx = x + dx;
+            if (nx < 0 || nx >= CW) continue;
+            const ni = y*CW + nx;
+            if (!visited[ni] && grid[ni] === EMPTY){
+              swap(i, ni); visited[ni] = 1; break;
+            }
+          }
+        }
+      }
+    }
+
+    if (frame % 10 === 0){
+      let sand = 0, water = 0, plant = 0, fire = 0, steam = 0, wall = 0;
+      for (let i = 0; i < grid.length; i++){
+        const el = grid[i];
+        if (el === SAND) sand++;
+        else if (el === WATER) water++;
+        else if (el === PLANT) plant++;
+        else if (el === FIRE) fire++;
+        else if (el === STEAM) steam++;
+        else if (el === WALL) wall++;
+      }
+      document.getElementById('c-sand').textContent = sand;
+      document.getElementById('c-water').textContent = water;
+      document.getElementById('c-plant').textContent = plant;
+      document.getElementById('c-fire').textContent = fire;
+      document.getElementById('c-steam').textContent = steam;
+      if (sand >= 100) setAch('sand');
+      if (water >= 100) setAch('water');
+      if (steam >= 1) setAch('steam');
+      if (sand && water && plant && fire && wall) setAch('all5');
+    }
+  }
+
+  function render(){
+    for (let i = 0; i < grid.length; i++){
+      const el = grid[i];
+      const p = i * 4;
+      if (el === EMPTY){
+        pixels[p] = 6; pixels[p+1] = 10; pixels[p+2] = 22; pixels[p+3] = 255;
+      } else if (el === SAND){
+        // 살짝 색 변화로 텍스처
+        const v = (i * 2654435761) >>> 0;
+        const j = (v & 31) - 16;
+        pixels[p] = 230 + j * 0.3;
+        pixels[p+1] = 192 + j * 0.5;
+        pixels[p+2] = 104 + j * 0.4;
+        pixels[p+3] = 255;
+      } else if (el === WATER){
+        const v = (i * 374761393) >>> 0;
+        const j = (v & 15) - 8;
+        pixels[p] = 74 + j;
+        pixels[p+1] = 143 + j;
+        pixels[p+2] = 192 + j;
+        pixels[p+3] = 255;
+      } else if (el === WALL){
+        pixels[p] = 120; pixels[p+1] = 120; pixels[p+2] = 120; pixels[p+3] = 255;
+      } else if (el === FIRE){
+        const m = meta[i];
+        const t = Math.min(1, m / 60);
+        pixels[p] = 255;
+        pixels[p+1] = Math.floor(80 + 175 * t);
+        pixels[p+2] = Math.floor(40 + 40 * t);
+        pixels[p+3] = 255;
+      } else if (el === PLANT){
+        const v = (i * 2246822507) >>> 0;
+        const j = (v & 15) - 8;
+        pixels[p] = 93 + j;
+        pixels[p+1] = 138 + j;
+        pixels[p+2] = 74 + j;
+        pixels[p+3] = 255;
+      } else if (el === STEAM){
+        const m = meta[i];
+        const a = Math.min(1, m / 60);
+        pixels[p] = 215; pixels[p+1] = 220; pixels[p+2] = 230;
+        pixels[p+3] = Math.floor(160 * a);
+      }
+    }
+    offCtx.putImageData(imageData, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(off, 0, 0, W, H);
+  }
+
+  function loop(){
+    if (raf === null) return;
+    step();
+    render();
+    raf = requestAnimationFrame(loop);
+  }
+  raf = requestAnimationFrame(loop);
+}
+
+showTitle();
+window.__GAME__ = { KEY };
+</script>
+</body>
+</html>
