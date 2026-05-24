@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>오빗 탭 | 5분 퍼즐</title>
+<meta name="description" content="회전하는 점이 타겟을 지날 때 탭하는 45초 Canvas 타이밍 게임.">
+<meta property="og:title" content="오빗 탭">
+<meta property="og:description" content="회전하는 점이 타겟을 지날 때 탭.">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/orbit-tap/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#2f7d62; --accent-dark:#22634c; --accent-soft:#9fd4bd; }
+  main{ max-width: 640px; }
+  .game-stage{
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 14px;
+    margin-bottom: 16px;
+  }
+  .orbit-canvas{
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: #111922;
+    border-radius: 8px;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .hud-grid{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .hud-box{
+    background: var(--card);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: 8px 10px;
+    text-align: center;
+  }
+  .hud-label{
+    color: var(--ink-dim);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .hud-value{
+    color: var(--accent-dark);
+    font-size: 19px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+  }
+  .hint-line{
+    color: var(--ink-dim);
+    font-size: 13px;
+    line-height: 1.6;
+    text-align: center;
+  }
+  .score-hero{
+    color: var(--accent-dark);
+    font-size: 54px;
+    font-weight: 900;
+    line-height: 1;
+    margin: 18px 0 8px;
+    text-align: center;
+  }
+  .result-stats{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 16px 0;
+  }
+  .result-stats .hud-box{ box-shadow: none; border: 1px solid #e6ddcf; }
+  @media(max-width:520px){
+    main{ padding-inline: 14px; }
+    .hud-grid{ grid-template-columns: repeat(2, 1fr); }
+    .result-stats{ grid-template-columns: 1fr; }
+    .score-hero{ font-size: 46px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, formatClock } = Brain;
+injectBackLink('../../');
+
+const GAME_ID = 'orbit-tap';
+const STORAGE_KEY = GAME_ID + '_stats';
+const GAME_SECONDS = 45;
+const TAU = Math.PI * 2;
+
+let canvas;
+let ctx;
+let rafId = 0;
+let state = null;
+
+function normAngle(angle){
+  angle %= TAU;
+  return angle < 0 ? angle + TAU : angle;
+}
+
+function angleDistance(a, b){
+  const d = Math.abs(normAngle(a) - normAngle(b));
+  return Math.min(d, TAU - d);
+}
+
+function setCanvasSize(){
+  if (!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const size = Math.max(280, Math.floor(rect.width));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(size * dpr);
+  canvas.height = Math.floor(size * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function randomTarget(){
+  let next = Math.random() * TAU;
+  if (state) {
+    let guard = 0;
+    while (angleDistance(next, state.targetAngle) < 0.9 && guard < 12) {
+      next = Math.random() * TAU;
+      guard += 1;
+    }
+  }
+  return next;
+}
+
+function resetState(){
+  state = {
+    running: true,
+    startedAt: performance.now(),
+    lastAt: 0,
+    angle: -Math.PI / 2,
+    targetAngle: Math.random() * TAU,
+    targetWidth: 0.68,
+    speed: 2.1,
+    direction: 1,
+    score: 0,
+    hits: 0,
+    attempts: 0,
+    streak: 0,
+    bestStreak: 0,
+    misses: 0,
+    message: '타겟 구간에서 탭',
+    flash: 0,
+    flashGood: true
+  };
+}
+
+function remainingMs(now){
+  return Math.max(0, GAME_SECONDS * 1000 - (now - state.startedAt));
+}
+
+function drawArc(cx, cy, radius, start, end, width, color, alpha){
+  ctx.save();
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, start, end);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function draw(now){
+  if (!canvas || !state) return;
+  const w = canvas.getBoundingClientRect().width;
+  const h = w;
+  const cx = w / 2;
+  const cy = h / 2;
+  const radius = w * 0.34;
+  const ringWidth = Math.max(18, w * 0.05);
+  const dotRadius = Math.max(9, w * 0.022);
+  const remain = remainingMs(now);
+  const progress = remain / (GAME_SECONDS * 1000);
+
+  ctx.clearRect(0, 0, w, h);
+
+  const bg = ctx.createRadialGradient(cx, cy, w * 0.08, cx, cy, w * 0.56);
+  bg.addColorStop(0, '#1e3130');
+  bg.addColorStop(0.58, '#12222a');
+  bg.addColorStop(1, '#0b1118');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  if (state.flash > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.24, state.flash);
+    ctx.fillStyle = state.flashGood ? '#7fe0a7' : '#ef7c7c';
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+
+  drawArc(cx, cy, radius, 0, TAU, ringWidth, 'rgba(255,255,255,.12)', 1);
+  drawArc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + TAU * progress, ringWidth * 0.28, '#81d9a6', 0.9);
+
+  const start = state.targetAngle - state.targetWidth / 2;
+  const end = state.targetAngle + state.targetWidth / 2;
+  drawArc(cx, cy, radius, start, end, ringWidth * 1.08, '#7ee0a1', 0.96);
+  drawArc(cx, cy, radius, start, end, ringWidth * 1.65, '#7ee0a1', 0.16);
+
+  const dotX = cx + Math.cos(state.angle) * radius;
+  const dotY = cy + Math.sin(state.angle) * radius;
+  ctx.save();
+  ctx.shadowColor = '#ffffff';
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(dotX, dotY, dotRadius, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = 'rgba(255,255,255,.9)';
+  ctx.font = '800 ' + Math.round(w * 0.105) + 'px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(Math.ceil(remain / 1000), cx, cy - 10);
+
+  ctx.fillStyle = 'rgba(255,255,255,.58)';
+  ctx.font = '700 ' + Math.round(w * 0.038) + 'px system-ui, sans-serif';
+  ctx.fillText(state.message, cx, cy + w * 0.075);
+}
+
+function updateHud(now){
+  const timeEl = document.getElementById('hud-time');
+  if (!timeEl || !state) return;
+  timeEl.textContent = Math.ceil(remainingMs(now) / 1000) + 's';
+  document.getElementById('hud-score').textContent = state.score;
+  document.getElementById('hud-hit').textContent = state.hits;
+  document.getElementById('hud-streak').textContent = state.streak;
+}
+
+function loop(now){
+  if (!state || !state.running) return;
+  if (!state.lastAt) state.lastAt = now;
+  const dt = Math.min(0.04, (now - state.lastAt) / 1000);
+  state.lastAt = now;
+
+  state.angle = normAngle(state.angle + state.speed * state.direction * dt);
+  state.flash = Math.max(0, state.flash - dt * 1.8);
+
+  if (remainingMs(now) <= 0) {
+    finish();
+    return;
+  }
+
+  draw(now);
+  updateHud(now);
+  rafId = requestAnimationFrame(loop);
+}
+
+function nextTarget(){
+  state.targetAngle = randomTarget();
+  state.targetWidth = Math.max(0.28, 0.68 - state.hits * 0.018);
+  state.speed = Math.min(3.65, 2.1 + state.hits * 0.035);
+  if (state.hits > 0 && state.hits % 6 === 0) state.direction *= -1;
+}
+
+function tap(){
+  if (!state || !state.running) return;
+  state.attempts += 1;
+  const dist = angleDistance(state.angle, state.targetAngle);
+  const limit = state.targetWidth / 2;
+
+  if (dist <= limit) {
+    const precision = 1 - dist / limit;
+    const points = Math.round(70 + precision * 80 + Math.min(60, state.streak * 8));
+    state.score += points;
+    state.hits += 1;
+    state.streak += 1;
+    state.bestStreak = Math.max(state.bestStreak, state.streak);
+    state.message = precision > 0.72 ? '정중앙 +' + points : '히트 +' + points;
+    state.flashGood = true;
+    state.flash = 0.42;
+    nextTarget();
+  } else {
+    state.misses += 1;
+    state.streak = 0;
+    state.score = Math.max(0, state.score - 25);
+    state.message = '빗나감 -25';
+    state.flashGood = false;
+    state.flash = 0.35;
+  }
+
+  if (navigator.vibrate) navigator.vibrate(state.flashGood ? 18 : 36);
+  draw(performance.now());
+  updateHud(performance.now());
+}
+
+function renderHome(){
+  cancelAnimationFrame(rafId);
+  clear();
+  const stats = loadStats(STORAGE_KEY, { played: 0, bestScore: 0, recent: [] });
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div id="title-screen">' +
+      '<div class="brand-icon">◎</div>' +
+      '<h1 class="hero-title">오빗 탭</h1>' +
+      '<p class="hero-sub">회전하는 점이 초록 타겟을 지날 때 탭하세요.</p>' +
+      '<div class="today-card"><div class="today-label">BEST</div><div class="today-date">' + (stats.bestScore || 0) + '점</div></div>' +
+      '<div class="rule-card">' +
+        '<h3>규칙</h3>' +
+        '<p>45초 동안 흰 점이 초록 구간 안에 들어왔을 때 화면을 탭합니다. 연속 성공하면 보너스가 붙고, 빗나가면 점수가 조금 줄어듭니다.</p>' +
+      '</div>' +
+      '<div class="btn-row"><button class="btn" id="start-btn">시작</button></div>' +
+      '<div class="credits">5분 퍼즐 · 2026</div>' +
+    '</div>';
+  document.getElementById('start-btn').onclick = start;
+}
+
+function renderPlaying(){
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div class="hud-grid">' +
+      '<div class="hud-box"><div class="hud-label">TIME</div><div class="hud-value" id="hud-time">45s</div></div>' +
+      '<div class="hud-box"><div class="hud-label">SCORE</div><div class="hud-value" id="hud-score">0</div></div>' +
+      '<div class="hud-box"><div class="hud-label">HIT</div><div class="hud-value" id="hud-hit">0</div></div>' +
+      '<div class="hud-box"><div class="hud-label">STREAK</div><div class="hud-value" id="hud-streak">0</div></div>' +
+    '</div>' +
+    '<div class="game-stage"><canvas class="orbit-canvas" id="orbit-canvas" aria-label="오빗 탭 게임 화면"></canvas></div>' +
+    '<p class="hint-line">캔버스를 탭하거나 스페이스바를 누르세요.</p>';
+
+  canvas = document.getElementById('orbit-canvas');
+  ctx = canvas.getContext('2d');
+  setCanvasSize();
+  canvas.addEventListener('pointerdown', function(event){
+    event.preventDefault();
+    tap();
+  });
+  window.addEventListener('resize', setCanvasSize, { passive: true });
+}
+
+function start(){
+  resetState();
+  renderPlaying();
+  draw(performance.now());
+  rafId = requestAnimationFrame(loop);
+}
+
+function finish(){
+  if (!state) return;
+  state.running = false;
+  cancelAnimationFrame(rafId);
+  const finalScore = state.score;
+  const accuracy = state.attempts ? Math.round((state.hits / state.attempts) * 100) : 0;
+  const stats = recordBestScore(STORAGE_KEY, finalScore, {
+    hits: state.hits,
+    attempts: state.attempts,
+    accuracy: accuracy,
+    streak: state.bestStreak,
+    date: Brain.todayDateString()
+  });
+
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<section class="card">' +
+      '<h1 class="title">오빗 탭 결과</h1>' +
+      '<div class="score-hero">' + finalScore + '</div>' +
+      '<p class="puzzle-desc" style="text-align:center;">최고 기록 ' + (stats.bestScore || finalScore) + '점</p>' +
+      '<div class="result-stats">' +
+        '<div class="hud-box"><div class="hud-label">HIT</div><div class="hud-value">' + state.hits + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">ACCURACY</div><div class="hud-value">' + accuracy + '%</div></div>' +
+        '<div class="hud-box"><div class="hud-label">BEST STREAK</div><div class="hud-value">' + state.bestStreak + '</div></div>' +
+      '</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn" id="again-btn">다시</button>' +
+        '<button class="btn secondary" id="share-btn">공유</button>' +
+      '</div>' +
+    '</section>';
+
+  document.getElementById('again-btn').onclick = start;
+  document.getElementById('share-btn').onclick = function(event){
+    const text = '오빗 탭 ' + finalScore + '점 · 명중 ' + state.hits + ' · 정확도 ' + accuracy + '%\\nhttps://games.jdgrid.com/brain/games/orbit-tap/';
+    shareToClipboard(text, event.currentTarget);
+  };
+}
+
+document.addEventListener('keydown', function(event){
+  if (event.code === 'Space' || event.code === 'Enter') {
+    if (state && state.running) {
+      event.preventDefault();
+      tap();
+    }
+  }
+});
+
+renderHome();
+</script>
+</body>
+</html>

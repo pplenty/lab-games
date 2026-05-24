@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>타이핑 정확도 | 5분 퍼즐</title>
+<meta property="og:title" content="타이핑 정확도">
+<meta property="og:description" content="주어진 문장을 오타 없이 그대로 입력하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#5a8e8b;--accent-dark:#3c6b68;--accent-soft:#bfd7d5; }
+  .prompt{ background:var(--card);padding:18px;border-radius:12px;font-size:18px;line-height:1.8;margin-bottom:10px;box-shadow:var(--shadow); }
+  .char{ color:var(--ink-dim); }
+  .char.ok{ color:var(--green-dark); }
+  .char.bad{ color:var(--red);background:#fadada;border-radius:3px; }
+  .char.cur{ background:var(--accent-soft);border-radius:3px; }
+  .input{ width:100%;padding:12px;border:2px solid var(--ink-faint);border-radius:10px;font:inherit;font-size:18px;background:var(--bg); }
+  .input:focus{ outline:none;border-color:var(--accent);background:white; }
+  .stats{ display:flex;gap:10px;justify-content:center;margin:10px 0;color:var(--ink-dim);font-size:14px; }
+  .stats b{ color:var(--accent-dark); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, shuffle } = Brain;
+injectBackLink('../../');
+
+const LINES = [
+  '오늘도 열심히 하루를 살아간다.',
+  '작은 습관이 모여 큰 변화가 된다.',
+  '빠른 것보다 정확한 것이 먼저다.',
+  '바람이 불면 꽃은 떨어지고 잎이 남는다.',
+  '조용한 아침의 커피는 하루를 여는 의식이다.',
+  '길은 걷는 자의 것이고 시간은 기다리지 않는다.',
+  '한 걸음씩 가는 것만이 멀리 가는 유일한 방법이다.',
+  '밤하늘의 별은 오래된 빛이다.'
+];
+const KEY = 'typing_accuracy_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestAcc:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  const mobileNote = isMobile ? `
+    <div style="background:#fff4e6;border:1px solid #f0c68a;border-radius:10px;padding:10px 14px;margin:0 auto 14px;max-width:340px;font-size:13px;color:#8a5a1a;line-height:1.6;">
+      💻 이 게임은 물리 키보드에서 더 정확한 결과가 나옵니다. 모바일에서는 IME 변환 때문에 오타가 늘어날 수 있어요.
+    </div>` : '';
+  ts.innerHTML = `
+    <div class="brand-icon">✍️</div>
+    <h1 class="hero-title">타이핑 <span style="color:var(--accent);">정확도</span></h1>
+    <div class="hero-sub">주어진 문장을 <b>오타 없이</b> 입력하세요.<br>얼마나 정확히, 빠르게?</div>
+    ${mobileNote}
+    ${stats.bestAcc>0?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestAcc}% 정확도</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const lines = shuffle(LINES).slice(0,3);
+  const state = { lines, idx:0, typed:'', startedAt:null, errors:0, correctChars:0 };
+  render();
+  function render(){
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">문장 ${state.idx+1}/${state.lines.length}</div><div class="stat" id="stat-err">오타 ${state.errors}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    const target = state.lines[state.idx];
+    const html = [...target].map((ch, i) => {
+      if(i < state.typed.length){
+        return '<span class="char '+(state.typed[i]===ch?'ok':'bad')+'">'+(ch===' '?'&nbsp;':Brain.escapeHtml(ch))+'</span>';
+      } else if(i === state.typed.length){
+        return '<span class="char cur">'+(ch===' '?'&nbsp;':Brain.escapeHtml(ch))+'</span>';
+      }
+      return '<span class="char">'+(ch===' '?'&nbsp;':Brain.escapeHtml(ch))+'</span>';
+    }).join('');
+    card.innerHTML = `
+      <div class="prompt">${html}</div>
+      <input class="input" id="inp" placeholder="여기에 입력" autocomplete="off" autofocus>
+      <div class="stats" id="stats"></div>
+    `;
+    app.appendChild(card);
+    const input = document.getElementById('inp');
+    input.value = state.typed;
+    input.focus();
+    input.addEventListener('input', e=>{
+      if(state.startedAt == null) state.startedAt = performance.now();
+      const newVal = input.value;
+      // Count errors: compare current typed vs target
+      let err = 0;
+      for(let i=0;i<newVal.length;i++){
+        if(newVal[i] !== target[i]) err++;
+      }
+      state.typed = newVal;
+      state.errors = err;
+      // Count correct chars (excluding corrected ones is approximate)
+      if(state.typed.length >= target.length){
+        // check match
+        if(state.typed.slice(0, target.length) === target){
+          state.correctChars += target.length;
+          state.idx++;
+          state.typed = '';
+          if(state.idx >= state.lines.length) return finish();
+          render();
+          return;
+        }
+      }
+      render();
+    });
+  }
+  function finish(){
+    const elapsed = (performance.now() - state.startedAt)/1000;
+    const totalChars = state.lines.join('').length;
+    const accuracy = Math.max(0, Math.round((totalChars - state.errors) / totalChars * 100));
+    const kpm = Math.round(totalChars / (elapsed/60));
+    const stats = loadStats(KEY, { played:0, bestAcc:0 });
+    stats.played++;
+    if(accuracy > stats.bestAcc) stats.bestAcc = accuracy;
+    Brain.saveStats(KEY, stats);
+    const isBest = stats.bestAcc === accuracy;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = accuracy === 100 ? '🏆' : accuracy >= 95 ? '🎉' : '👏';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">타이핑 종료</div>
+      <div class="result-big">${accuracy}%</div>
+      <div class="result-sub">${kpm} KPM · 오타 ${state.errors}회 · ${elapsed.toFixed(1)}s</div>
+      ${isBest?'<div class="ribbon">🌟 최고 정확도</div>':''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`타이핑 정확도\n✍️ ${accuracy}% (${kpm} KPM)${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { LINES, KEY };
+</script>
+</body>
+</html>

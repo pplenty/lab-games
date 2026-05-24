@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>마방진 3×3 | 5분 퍼즐</title>
+<meta property="og:title" content="마방진 3×3">
+<meta property="og:description" content="1~9를 한 번씩 넣어 모든 줄의 합이 15가 되게 하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#5a9b84;--accent-dark:#3e7a66;--accent-soft:#b4d9cb; }
+  .square-wrap{ display:flex;flex-direction:column;align-items:center;gap:16px; }
+  .square{
+    display:grid;grid-template-columns:repeat(3,76px);gap:6px;
+    padding:10px;background:var(--accent-soft);border-radius:12px;position:relative;
+  }
+  .cell{
+    aspect-ratio:1;background:white;border-radius:8px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:28px;font-weight:800;cursor:pointer;user-select:none;
+    transition:all .12s;
+  }
+  .cell.empty{ color:var(--ink-faint); }
+  .cell.empty::before{ content:"·"; }
+  .cell.fixed{ background:#eaeef0;color:var(--ink);cursor:not-allowed; }
+  .cell.active{ outline:3px solid var(--accent);box-shadow:var(--shadow); }
+  .check-row{ display:grid;grid-template-columns:repeat(3,76px);gap:6px;padding:10px;max-width:252px; }
+  .check-cell{ text-align:center;font-size:13px;font-weight:700;color:var(--ink-dim);padding:6px 0;border-radius:6px;background:var(--bg-2); }
+  .check-cell.good{ background:#d1ead8;color:var(--green-dark); }
+  .check-cell.bad{  background:#fad5d5;color:var(--red); }
+  .tiles{ display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:10px; }
+  .tile-btn{
+    width:48px;height:48px;border-radius:8px;background:var(--card);border:2px solid var(--ink-faint);
+    font:inherit;font-size:20px;font-weight:700;cursor:pointer;transition:all .12s;
+    color:var(--ink);
+  }
+  .tile-btn.used{ opacity:.3;cursor:not-allowed; }
+  .tile-btn:hover:not(.used){ border-color:var(--accent);background:var(--accent-soft); }
+  .tile-btn.clear{ background:#f0d8d8;border-color:#e8a0a0;color:var(--red); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestTime, injectBackLink, shareToClipboard, formatClock } = Brain;
+injectBackLink('../../');
+
+const KEY = 'magic_square_stats';
+const app = document.getElementById('app');
+
+// Solution: Lo Shu magic square (any rotation/reflection valid but we use one canonical)
+const SOLUTION = [[2,7,6],[9,5,1],[4,3,8]];
+
+// Starting puzzle: reveal a few cells for hint
+const INITIAL = [
+  [0,0,0],
+  [0,5,0],
+  [0,0,0]
+];
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestMs:null });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔣</div>
+    <h1 class="hero-title">마방진 <span style="color:var(--accent);">3 × 3</span></h1>
+    <div class="hero-sub">1부터 9까지를 한 번씩 넣어<br>모든 가로·세로·대각선의 합을 <b>15</b>로 만드세요.</div>
+    ${stats.bestMs ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${formatClock(stats.bestMs)}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const grid = INITIAL.map(r => r.slice());
+  const state = { grid, active:null, startedAt: performance.now(), timer:null, finished:false };
+
+  clear(app);
+  const topbar = $el('div','topbar');
+  topbar.innerHTML = `<div class="stat">목표: 모든 줄 = 15</div><div class="stat" id="t">0:00</div>`;
+  app.appendChild(topbar);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="square-wrap">
+      <div class="square" id="sq"></div>
+      <div id="checks" class="check-row"></div>
+      <div class="tiles" id="tiles">
+        ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="tile-btn" data-n="${n}">${n}</button>`).join('')}
+        <button class="tile-btn clear" data-n="0">C</button>
+      </div>
+      <div style="color:var(--ink-dim);font-size:13px;text-align:center;">칸 선택 → 아래 숫자 클릭</div>
+    </div>
+  `;
+  app.appendChild(card);
+  const sq = document.getElementById('sq');
+
+  function render(){
+    sq.innerHTML = '';
+    for(let r=0;r<3;r++) for(let c=0;c<3;c++){
+      const cell = $el('div', 'cell');
+      const fixed = INITIAL[r][c] !== 0;
+      if(fixed) cell.classList.add('fixed');
+      else if(state.grid[r][c] === 0) cell.classList.add('empty');
+      cell.textContent = state.grid[r][c] || '';
+      cell.dataset.r = r; cell.dataset.c = c;
+      if(!fixed) cell.onclick = ()=>{
+        sq.querySelectorAll('.cell').forEach(x=>x.classList.remove('active'));
+        cell.classList.add('active');
+        state.active = [r,c];
+      };
+      sq.appendChild(cell);
+    }
+    drawChecks();
+    drawTileUsage();
+  }
+  function drawChecks(){
+    const ch = document.getElementById('checks');
+    const rowSums = [0,1,2].map(r => [0,1,2].reduce((a,c)=>a+(state.grid[r][c]||0), 0));
+    const colSums = [0,1,2].map(c => [0,1,2].reduce((a,r)=>a+(state.grid[r][c]||0), 0));
+    // Show col sums above grid? Simpler: show each sum in a row below
+    ch.innerHTML = colSums.map(s=>`<div class="check-cell ${s===15?'good':s>15?'bad':''}">↑ ${s}</div>`).join('') +
+                   rowSums.map(s=>`<div class="check-cell ${s===15?'good':s>15?'bad':''}">→ ${s}</div>`).join('');
+    ch.style.gridTemplateColumns = 'repeat(3, 76px)';
+  }
+  function drawTileUsage(){
+    const used = new Set();
+    state.grid.flat().forEach(v=>{ if(v) used.add(v); });
+    document.querySelectorAll('.tile-btn').forEach(b=>{
+      const n = +b.dataset.n;
+      if(n === 0) return;
+      b.classList.toggle('used', used.has(n));
+    });
+  }
+  function setCell(n){
+    if(!state.active) return;
+    const [r,c] = state.active;
+    if(INITIAL[r][c] !== 0) return;
+    // If placing n, ensure not already used elsewhere
+    if(n !== 0){
+      const already = state.grid.flat().includes(n) && state.grid[r][c] !== n;
+      if(already) return;
+    }
+    state.grid[r][c] = n;
+    render();
+    if(isComplete() && isValid()){
+      finish();
+    }
+  }
+  function isComplete(){ return state.grid.flat().every(v => v !== 0); }
+  function isValid(){
+    const sumsAll = [];
+    for(let r=0;r<3;r++) sumsAll.push([0,1,2].reduce((a,c)=>a+state.grid[r][c], 0));
+    for(let c=0;c<3;c++) sumsAll.push([0,1,2].reduce((a,r)=>a+state.grid[r][c], 0));
+    sumsAll.push(state.grid[0][0]+state.grid[1][1]+state.grid[2][2]);
+    sumsAll.push(state.grid[0][2]+state.grid[1][1]+state.grid[2][0]);
+    return sumsAll.every(s => s === 15);
+  }
+  function tick(){
+    const t = document.getElementById('t');
+    if(t) t.textContent = formatClock(performance.now()-state.startedAt);
+  }
+  function finish(){
+    state.finished = true;
+    clearInterval(state.timer);
+    const elapsed = performance.now() - state.startedAt;
+    const stats = recordBestTime(KEY, Math.round(elapsed), {});
+    const isBest = stats.bestMs === Math.round(elapsed);
+    setTimeout(()=>{
+      clear(app);
+      const r = $el('div','result-card');
+      r.innerHTML = `
+        <div class="result-emoji">${elapsed < 60000 ? '🏆' : '🎉'}</div>
+        <div class="result-title">완성!</div>
+        <div class="result-big">${formatClock(elapsed)}</div>
+        <div class="result-sub">모든 줄의 합이 15!</div>
+        ${isBest ? '<div class="ribbon">🌟 개인 최고 기록</div>' : ''}
+        <div class="btn-row">
+          <button class="btn" id="btn-share">공유</button>
+          <button class="btn secondary" id="btn-again">다시</button>
+          <button class="btn ghost" id="btn-home">홈</button>
+        </div>
+      `;
+      app.appendChild(r);
+      document.getElementById('btn-again').onclick = startGame;
+      document.getElementById('btn-home').onclick = showTitle;
+      document.getElementById('btn-share').onclick = (e)=>
+        shareToClipboard(`마방진 3×3\n🔣 ${formatClock(elapsed)}${isBest?'  🌟 최고':''}`, e.target);
+    }, 600);
+  }
+
+  state.timer = setInterval(tick, 250);
+  document.querySelectorAll('.tile-btn').forEach(b=>{
+    b.onclick = ()=>setCell(+b.dataset.n);
+  });
+  render();
+}
+
+showTitle();
+window.__GAME__ = { SOLUTION, INITIAL, KEY,
+  checkMagic: (g)=>{
+    const sums = [];
+    for(let r=0;r<3;r++) sums.push(g[r].reduce((a,b)=>a+b,0));
+    for(let c=0;c<3;c++) sums.push([0,1,2].reduce((a,r)=>a+g[r][c], 0));
+    sums.push(g[0][0]+g[1][1]+g[2][2]);
+    sums.push(g[0][2]+g[1][1]+g[2][0]);
+    return sums.every(s=>s===15);
+  }
+};
+</script>
+</body>
+</html>

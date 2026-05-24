@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>레이저 미러 | 5분 퍼즐</title>
+<meta name="description" content="거울을 돌려 빛을 목표까지 연결하는 Canvas 논리 퍼즐.">
+<meta property="og:title" content="레이저 미러">
+<meta property="og:description" content="거울을 돌려 빛을 목표까지 연결.">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/laser-mirror/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#c64f72; --accent-dark:#9d3153; --accent-soft:#efb1c4; }
+  main{ max-width: 640px; }
+  .hud-grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:8px;
+    margin-bottom:12px;
+  }
+  .hud-box{
+    background:var(--card);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    padding:8px 10px;
+    text-align:center;
+  }
+  .hud-label{
+    color:var(--ink-dim);
+    font-size:11px;
+    font-weight:800;
+  }
+  .hud-value{
+    color:var(--accent-dark);
+    font-size:19px;
+    font-weight:900;
+    font-variant-numeric:tabular-nums;
+  }
+  .game-stage{
+    background:var(--card);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:12px;
+    margin-bottom:14px;
+  }
+  .laser-canvas{
+    display:block;
+    width:100%;
+    aspect-ratio:1 / 1;
+    background:#0b1020;
+    border-radius:8px;
+    cursor:pointer;
+    touch-action:none;
+  }
+  .hint-line{
+    color:var(--ink-dim);
+    font-size:13px;
+    line-height:1.6;
+    text-align:center;
+  }
+  .score-hero{
+    color:var(--accent-dark);
+    font-size:54px;
+    font-weight:900;
+    line-height:1;
+    margin:18px 0 8px;
+    text-align:center;
+  }
+  .result-stats{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:8px;
+    margin:16px 0;
+  }
+  .result-stats .hud-box{
+    border:1px solid #e6ddcf;
+    box-shadow:none;
+  }
+  @media(max-width:520px){
+    main{ padding-inline:14px; }
+    .hud-grid{ grid-template-columns:repeat(2,1fr); }
+    .result-stats{ grid-template-columns:1fr; }
+    .score-hero{ font-size:46px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const GAME_ID = 'laser-mirror';
+const STORAGE_KEY = GAME_ID + '_stats';
+const SIZE = 6;
+const TAU = Math.PI * 2;
+const DIRS = {
+  R: { x: 1, y: 0 },
+  L: { x: -1, y: 0 },
+  U: { x: 0, y: -1 },
+  D: { x: 0, y: 1 }
+};
+const SLASH = { R:'U', U:'R', L:'D', D:'L' };
+const BACK = { R:'D', D:'R', L:'U', U:'L' };
+
+const LEVELS = [
+  {
+    name: '첫 반사',
+    source: { x: 0, y: 2, dir: 'R' },
+    target: { x: 5, y: 0 },
+    mirrors: [
+      { x: 3, y: 2, o: '\\' },
+      { x: 3, y: 0, o: '\\' }
+    ],
+    blocks: [{ x: 5, y: 2 }]
+  },
+  {
+    name: '위로 꺾기',
+    source: { x: 2, y: 5, dir: 'U' },
+    target: { x: 5, y: 1 },
+    mirrors: [
+      { x: 2, y: 3, o: '\\' },
+      { x: 5, y: 3, o: '\\' },
+      { x: 1, y: 1, o: '/' }
+    ],
+    blocks: [{ x: 4, y: 5 }]
+  },
+  {
+    name: '긴 통로',
+    source: { x: 5, y: 4, dir: 'L' },
+    target: { x: 0, y: 1 },
+    mirrors: [
+      { x: 4, y: 4, o: '/' },
+      { x: 4, y: 1, o: '/' },
+      { x: 2, y: 3, o: '\\' }
+    ],
+    blocks: [{ x: 1, y: 4 }, { x: 5, y: 1 }]
+  },
+  {
+    name: '모서리 우회',
+    source: { x: 0, y: 0, dir: 'D' },
+    target: { x: 5, y: 1 },
+    mirrors: [
+      { x: 0, y: 4, o: '/' },
+      { x: 5, y: 4, o: '\\' },
+      { x: 2, y: 2, o: '/' }
+    ],
+    blocks: [{ x: 0, y: 5 }, { x: 4, y: 1 }]
+  },
+  {
+    name: 'S 커브',
+    source: { x: 1, y: 0, dir: 'D' },
+    target: { x: 4, y: 5 },
+    mirrors: [
+      { x: 1, y: 2, o: '/' },
+      { x: 4, y: 2, o: '/' },
+      { x: 0, y: 4, o: '\\' },
+      { x: 5, y: 0, o: '/' }
+    ],
+    blocks: [{ x: 2, y: 5 }]
+  },
+  {
+    name: '세 번 꺾기',
+    source: { x: 5, y: 0, dir: 'D' },
+    target: { x: 0, y: 4 },
+    mirrors: [
+      { x: 5, y: 2, o: '\\' },
+      { x: 2, y: 2, o: '\\' },
+      { x: 2, y: 4, o: '\\' },
+      { x: 4, y: 5, o: '/' }
+    ],
+    blocks: [{ x: 0, y: 2 }, { x: 5, y: 5 }]
+  },
+  {
+    name: '지그재그',
+    source: { x: 0, y: 5, dir: 'U' },
+    target: { x: 5, y: 0 },
+    mirrors: [
+      { x: 0, y: 2, o: '\\' },
+      { x: 3, y: 2, o: '\\' },
+      { x: 3, y: 0, o: '\\' },
+      { x: 1, y: 4, o: '/' }
+    ],
+    blocks: [{ x: 2, y: 0 }, { x: 5, y: 2 }]
+  },
+  {
+    name: '마지막 빔',
+    source: { x: 3, y: 5, dir: 'U' },
+    target: { x: 5, y: 5 },
+    mirrors: [
+      { x: 3, y: 3, o: '\\' },
+      { x: 5, y: 3, o: '/' },
+      { x: 1, y: 1, o: '\\' },
+      { x: 4, y: 0, o: '/' }
+    ],
+    blocks: [{ x: 3, y: 0 }, { x: 0, y: 5 }]
+  }
+];
+
+let canvas = null;
+let ctx = null;
+let rafId = 0;
+let view = { w: 360, h: 360, dpr: 1, pad: 20, cell: 52, board: 312 };
+let state = null;
+
+function key(x, y){
+  return x + ',' + y;
+}
+
+function cloneLevel(index){
+  const level = LEVELS[index];
+  return {
+    name: level.name,
+    source: { ...level.source },
+    target: { ...level.target },
+    mirrors: level.mirrors.map((mirror, i) => ({
+      ...mirror,
+      id: i
+    })),
+    blocks: level.blocks.map((block) => ({ ...block }))
+  };
+}
+
+function setCanvasSize(){
+  if (!canvas || !ctx) return;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(300, Math.floor(rect.width));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(w * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const pad = Math.max(16, Math.floor(w * 0.055));
+  const board = w - pad * 2;
+  view = { w, h: w, dpr, pad, board, cell: board / SIZE };
+}
+
+function cellCenter(x, y){
+  return {
+    x: view.pad + x * view.cell + view.cell / 2,
+    y: view.pad + y * view.cell + view.cell / 2
+  };
+}
+
+function mirrorAt(x, y){
+  return state.level.mirrors.find((mirror) => mirror.x === x && mirror.y === y);
+}
+
+function blockSet(){
+  return new Set(state.level.blocks.map((block) => key(block.x, block.y)));
+}
+
+function traceBeam(){
+  const level = state.level;
+  const blocks = blockSet();
+  const points = [cellCenter(level.source.x, level.source.y)];
+  const seen = new Set();
+  let x = level.source.x;
+  let y = level.source.y;
+  let dir = level.source.dir;
+  let hit = false;
+  let stoppedBy = 'edge';
+
+  for (let step = 0; step < 80; step++) {
+    const vec = DIRS[dir];
+    const nx = x + vec.x;
+    const ny = y + vec.y;
+
+    if (nx < 0 || nx >= SIZE || ny < 0 || ny >= SIZE) {
+      points.push({
+        x: cellCenter(x, y).x + vec.x * view.cell * 0.52,
+        y: cellCenter(x, y).y + vec.y * view.cell * 0.52
+      });
+      stoppedBy = 'edge';
+      break;
+    }
+
+    points.push(cellCenter(nx, ny));
+
+    if (nx === level.target.x && ny === level.target.y) {
+      hit = true;
+      stoppedBy = 'target';
+      break;
+    }
+
+    if (blocks.has(key(nx, ny))) {
+      stoppedBy = 'block';
+      break;
+    }
+
+    const mirror = mirrorAt(nx, ny);
+    if (mirror) {
+      dir = mirror.o === '/' ? SLASH[dir] : BACK[dir];
+      const loopKey = key(nx, ny) + ':' + dir;
+      if (seen.has(loopKey)) {
+        stoppedBy = 'loop';
+        break;
+      }
+      seen.add(loopKey);
+    }
+
+    x = nx;
+    y = ny;
+  }
+
+  state.beam = { points, hit, stoppedBy };
+  return state.beam;
+}
+
+function levelScore(){
+  const elapsed = Math.floor((performance.now() - state.levelStartedAt) / 1000);
+  const movePenalty = state.moves * 26;
+  const timePenalty = elapsed * 4;
+  return Math.max(140, 1000 - movePenalty - timePenalty);
+}
+
+function startLevel(index){
+  state.levelIndex = index;
+  state.level = cloneLevel(index);
+  state.moves = 0;
+  state.solved = false;
+  state.levelStartedAt = performance.now();
+  state.message = '거울을 탭해 회전';
+  traceBeam();
+  updateHud();
+}
+
+function resetGame(){
+  state = {
+    running: true,
+    levelIndex: 0,
+    level: null,
+    moves: 0,
+    totalScore: 0,
+    solvedCount: 0,
+    solved: false,
+    levelStartedAt: 0,
+    beam: null,
+    message: '',
+    spark: 0
+  };
+  startLevel(0);
+}
+
+function drawBoard(now){
+  const g = ctx.createLinearGradient(0, 0, view.w, view.h);
+  g.addColorStop(0, '#0b1020');
+  g.addColorStop(0.5, '#1b2038');
+  g.addColorStop(1, '#0b1020');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, view.w, view.h);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  const glow = ctx.createRadialGradient(view.w * 0.18, view.h * 0.2, 0, view.w * 0.18, view.h * 0.2, view.w * 0.64);
+  glow.addColorStop(0, 'rgba(198,79,114,.22)');
+  glow.addColorStop(1, 'rgba(198,79,114,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, view.w, view.h);
+  ctx.restore();
+
+  ctx.strokeStyle = 'rgba(255,255,255,.09)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= SIZE; i++) {
+    const p = view.pad + i * view.cell;
+    ctx.beginPath();
+    ctx.moveTo(view.pad, p);
+    ctx.lineTo(view.pad + view.board, p);
+    ctx.moveTo(p, view.pad);
+    ctx.lineTo(p, view.pad + view.board);
+    ctx.stroke();
+  }
+
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if ((x + y) % 2 === 0) {
+        ctx.fillStyle = 'rgba(255,255,255,.025)';
+        ctx.fillRect(view.pad + x * view.cell, view.pad + y * view.cell, view.cell, view.cell);
+      }
+    }
+  }
+}
+
+function drawSource(){
+  const source = state.level.source;
+  const c = cellCenter(source.x, source.y);
+  const dir = DIRS[source.dir];
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  ctx.rotate(Math.atan2(dir.y, dir.x));
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = '#ffb4c8';
+  ctx.fillStyle = '#ff7398';
+  ctx.beginPath();
+  ctx.moveTo(view.cell * 0.32, 0);
+  ctx.lineTo(-view.cell * 0.22, -view.cell * 0.22);
+  ctx.lineTo(-view.cell * 0.16, 0);
+  ctx.lineTo(-view.cell * 0.22, view.cell * 0.22);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawTarget(now){
+  const target = state.level.target;
+  const c = cellCenter(target.x, target.y);
+  const pulse = 1 + Math.sin(now / 220) * 0.06;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.shadowBlur = state.beam.hit ? 24 : 12;
+  ctx.shadowColor = state.beam.hit ? '#7dffbf' : '#9db8ff';
+  ctx.strokeStyle = state.beam.hit ? '#7dffbf' : '#9db8ff';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, view.cell * 0.24 * pulse, 0, TAU);
+  ctx.stroke();
+  ctx.fillStyle = state.beam.hit ? 'rgba(125,255,191,.24)' : 'rgba(157,184,255,.14)';
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, view.cell * 0.14 * pulse, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBlocks(){
+  ctx.save();
+  for (const block of state.level.blocks) {
+    const x = view.pad + block.x * view.cell;
+    const y = view.pad + block.y * view.cell;
+    ctx.fillStyle = '#283044';
+    ctx.fillRect(x + 7, y + 7, view.cell - 14, view.cell - 14);
+    ctx.strokeStyle = 'rgba(255,255,255,.18)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 7, y + 7, view.cell - 14, view.cell - 14);
+    ctx.strokeStyle = 'rgba(0,0,0,.22)';
+    ctx.beginPath();
+    ctx.moveTo(x + 13, y + 13);
+    ctx.lineTo(x + view.cell - 13, y + view.cell - 13);
+    ctx.moveTo(x + view.cell - 13, y + 13);
+    ctx.lineTo(x + 13, y + view.cell - 13);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawMirrors(){
+  for (const mirror of state.level.mirrors) {
+    const x = view.pad + mirror.x * view.cell;
+    const y = view.pad + mirror.y * view.cell;
+    const c = cellCenter(mirror.x, mirror.y);
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,.06)';
+    ctx.strokeStyle = 'rgba(255,255,255,.18)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x + 6, y + 6, view.cell - 12, view.cell - 12, 9);
+    else ctx.rect(x + 6, y + 6, view.cell - 12, view.cell - 12);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.shadowBlur = 14;
+    ctx.shadowColor = '#ffffff';
+    ctx.strokeStyle = '#f7fbff';
+    ctx.lineWidth = Math.max(5, view.cell * 0.075);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    if (mirror.o === '/') {
+      ctx.moveTo(c.x - view.cell * 0.25, c.y + view.cell * 0.25);
+      ctx.lineTo(c.x + view.cell * 0.25, c.y - view.cell * 0.25);
+    } else {
+      ctx.moveTo(c.x - view.cell * 0.25, c.y - view.cell * 0.25);
+      ctx.lineTo(c.x + view.cell * 0.25, c.y + view.cell * 0.25);
+    }
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(198,79,114,.9)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawBeam(now){
+  const points = state.beam.points;
+  if (!points || points.length < 2) return;
+  const pulse = 0.72 + Math.sin(now / 90) * 0.18;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const width of [18, 10, 4]) {
+    ctx.strokeStyle = width === 4 ? '#fff5f8' : 'rgba(255,90,134,' + (width === 18 ? 0.18 * pulse : 0.42 * pulse) + ')';
+    ctx.lineWidth = Math.max(3, width * view.cell / 60);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSpark(now){
+  if (!state.beam.hit) return;
+  const c = cellCenter(state.level.target.x, state.level.target.y);
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (let i = 0; i < 12; i++) {
+    const a = now / 180 + (i / 12) * TAU;
+    const r = view.cell * (0.18 + (i % 3) * 0.035);
+    ctx.fillStyle = i % 2 ? '#7dffbf' : '#ffffff';
+    ctx.beginPath();
+    ctx.arc(c.x + Math.cos(a) * r, c.y + Math.sin(a) * r, 2.2, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawLabels(){
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,.78)';
+  ctx.font = '800 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(state.message, view.w / 2, view.h - 12);
+  ctx.restore();
+}
+
+function draw(now){
+  if (!ctx || !state) return;
+  drawBoard(now);
+  drawTarget(now);
+  drawBlocks();
+  drawMirrors();
+  drawBeam(now);
+  drawSpark(now);
+  drawSource();
+  drawLabels();
+}
+
+function updateHud(){
+  if (!state) return;
+  const levelEl = document.getElementById('hud-level');
+  if (!levelEl) return;
+  levelEl.textContent = (state.levelIndex + 1) + '/' + LEVELS.length;
+  document.getElementById('hud-moves').textContent = state.moves;
+  document.getElementById('hud-score').textContent = state.totalScore;
+  document.getElementById('hud-state').textContent = state.beam.hit ? '연결' : '탐색';
+}
+
+function rotateMirror(mirror){
+  if (state.solved) return;
+  mirror.o = mirror.o === '/' ? '\\' : '/';
+  state.moves += 1;
+  traceBeam();
+  if (state.beam.hit) {
+    state.solved = true;
+    const gained = levelScore();
+    state.totalScore += gained;
+    state.solvedCount += 1;
+    state.message = '+' + gained + '점 · 다음 단계';
+    updateHud();
+    setTimeout(function(){
+      if (!state || !state.running) return;
+      if (state.levelIndex >= LEVELS.length - 1) finish();
+      else startLevel(state.levelIndex + 1);
+    }, 880);
+  } else {
+    state.message = state.beam.stoppedBy === 'block' ? '장애물에 막혔습니다' : '경로를 다시 맞춰보세요';
+    updateHud();
+  }
+}
+
+function pointerToCell(event){
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const gx = Math.floor((x - view.pad) / view.cell);
+  const gy = Math.floor((y - view.pad) / view.cell);
+  if (gx < 0 || gx >= SIZE || gy < 0 || gy >= SIZE) return null;
+  return { x: gx, y: gy };
+}
+
+function handlePointer(event){
+  event.preventDefault();
+  if (!state || !state.running) return;
+  const cell = pointerToCell(event);
+  if (!cell) return;
+  const mirror = mirrorAt(cell.x, cell.y);
+  if (!mirror) {
+    state.message = '거울 타일을 탭하세요';
+    return;
+  }
+  rotateMirror(mirror);
+}
+
+function renderHome(){
+  cancelAnimationFrame(rafId);
+  clear();
+  const stats = loadStats(STORAGE_KEY, { played: 0, bestScore: 0 });
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div id="title-screen">' +
+      '<div class="brand-icon">◇</div>' +
+      '<h1 class="hero-title">레이저 미러</h1>' +
+      '<p class="hero-sub">거울을 돌려 빛을 목표까지 연결하는 Canvas 논리 퍼즐.</p>' +
+      '<div class="today-card"><div class="today-label">BEST</div><div class="today-date">' + (stats.bestScore || 0) + '점</div></div>' +
+      '<div class="rule-card">' +
+        '<h3>규칙</h3>' +
+        '<p>거울 타일을 탭하면 / 와 \\ 방향이 바뀝니다. 빛이 초록 목표에 닿으면 다음 단계로 넘어갑니다. 적은 이동과 빠른 해결일수록 점수가 높습니다.</p>' +
+      '</div>' +
+      '<div class="btn-row"><button class="btn" id="start-btn">시작</button></div>' +
+      '<div class="credits">5분 퍼즐 · 2026</div>' +
+    '</div>';
+  document.getElementById('start-btn').onclick = start;
+}
+
+function renderPlaying(){
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div class="hud-grid">' +
+      '<div class="hud-box"><div class="hud-label">LEVEL</div><div class="hud-value" id="hud-level">1/' + LEVELS.length + '</div></div>' +
+      '<div class="hud-box"><div class="hud-label">MOVES</div><div class="hud-value" id="hud-moves">0</div></div>' +
+      '<div class="hud-box"><div class="hud-label">SCORE</div><div class="hud-value" id="hud-score">0</div></div>' +
+      '<div class="hud-box"><div class="hud-label">BEAM</div><div class="hud-value" id="hud-state">탐색</div></div>' +
+    '</div>' +
+    '<div class="game-stage"><canvas class="laser-canvas" id="laser-canvas" aria-label="레이저 미러 게임 화면"></canvas></div>' +
+    '<p class="hint-line">거울을 탭해서 회전합니다. 막히면 현재 단계만 다시 시작할 수 있습니다.</p>' +
+    '<div class="btn-row"><button class="btn secondary" id="reset-level">단계 초기화</button></div>';
+
+  canvas = document.getElementById('laser-canvas');
+  ctx = canvas.getContext('2d');
+  setCanvasSize();
+  canvas.addEventListener('pointerdown', handlePointer);
+  document.getElementById('reset-level').onclick = function(){
+    startLevel(state.levelIndex);
+  };
+}
+
+function animationLoop(now){
+  if (!state || !state.running) return;
+  draw(now);
+  rafId = requestAnimationFrame(animationLoop);
+}
+
+function start(){
+  renderPlaying();
+  resetGame();
+  rafId = requestAnimationFrame(animationLoop);
+}
+
+function finish(){
+  if (!state || !state.running) return;
+  state.running = false;
+  cancelAnimationFrame(rafId);
+  const finalScore = state.totalScore;
+  const stats = recordBestScore(STORAGE_KEY, finalScore, {
+    solved: state.solvedCount,
+    moves: state.moves,
+    date: Brain.todayDateString()
+  });
+
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<section class="card">' +
+      '<h1 class="title">레이저 미러 결과</h1>' +
+      '<div class="score-hero">' + finalScore + '</div>' +
+      '<p class="puzzle-desc" style="text-align:center;">최고 기록 ' + (stats.bestScore || finalScore) + '점</p>' +
+      '<div class="result-stats">' +
+        '<div class="hud-box"><div class="hud-label">CLEAR</div><div class="hud-value">' + state.solvedCount + '/' + LEVELS.length + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">LAST MOVES</div><div class="hud-value">' + state.moves + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">BEST</div><div class="hud-value">' + (stats.bestScore || finalScore) + '</div></div>' +
+      '</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn" id="again-btn">다시</button>' +
+        '<button class="btn secondary" id="share-btn">공유</button>' +
+      '</div>' +
+    '</section>';
+
+  document.getElementById('again-btn').onclick = start;
+  document.getElementById('share-btn').onclick = function(event){
+    const text = '레이저 미러 ' + finalScore + '점 · 클리어 ' + state.solvedCount + '/' + LEVELS.length + '\\nhttps://games.jdgrid.com/brain/games/laser-mirror/';
+    shareToClipboard(text, event.currentTarget);
+  };
+}
+
+window.addEventListener('resize', function(){
+  setCanvasSize();
+});
+
+renderHome();
+</script>
+</body>
+</html>

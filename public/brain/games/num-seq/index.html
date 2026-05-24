@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>수열 완성 | 5분 퍼즐</title>
+<meta property="og:title" content="수열 완성">
+<meta property="og:description" content="다음에 올 숫자를 맞혀보세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#4a8fc0; --accent-dark:#2e6a97; --accent-soft:#b3d1e4; }
+  .seq-display{
+    display:flex;justify-content:center;gap:12px;margin:18px 0;flex-wrap:wrap;
+    font-family:"JetBrains Mono","Menlo",monospace;
+  }
+  .seq-num{
+    min-width:60px;padding:14px 16px;border-radius:12px;background:var(--bg-2);
+    font-size:24px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;
+  }
+  .seq-num.answer{ background:var(--accent-soft);color:var(--accent-dark);border:2px dashed var(--accent);position:relative; }
+  .seq-num.answer.revealed{ background:var(--green);color:white;border:none; }
+  .seq-num.answer.wrong{ background:var(--red);color:white;border:none; }
+  .options{ display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:8px; }
+  .opt-btn{
+    padding:14px;background:white;border:2px solid var(--ink-faint);border-radius:10px;
+    font:inherit;font-size:22px;font-weight:700;cursor:pointer;transition:all .12s;
+    font-variant-numeric:tabular-nums;
+  }
+  .opt-btn:hover:not(:disabled){ border-color:var(--accent);background:var(--accent-soft); }
+  .opt-btn:disabled{ opacity:.4;cursor:not-allowed; }
+  .hint{ text-align:center;color:var(--ink-dim);font-size:13px;margin-top:10px;font-style:italic;min-height:18px; }
+  .q-index{ text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:6px;letter-spacing:.1em; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, shuffle, mulberry32, randomSeed, loadStats, recordBestScore,
+        injectBackLink, shareToClipboard, clamp } = Brain;
+injectBackLink('../../');
+
+/* Puzzle generators — each returns { seq: [numbers], answer: number, hint: string } */
+const GEN = [
+  // Arithmetic: +k
+  (rng)=>{
+    const start = 2 + Math.floor(rng()*8);
+    const step  = 2 + Math.floor(rng()*6);
+    const seq = [start, start+step, start+step*2, start+step*3];
+    return { seq, answer: start+step*4, hint:'같은 값을 계속 더해요' };
+  },
+  // Arithmetic: -k
+  (rng)=>{
+    const step  = 2 + Math.floor(rng()*5);
+    const start = 30 + Math.floor(rng()*30);
+    const seq = [start, start-step, start-step*2, start-step*3];
+    return { seq, answer: start-step*4, hint:'같은 값을 계속 빼요' };
+  },
+  // Geometric: ×2
+  (rng)=>{
+    const start = 1 + Math.floor(rng()*4);
+    const seq = [start, start*2, start*4, start*8];
+    return { seq, answer: start*16, hint:'두 배씩 커져요' };
+  },
+  // Squares
+  (rng)=>{
+    const offset = Math.floor(rng()*3);
+    const seq = [1,2,3,4].map(n => (n+offset)*(n+offset));
+    return { seq, answer: (5+offset)*(5+offset), hint:'제곱수 수열이에요' };
+  },
+  // Fibonacci-like
+  (rng)=>{
+    const a = 1 + Math.floor(rng()*3), b = a + 1 + Math.floor(rng()*2);
+    const s = [a,b];
+    for(let i=2;i<5;i++) s.push(s[i-1]+s[i-2]);
+    return { seq: s.slice(0,4), answer: s[4], hint:'앞의 두 수를 더한 값' };
+  },
+  // Alternating +a -b
+  (rng)=>{
+    const start = 5 + Math.floor(rng()*10);
+    const p = 3 + Math.floor(rng()*4);
+    const q = 1 + Math.floor(rng()*3);
+    const seq = [start, start+p, start+p-q, start+p-q+p];
+    return { seq, answer: seq[3]-q, hint:'일정한 규칙으로 오르내려요' };
+  },
+  // Triangular numbers
+  (rng)=>{
+    const offset = Math.floor(rng()*2);
+    const tri = n => n*(n+1)/2;
+    const seq = [1,2,3,4].map(n => tri(n+offset));
+    return { seq, answer: tri(5+offset), hint:'차이가 1, 2, 3… 늘어나요' };
+  },
+  // Multiplier step: *2, *3, *4...
+  (rng)=>{
+    let v = 1 + Math.floor(rng()*2);
+    const seq = [v];
+    for(let i=2;i<=4;i++){ v *= i; seq.push(v); }
+    return { seq, answer: seq[3]*5, hint:'곱해지는 값이 커져요' };
+  }
+];
+
+const TOTAL = 6;
+const KEY = 'numseq_stats';
+const app = document.getElementById('app');
+
+function makeOptions(ans, rng){
+  const opts = new Set([ans]);
+  while(opts.size < 4){
+    const delta = (Math.floor(rng()*9) - 4) || 1;
+    const candidate = ans + delta * Math.max(1, Math.floor(Math.abs(ans)*0.1));
+    if(candidate !== ans && candidate > 0) opts.add(candidate);
+    if(opts.size < 4){
+      opts.add(Math.max(1, ans + (Math.floor(rng()*12) - 6)));
+    }
+  }
+  return shuffle([...opts], rng);
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0, recent:[] });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔢</div>
+    <h1 class="hero-title">수열 <span style="color:var(--accent);">완성</span></h1>
+    <div class="hero-sub">네 개의 숫자를 보고 다음 숫자를 맞혀보세요.<br>총 ${TOTAL}문제.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const state = { idx:0, correct:0, rng };
+  nextQuestion(state);
+}
+function nextQuestion(state){
+  if(state.idx >= TOTAL) return finish(state);
+  const puzzle = GEN[Math.floor(state.rng()*GEN.length)](state.rng);
+  const opts = makeOptions(puzzle.answer, state.rng);
+
+  clear(app);
+  const topbar = $el('div','topbar');
+  topbar.innerHTML = `<div class="stat">${state.idx+1} / ${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+  app.appendChild(topbar);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="q-index">문제 ${state.idx+1}</div>
+    <div class="seq-display">
+      ${puzzle.seq.map(n=>`<div class="seq-num">${n}</div>`).join('')}
+      <div class="seq-num answer" id="ans-slot">?</div>
+    </div>
+    <div class="options" id="opts">
+      ${opts.map(o=>`<button class="opt-btn" data-v="${o}">${o}</button>`).join('')}
+    </div>
+    <div class="hint" id="hint"></div>
+  `;
+  app.appendChild(card);
+
+  card.querySelectorAll('.opt-btn').forEach(btn=>{
+    btn.onclick = ()=>{
+      const v = parseInt(btn.dataset.v, 10);
+      const slot = document.getElementById('ans-slot');
+      card.querySelectorAll('.opt-btn').forEach(b=>b.disabled=true);
+      if(v === puzzle.answer){
+        slot.textContent = puzzle.answer;
+        slot.classList.add('revealed');
+        state.correct++;
+      } else {
+        btn.style.background = 'var(--red)';
+        btn.style.color = 'white';
+        btn.style.borderColor = 'var(--red)';
+        slot.textContent = puzzle.answer;
+        slot.classList.add('wrong');
+      }
+      document.getElementById('hint').textContent = '💡 ' + puzzle.hint;
+      setTimeout(()=>{ state.idx++; nextQuestion(state); }, 1500);
+    };
+  });
+}
+function finish(state){
+  const pct = Math.round(state.correct/TOTAL*100);
+  const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+  const isBest = stats.bestScore === state.correct;
+  clear(app);
+  const r = $el('div','result-card');
+  const emoji = pct >= 90 ? '🏆' : pct >= 70 ? '🎉' : pct >= 50 ? '👏' : '🙂';
+  r.innerHTML = `
+    <div class="result-emoji">${emoji}</div>
+    <div class="result-title">수열 챌린지 종료</div>
+    <div class="result-big">${state.correct} / ${TOTAL}</div>
+    <div class="result-sub">정답률 ${pct}%</div>
+    ${isBest ? '<div class="ribbon">🌟 개인 최고</div>' : ''}
+    <div class="btn-row">
+      <button class="btn" id="btn-share">공유</button>
+      <button class="btn secondary" id="btn-again">다시</button>
+      <button class="btn ghost" id="btn-home">홈</button>
+    </div>
+  `;
+  app.appendChild(r);
+  document.getElementById('btn-again').onclick = startGame;
+  document.getElementById('btn-home').onclick = showTitle;
+  document.getElementById('btn-share').onclick = (e)=>
+    shareToClipboard(`수열 완성\n🔢 ${state.correct}/${TOTAL} (${pct}%)${isBest?'  🌟':''}`, e.target);
+}
+
+showTitle();
+window.__GAME__ = { GEN, TOTAL, KEY, makeOptions };
+</script>
+</body>
+</html>

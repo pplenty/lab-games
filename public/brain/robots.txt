@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /tools/
+Disallow: /tests/
+
+Sitemap: https://games.jdgrid.com/brain/sitemap.xml

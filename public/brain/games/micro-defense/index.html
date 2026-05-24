@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>마이크로 디펜스 | 5분 퍼즐</title>
+<meta name="description" content="3종 타워를 조합하고 업그레이드해 웨이브를 막는 Canvas 전략 디펜스 게임.">
+<meta property="og:title" content="마이크로 디펜스">
+<meta property="og:description" content="3종 타워를 조합해 웨이브 막기.">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/micro-defense/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#b45f2a; --accent-dark:#874014; --accent-soft:#efbd92; }
+  main{ max-width: 640px; }
+  .hud-grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:8px;
+    margin-bottom:12px;
+  }
+  .hud-box{
+    background:var(--card);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    padding:8px 10px;
+    text-align:center;
+  }
+  .hud-label{
+    color:var(--ink-dim);
+    font-size:11px;
+    font-weight:800;
+  }
+  .hud-value{
+    color:var(--accent-dark);
+    font-size:19px;
+    font-weight:900;
+    font-variant-numeric:tabular-nums;
+  }
+  .game-stage{
+    background:var(--card);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:12px;
+    margin-bottom:14px;
+  }
+  .defense-canvas{
+    display:block;
+    width:100%;
+    aspect-ratio:4 / 5;
+    background:#101824;
+    border-radius:8px;
+    cursor:pointer;
+    touch-action:none;
+  }
+  .hint-line{
+    color:var(--ink-dim);
+    font-size:13px;
+    line-height:1.6;
+    text-align:center;
+  }
+  .tower-bar{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:8px;
+    margin:0 0 12px;
+  }
+  .tower-choice{
+    background:var(--card);
+    border:1px solid #e6ddcf;
+    border-radius:8px;
+    color:var(--ink);
+    cursor:pointer;
+    font:inherit;
+    min-height:54px;
+    padding:8px 6px;
+    text-align:center;
+    touch-action:manipulation;
+  }
+  .tower-choice b{
+    display:block;
+    font-size:13px;
+    line-height:1.1;
+  }
+  .tower-choice .tower-copy{
+    color:var(--ink-dim);
+    display:block;
+    font-size:11px;
+    margin-top:3px;
+  }
+  .tower-icon{
+    display:block;
+    height:22px;
+    margin:0 auto 6px;
+    position:relative;
+    width:32px;
+  }
+  .tower-icon::before,
+  .tower-icon::after{
+    content:"";
+    left:50%;
+    position:absolute;
+    top:50%;
+    transform:translate(-50%,-50%);
+  }
+  .tower-icon-pulse::before{
+    background:#8df0ff;
+    border:1px solid rgba(20,24,34,.3);
+    border-radius:50%;
+    height:16px;
+    width:16px;
+  }
+  .tower-icon-pulse::after{
+    border-bottom:4px solid #8df0ff;
+    border-top:4px solid #8df0ff;
+    height:10px;
+    transform:translate(-6px,-50%);
+    width:22px;
+  }
+  .tower-icon-frost::before{
+    background:#9ed8ff;
+    border:1px solid rgba(20,24,34,.3);
+    height:18px;
+    transform:translate(-50%,-50%) rotate(45deg);
+    width:18px;
+  }
+  .tower-icon-frost::after{
+    background:rgba(20,24,34,.35);
+    height:2px;
+    width:28px;
+  }
+  .tower-icon-blast::before{
+    border-bottom:11px solid transparent;
+    border-left:24px solid #ffb75e;
+    border-top:11px solid transparent;
+    transform:translate(-42%,-50%);
+  }
+  .tower-icon-blast::after{
+    background:#ffb75e;
+    height:16px;
+    transform:translate(-90%,-50%) rotate(45deg);
+    width:16px;
+  }
+  .tower-choice.active{
+    border-color:var(--accent);
+    box-shadow:0 0 0 2px rgba(180,95,42,.18);
+  }
+  .tower-choice.is-costly:not(.active){
+    opacity:.58;
+  }
+  .score-hero{
+    color:var(--accent-dark);
+    font-size:54px;
+    font-weight:900;
+    line-height:1;
+    margin:18px 0 8px;
+    text-align:center;
+  }
+  .result-stats{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:8px;
+    margin:16px 0;
+  }
+  .result-stats .hud-box{
+    border:1px solid #e6ddcf;
+    box-shadow:none;
+  }
+  @media(max-width:520px){
+    main{ padding-inline:14px; }
+    .hud-grid{ grid-template-columns:repeat(2,1fr); }
+    .tower-bar{ grid-template-columns:1fr; }
+    .result-stats{ grid-template-columns:1fr; }
+    .score-hero{ font-size:46px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const GAME_ID = 'micro-defense';
+const STORAGE_KEY = GAME_ID + '_stats';
+const TAU = Math.PI * 2;
+const MAX_WAVE = 8;
+
+const TOWER_TYPES = {
+  pulse: {
+    label: '펄스',
+    short: '빠른 단일',
+    cost: 45,
+    color: '#8df0ff',
+    range: 0.2,
+    damage: 22,
+    fireRate: 0.46,
+    shotSpeed: 620
+  },
+  frost: {
+    label: '프로스트',
+    short: '감속',
+    cost: 60,
+    color: '#9ed8ff',
+    range: 0.24,
+    damage: 13,
+    fireRate: 0.78,
+    shotSpeed: 540,
+    slow: 1.15
+  },
+  blast: {
+    label: '블래스트',
+    short: '범위 피해',
+    cost: 80,
+    color: '#ffb75e',
+    range: 0.18,
+    damage: 38,
+    fireRate: 1.05,
+    shotSpeed: 500,
+    splash: 0.105
+  }
+};
+
+const PATH_POINTS = [
+  [0.06, 0.16],
+  [0.46, 0.16],
+  [0.46, 0.36],
+  [0.18, 0.36],
+  [0.18, 0.61],
+  [0.76, 0.61],
+  [0.76, 0.82],
+  [0.94, 0.82]
+];
+
+const PAD_POINTS = [
+  [0.25, 0.10],
+  [0.64, 0.21],
+  [0.33, 0.48],
+  [0.08, 0.54],
+  [0.58, 0.50],
+  [0.86, 0.67],
+  [0.58, 0.86]
+];
+
+let canvas = null;
+let ctx = null;
+let rafId = 0;
+let state = null;
+let view = { w: 360, h: 450, dpr: 1 };
+
+function clamp(n, lo, hi){
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function rand(lo, hi){
+  return lo + Math.random() * (hi - lo);
+}
+
+function dist(a, b, c, d){
+  return Math.hypot(a - c, b - d);
+}
+
+function polygonPath(x, y, radius, sides, rotation){
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const a = rotation + TAU * i / sides;
+    const px = x + Math.cos(a) * radius;
+    const py = y + Math.sin(a) * radius;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+function scaledPoint(pair){
+  return { x: pair[0] * view.w, y: pair[1] * view.h };
+}
+
+function scaledPath(){
+  return PATH_POINTS.map(scaledPoint);
+}
+
+function setCanvasSize(){
+  if (!canvas || !ctx) return;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(300, Math.floor(rect.width));
+  const h = Math.max(360, Math.floor(rect.height || w * 1.25));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  view = { w, h, dpr };
+}
+
+function pathPosition(progress){
+  const path = scaledPath();
+  const lengths = [];
+  let total = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const len = dist(path[i].x, path[i].y, path[i + 1].x, path[i + 1].y);
+    lengths.push(len);
+    total += len;
+  }
+
+  let d = progress * total;
+  for (let i = 0; i < lengths.length; i++) {
+    if (d <= lengths[i]) {
+      const a = path[i];
+      const b = path[i + 1];
+      const t = d / lengths[i];
+      return {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        angle: Math.atan2(b.y - a.y, b.x - a.x)
+      };
+    }
+    d -= lengths[i];
+  }
+  const last = path[path.length - 1];
+  return { x: last.x, y: last.y, angle: 0 };
+}
+
+function resetState(){
+  state = {
+    running: true,
+    wave: 0,
+    lives: 10,
+    energy: 125,
+    score: 0,
+    kills: 0,
+    towers: [],
+    enemies: [],
+    shots: [],
+    particles: [],
+    spawnQueue: [],
+    spawnTimer: 0,
+    waveDelay: 0.9,
+    selectedPad: -1,
+    selectedType: 'pulse',
+    message: '패드를 탭해 타워 설치'
+  };
+}
+
+function startWave(){
+  if (state.wave >= MAX_WAVE) return;
+  state.wave += 1;
+  let bonusText = '';
+  if (state.wave > 1) {
+    const interest = Math.min(45, 10 + state.towers.length * 5);
+    state.energy += interest;
+    bonusText = ' · 보너스 +' + interest;
+  }
+  const count = 7 + state.wave * 3;
+  state.spawnQueue = [];
+  for (let i = 0; i < count; i++) {
+    const shield = state.wave >= 5 && i % 7 === 4;
+    const tough = !shield && state.wave >= 4 && i % 6 === 5;
+    const fast = !shield && state.wave >= 3 && i % 5 === 3;
+    state.spawnQueue.push({
+      type: shield ? 'shield' : tough ? 'tough' : fast ? 'fast' : 'normal',
+      delay: i * Math.max(0.34, 0.72 - state.wave * 0.035)
+    });
+  }
+  state.spawnTimer = 0;
+  state.waveDelay = 0;
+  state.message = 'Wave ' + state.wave + bonusText;
+}
+
+function spawnEnemy(type){
+  const hpBase = type === 'tough' ? 118 : type === 'fast' ? 48 : type === 'shield' ? 78 : 64;
+  const speedBase = type === 'tough' ? 0.034 : type === 'fast' ? 0.078 : type === 'shield' ? 0.046 : 0.052;
+  const color = type === 'tough' ? '#ff8a54' : type === 'fast' ? '#75e6ff' : type === 'shield' ? '#c89dff' : '#e4f4a6';
+  state.enemies.push({
+    type,
+    progress: 0,
+    hp: hpBase + state.wave * 13,
+    maxHp: hpBase + state.wave * 13,
+    shield: type === 'shield' ? 45 + state.wave * 9 : 0,
+    maxShield: type === 'shield' ? 45 + state.wave * 9 : 0,
+    speed: speedBase + state.wave * 0.003,
+    slow: 0,
+    color,
+    reward: type === 'tough' ? 24 : type === 'fast' ? 14 : type === 'shield' ? 20 : 16
+  });
+}
+
+function addParticles(x, y, color, count, power){
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * TAU;
+    const sp = rand(power * 0.3, power);
+    const life = rand(0.28, 0.7);
+    state.particles.push({
+      x,
+      y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      life,
+      maxLife: life,
+      size: rand(2, 5),
+      color
+    });
+  }
+}
+
+function towerAtPad(pad){
+  return state.towers.find((tower) => tower.pad === pad);
+}
+
+function padPosition(index){
+  return scaledPoint(PAD_POINTS[index]);
+}
+
+function towerSpec(type){
+  return TOWER_TYPES[type] || TOWER_TYPES.pulse;
+}
+
+function towerStats(tower){
+  const spec = towerSpec(tower.type);
+  const level = tower.level || 1;
+  return {
+    color: spec.color,
+    range: view.w * (spec.range + (level - 1) * 0.035),
+    damage: spec.damage + (level - 1) * (tower.type === 'blast' ? 20 : tower.type === 'frost' ? 9 : 14),
+    fireRate: spec.fireRate * Math.pow(0.86, level - 1),
+    shotSpeed: spec.shotSpeed,
+    slow: spec.slow ? spec.slow + (level - 1) * 0.25 : 0,
+    splash: spec.splash ? view.w * (spec.splash + (level - 1) * 0.018) : 0
+  };
+}
+
+function upgradeCost(tower){
+  const spec = towerSpec(tower.type);
+  return Math.round(spec.cost * 0.92 + tower.level * 42);
+}
+
+function selectedCost(){
+  return towerSpec(state.selectedType).cost;
+}
+
+function refreshTowerButtons(){
+  for (const type of Object.keys(TOWER_TYPES)) {
+    const btn = document.querySelector('[data-tower="' + type + '"]');
+    if (!btn || !state) continue;
+    btn.classList.toggle('active', state.selectedType === type);
+    btn.classList.toggle('is-costly', state.energy < towerSpec(type).cost);
+  }
+}
+
+function selectTower(type){
+  if (!state || !TOWER_TYPES[type]) return;
+  state.selectedType = type;
+  state.message = towerSpec(type).label + ' 선택';
+  refreshTowerButtons();
+  draw();
+}
+
+function buildOrUpgrade(index){
+  const tower = towerAtPad(index);
+  if (tower) {
+    const cost = upgradeCost(tower);
+    if (tower.level >= 3) {
+      state.message = '최대 레벨';
+      return;
+    }
+    if (state.energy < cost) {
+      state.message = '에너지 부족';
+      return;
+    }
+    state.energy -= cost;
+    tower.level += 1;
+    const p = padPosition(index);
+    addParticles(p.x, p.y, towerSpec(tower.type).color, 28, 145);
+    state.message = towerSpec(tower.type).label + ' Lv' + tower.level;
+    updateHud();
+    return;
+  }
+
+  const type = state.selectedType;
+  const spec = towerSpec(type);
+  if (state.energy < spec.cost) {
+    state.message = '에너지 부족';
+    return;
+  }
+  const p = padPosition(index);
+  state.energy -= spec.cost;
+  state.towers.push({
+    pad: index,
+    type,
+    x: p.x,
+    y: p.y,
+    level: 1,
+    cooldown: 0,
+    angle: 0
+  });
+  addParticles(p.x, p.y, spec.color, 24, 130);
+  state.message = spec.label + ' 설치';
+  updateHud();
+}
+
+function enemyScreen(enemy){
+  return pathPosition(enemy.progress);
+}
+
+function updateSpawning(dt){
+  if (state.spawnQueue.length === 0) {
+    if (state.enemies.length === 0) {
+      state.waveDelay -= dt;
+      if (state.wave < MAX_WAVE && state.waveDelay <= 0) {
+        startWave();
+      } else if (state.wave >= MAX_WAVE) {
+        finish();
+      }
+    }
+    return;
+  }
+
+  state.spawnTimer += dt;
+  while (state.spawnQueue.length > 0 && state.spawnTimer >= state.spawnQueue[0].delay) {
+    const next = state.spawnQueue.shift();
+    spawnEnemy(next.type);
+  }
+}
+
+function updateEnemies(dt){
+  const survivors = [];
+  for (const enemy of state.enemies) {
+    const slowFactor = enemy.slow > 0 ? 0.55 : 1;
+    enemy.progress += enemy.speed * slowFactor * dt;
+    enemy.slow = Math.max(0, enemy.slow - dt);
+
+    if (enemy.hp <= 0) {
+      const p = enemyScreen(enemy);
+      state.kills += 1;
+      state.energy += enemy.reward;
+      state.score += enemy.reward * 9 + state.wave * 15;
+      addParticles(p.x, p.y, enemy.color, 24, 145);
+      continue;
+    }
+
+    if (enemy.progress >= 1) {
+      state.lives -= enemy.type === 'tough' ? 2 : 1;
+      state.message = '침투!';
+      if (state.lives <= 0) {
+        finish();
+        return;
+      }
+      continue;
+    }
+    survivors.push(enemy);
+  }
+  state.enemies = survivors;
+}
+
+function updateTowers(dt){
+  for (const tower of state.towers) {
+    const fixed = padPosition(tower.pad);
+    tower.x = fixed.x;
+    tower.y = fixed.y;
+    const stats = towerStats(tower);
+    tower.cooldown = Math.max(0, tower.cooldown - dt);
+    let target = null;
+    let bestProgress = -1;
+    for (const enemy of state.enemies) {
+      const p = enemyScreen(enemy);
+      const d = dist(tower.x, tower.y, p.x, p.y);
+      if (d <= stats.range && enemy.progress > bestProgress) {
+        target = enemy;
+        bestProgress = enemy.progress;
+      }
+    }
+
+    if (!target) continue;
+    const p = enemyScreen(target);
+    tower.angle = Math.atan2(p.y - tower.y, p.x - tower.x);
+    if (tower.cooldown > 0) continue;
+    tower.cooldown = stats.fireRate;
+    state.shots.push({
+      x: tower.x,
+      y: tower.y,
+      target,
+      type: tower.type,
+      speed: stats.shotSpeed,
+      damage: stats.damage,
+      level: tower.level,
+      slow: stats.slow,
+      splash: stats.splash,
+      color: stats.color
+    });
+  }
+}
+
+function damageEnemy(enemy, amount, slow, sourceX, sourceY, color){
+  if (!enemy || enemy.hp <= 0) return;
+  let remaining = amount;
+  if (enemy.shield > 0) {
+    enemy.shield -= amount * 1.08;
+    const overflow = Math.max(0, -enemy.shield);
+    remaining = enemy.shield > 0 ? 0 : Math.min(amount, overflow * 0.62);
+    enemy.shield = Math.max(0, enemy.shield);
+  }
+  if (remaining > 0) enemy.hp -= remaining;
+  if (slow) enemy.slow = Math.max(enemy.slow, slow);
+  if (sourceX != null) addParticles(sourceX, sourceY, color || enemy.color, 6, 70);
+}
+
+function updateShots(dt){
+  const shots = [];
+  for (const shot of state.shots) {
+    if (!shot.target || shot.target.hp <= 0 || !state.enemies.includes(shot.target)) continue;
+    const p = enemyScreen(shot.target);
+    const d = dist(shot.x, shot.y, p.x, p.y);
+    if (d < 12) {
+      damageEnemy(shot.target, shot.damage, shot.slow, p.x, p.y, shot.color);
+      if (shot.splash > 0) {
+        for (const enemy of state.enemies) {
+          if (enemy === shot.target || enemy.hp <= 0) continue;
+          const ep = enemyScreen(enemy);
+          const sd = dist(p.x, p.y, ep.x, ep.y);
+          if (sd <= shot.splash) {
+            damageEnemy(enemy, shot.damage * (1 - sd / shot.splash) * 0.58, 0, ep.x, ep.y, shot.color);
+          }
+        }
+        addParticles(p.x, p.y, shot.color, 20, 135);
+      } else {
+        addParticles(p.x, p.y, shot.color, 9, 86);
+      }
+      continue;
+    }
+    const dx = (p.x - shot.x) / d;
+    const dy = (p.y - shot.y) / d;
+    shot.x += dx * shot.speed * dt;
+    shot.y += dy * shot.speed * dt;
+    shots.push(shot);
+  }
+  state.shots = shots;
+}
+
+function updateParticles(dt){
+  const next = [];
+  for (const p of state.particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.985;
+    p.vy = p.vy * 0.985 + 70 * dt;
+    p.life -= dt;
+    if (p.life > 0) next.push(p);
+  }
+  state.particles = next;
+}
+
+function drawBackground(){
+  const g = ctx.createLinearGradient(0, 0, 0, view.h);
+  g.addColorStop(0, '#101824');
+  g.addColorStop(0.48, '#1d2534');
+  g.addColorStop(1, '#101720');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, view.w, view.h);
+
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1;
+  for (let x = -view.h; x < view.w; x += 34) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + view.h, view.h);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPath(){
+  const path = scaledPath();
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#5a4537';
+  ctx.lineWidth = view.w * 0.095;
+  ctx.beginPath();
+  ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#b68a58';
+  ctx.lineWidth = view.w * 0.062;
+  ctx.beginPath();
+  ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,255,255,.2)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([10, 14]);
+  ctx.beginPath();
+  ctx.moveTo(path[0].x, path[0].y);
+  for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPads(){
+  const cost = selectedCost();
+  for (let i = 0; i < PAD_POINTS.length; i++) {
+    const p = padPosition(i);
+    const tower = towerAtPad(i);
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.strokeStyle = tower ? 'rgba(255,227,141,.88)' : 'rgba(255,255,255,.38)';
+    ctx.fillStyle = tower ? 'rgba(255,227,141,.16)' : 'rgba(255,255,255,.06)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, view.w * 0.04, 0, TAU);
+    ctx.fill();
+    ctx.stroke();
+    if (!tower) {
+      ctx.fillStyle = 'rgba(255,255,255,.44)';
+      ctx.font = '800 12px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(cost, p.x, p.y + 4);
+    }
+    ctx.restore();
+  }
+}
+
+function drawTowers(){
+  for (const tower of state.towers) {
+    const spec = towerSpec(tower.type);
+    const stats = towerStats(tower);
+    const body = view.w * 0.027 + tower.level * 1.8;
+    ctx.save();
+    ctx.translate(tower.x, tower.y);
+    ctx.globalAlpha = 0.08;
+    ctx.strokeStyle = stats.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, stats.range, 0, TAU);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    ctx.save();
+    ctx.rotate(tower.angle);
+    ctx.shadowBlur = 16;
+    ctx.shadowColor = stats.color;
+    ctx.fillStyle = stats.color;
+    ctx.strokeStyle = 'rgba(255,255,255,.62)';
+    ctx.lineWidth = 1.5;
+    if (tower.type === 'pulse') {
+      ctx.fillRect(-2, -7, view.w * 0.052, 4);
+      ctx.fillRect(-2, 3, view.w * 0.052, 4);
+      ctx.beginPath();
+      ctx.arc(view.w * 0.052, -5, 2.5, 0, TAU);
+      ctx.arc(view.w * 0.052, 5, 2.5, 0, TAU);
+      ctx.fill();
+    } else if (tower.type === 'frost') {
+      polygonPath(view.w * 0.024, 0, view.w * 0.026, 4, Math.PI / 4);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(view.w * 0.07, 0);
+      ctx.lineTo(-2, -view.w * 0.022);
+      ctx.lineTo(-2, view.w * 0.022);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.shadowBlur = 16;
+    ctx.shadowColor = stats.color;
+    ctx.fillStyle = stats.color;
+    ctx.strokeStyle = 'rgba(255,255,255,.72)';
+    ctx.lineWidth = 1.5;
+    if (tower.type === 'pulse') {
+      polygonPath(0, 0, body, 12, 0);
+      ctx.fill();
+      ctx.stroke();
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.arc(0, 0, body * 0.45, 0, TAU);
+      ctx.stroke();
+    } else if (tower.type === 'frost') {
+      polygonPath(0, 0, body * 1.15, 6, Math.PI / 6);
+      ctx.fill();
+      ctx.stroke();
+      for (let i = 0; i < 3; i++) {
+        const a = tower.angle + TAU * i / 3;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * body * 0.2, Math.sin(a) * body * 0.2);
+        ctx.lineTo(Math.cos(a) * body * 1.15, Math.sin(a) * body * 1.15);
+        ctx.stroke();
+      }
+    } else {
+      ctx.save();
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-body * 0.82, -body * 0.82, body * 1.64, body * 1.64);
+      ctx.strokeRect(-body * 0.82, -body * 0.82, body * 1.64, body * 1.64);
+      ctx.restore();
+      ctx.beginPath();
+      ctx.arc(0, 0, body * 0.55, 0, TAU);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.fillStyle = 'rgba(18,24,34,.82)';
+    ctx.arc(0, 0, body * 0.26, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(20,24,34,.72)';
+    ctx.font = '900 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(spec.label[0] + tower.level, tower.x, tower.y + view.w * 0.062);
+  }
+}
+
+function drawEnemies(){
+  for (const enemy of state.enemies) {
+    const p = enemyScreen(enemy);
+    const r = enemy.type === 'tough' ? view.w * 0.033 : enemy.type === 'fast' ? view.w * 0.024 : view.w * 0.027;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = enemy.color;
+    ctx.fillStyle = enemy.color;
+    ctx.strokeStyle = 'rgba(255,255,255,.66)';
+    ctx.lineWidth = 1.7;
+    ctx.beginPath();
+    if (enemy.type === 'fast') {
+      ctx.rotate(p.angle);
+      ctx.moveTo(r * 1.55, 0);
+      ctx.lineTo(-r * 0.85, -r * 0.85);
+      ctx.lineTo(-r * 0.35, 0);
+      ctx.lineTo(-r * 0.85, r * 0.85);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else if (enemy.type === 'tough') {
+      polygonPath(0, 0, r * 1.05, 6, Math.PI / 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(36,26,22,.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.62, -r * 0.18);
+      ctx.lineTo(r * 0.62, -r * 0.18);
+      ctx.moveTo(-r * 0.62, r * 0.22);
+      ctx.lineTo(r * 0.62, r * 0.22);
+      ctx.stroke();
+    } else if (enemy.type === 'shield') {
+      polygonPath(0, 0, r * 1.2, 4, Math.PI / 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(210,180,255,.95)';
+      ctx.lineWidth = 2.2;
+      polygonPath(0, 0, r * 1.62, 6, -Math.PI / 2);
+      ctx.stroke();
+    } else {
+      polygonPath(0, 0, r, 8, Math.PI / 8);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(0,0,0,.45)';
+    ctx.fillRect(p.x - r, p.y - r - 10, r * 2, 4);
+    ctx.fillStyle = '#7dff9c';
+    ctx.fillRect(p.x - r, p.y - r - 10, r * 2 * Math.max(0, enemy.hp / enemy.maxHp), 4);
+    if (enemy.shield > 0) {
+      ctx.strokeStyle = 'rgba(210,180,255,.9)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r + 6, -Math.PI / 2, -Math.PI / 2 + TAU * Math.max(0, enemy.shield / enemy.maxShield));
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function drawShots(){
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const shot of state.shots) {
+    const target = shot.target && state.enemies.includes(shot.target) ? enemyScreen(shot.target) : null;
+    const angle = target ? Math.atan2(target.y - shot.y, target.x - shot.x) : 0;
+    const size = 4 + shot.level;
+    ctx.save();
+    ctx.translate(shot.x, shot.y);
+    ctx.rotate(angle);
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = shot.color;
+    ctx.fillStyle = shot.color;
+    if (shot.type === 'frost') {
+      polygonPath(0, 0, size * 1.25, 4, Math.PI / 4);
+      ctx.fill();
+    } else if (shot.type === 'blast') {
+      ctx.fillRect(-size * 0.9, -size * 0.9, size * 1.8, size * 1.8);
+      ctx.strokeStyle = 'rgba(255,255,255,.55)';
+      ctx.strokeRect(-size * 0.9, -size * 0.9, size * 1.8, size * 1.8);
+    } else {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, size * 1.55, size * 0.82, 0, 0, TAU);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(size * 1.2, 0, size * 0.38, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawParticles(){
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const p of state.particles) {
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (0.7 + alpha), 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawLabels(){
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,.78)';
+  ctx.font = '800 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(state.message, view.w / 2, 24);
+
+  if (state.energy < selectedCost()) {
+    ctx.fillStyle = 'rgba(255,255,255,.55)';
+    ctx.fillText('적을 처치해 에너지를 모으세요', view.w / 2, view.h - 16);
+  } else {
+    ctx.fillStyle = 'rgba(255,255,255,.55)';
+    ctx.fillText(towerSpec(state.selectedType).label + ' 선택 · 빈 패드 설치 · 타워 업그레이드', view.w / 2, view.h - 16);
+  }
+  ctx.restore();
+}
+
+function draw(){
+  if (!ctx || !state) return;
+  drawBackground();
+  drawPath();
+  drawPads();
+  drawTowers();
+  drawEnemies();
+  drawShots();
+  drawParticles();
+  drawLabels();
+}
+
+function updateHud(){
+  const waveEl = document.getElementById('hud-wave');
+  if (!waveEl || !state) return;
+  waveEl.textContent = state.wave + '/' + MAX_WAVE;
+  document.getElementById('hud-life').textContent = state.lives;
+  document.getElementById('hud-energy').textContent = state.energy;
+  document.getElementById('hud-score').textContent = state.score;
+  refreshTowerButtons();
+}
+
+function update(dt){
+  updateSpawning(dt);
+  updateEnemies(dt);
+  if (!state.running) return;
+  updateTowers(dt);
+  updateShots(dt);
+  updateParticles(dt);
+  updateHud();
+}
+
+function loop(now){
+  if (!state || !state.running) return;
+  if (!state.lastAt) state.lastAt = now;
+  const dt = Math.min(0.035, (now - state.lastAt) / 1000);
+  state.lastAt = now;
+  update(dt);
+  if (!state.running) return;
+  draw();
+  rafId = requestAnimationFrame(loop);
+}
+
+function handlePointer(event){
+  if (!state || !state.running) return;
+  event.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < PAD_POINTS.length; i++) {
+    const p = padPosition(i);
+    const d = dist(x, y, p.x, p.y);
+    if (d < bestD) {
+      best = i;
+      bestD = d;
+    }
+  }
+  if (best >= 0 && bestD < view.w * 0.075) {
+    buildOrUpgrade(best);
+  } else {
+    state.message = '패드를 선택하세요';
+  }
+}
+
+function renderHome(){
+  cancelAnimationFrame(rafId);
+  clear();
+  const stats = loadStats(STORAGE_KEY, { played: 0, bestScore: 0 });
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div id="title-screen">' +
+      '<div class="brand-icon">◆</div>' +
+      '<h1 class="hero-title">마이크로 디펜스</h1>' +
+      '<p class="hero-sub">3종 타워를 조합하고 업그레이드해서 8개의 웨이브를 막는 Canvas 전략 게임.</p>' +
+      '<div class="today-card"><div class="today-label">BEST</div><div class="today-date">' + (stats.bestScore || 0) + '점</div></div>' +
+      '<div class="rule-card">' +
+        '<h3>규칙</h3>' +
+        '<p>펄스는 빠른 단일 공격, 프로스트는 감속, 블래스트는 범위 피해입니다. 빈 패드는 설치, 기존 타워는 업그레이드입니다.</p>' +
+      '</div>' +
+      '<div class="btn-row"><button class="btn" id="start-btn">시작</button></div>' +
+      '<div class="credits">5분 퍼즐 · 2026</div>' +
+    '</div>';
+  document.getElementById('start-btn').onclick = start;
+}
+
+function renderPlaying(){
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div class="hud-grid">' +
+      '<div class="hud-box"><div class="hud-label">WAVE</div><div class="hud-value" id="hud-wave">0/' + MAX_WAVE + '</div></div>' +
+      '<div class="hud-box"><div class="hud-label">LIFE</div><div class="hud-value" id="hud-life">10</div></div>' +
+      '<div class="hud-box"><div class="hud-label">ENERGY</div><div class="hud-value" id="hud-energy">125</div></div>' +
+      '<div class="hud-box"><div class="hud-label">SCORE</div><div class="hud-value" id="hud-score">0</div></div>' +
+    '</div>' +
+    '<div class="game-stage"><canvas class="defense-canvas" id="defense-canvas" aria-label="마이크로 디펜스 게임 화면"></canvas></div>' +
+    '<div class="tower-bar">' +
+      '<button class="tower-choice active" data-tower="pulse"><span class="tower-icon tower-icon-pulse" aria-hidden="true"></span><b>펄스 · 45</b><span class="tower-copy">빠른 단일</span></button>' +
+      '<button class="tower-choice" data-tower="frost"><span class="tower-icon tower-icon-frost" aria-hidden="true"></span><b>프로스트 · 60</b><span class="tower-copy">감속</span></button>' +
+      '<button class="tower-choice" data-tower="blast"><span class="tower-icon tower-icon-blast" aria-hidden="true"></span><b>블래스트 · 80</b><span class="tower-copy">범위 피해</span></button>' +
+    '</div>' +
+    '<p class="hint-line">타워 타입을 고르고 빈 패드를 탭하세요. 이미 설치된 타워는 업그레이드됩니다.</p>';
+
+  canvas = document.getElementById('defense-canvas');
+  ctx = canvas.getContext('2d');
+  setCanvasSize();
+  canvas.addEventListener('pointerdown', handlePointer);
+  for (const btn of document.querySelectorAll('[data-tower]')) {
+    btn.onclick = function(){
+      selectTower(btn.dataset.tower);
+    };
+  }
+}
+
+function start(){
+  resetState();
+  renderPlaying();
+  refreshTowerButtons();
+  draw();
+  rafId = requestAnimationFrame(loop);
+}
+
+function finish(){
+  if (!state || !state.running) return;
+  state.running = false;
+  cancelAnimationFrame(rafId);
+
+  const clearBonus = state.wave >= MAX_WAVE && state.lives > 0 ? 1500 : 0;
+  const finalScore = state.score + state.lives * 130 + state.energy * 2 + clearBonus;
+  const stats = recordBestScore(STORAGE_KEY, finalScore, {
+    wave: state.wave,
+    lives: state.lives,
+    kills: state.kills,
+    towers: state.towers.length,
+    date: Brain.todayDateString()
+  });
+
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<section class="card">' +
+      '<h1 class="title">마이크로 디펜스 결과</h1>' +
+      '<div class="score-hero">' + finalScore + '</div>' +
+      '<p class="puzzle-desc" style="text-align:center;">최고 기록 ' + (stats.bestScore || finalScore) + '점</p>' +
+      '<div class="result-stats">' +
+        '<div class="hud-box"><div class="hud-label">WAVE</div><div class="hud-value">' + state.wave + '/' + MAX_WAVE + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">KILLS</div><div class="hud-value">' + state.kills + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">LIFE</div><div class="hud-value">' + Math.max(0, state.lives) + '</div></div>' +
+      '</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn" id="again-btn">다시</button>' +
+        '<button class="btn secondary" id="share-btn">공유</button>' +
+      '</div>' +
+    '</section>';
+
+  document.getElementById('again-btn').onclick = start;
+  document.getElementById('share-btn').onclick = function(event){
+    const text = '마이크로 디펜스 ' + finalScore + '점 · Wave ' + state.wave + '/' + MAX_WAVE + ' · 처치 ' + state.kills + '\\nhttps://games.jdgrid.com/brain/games/micro-defense/';
+    shareToClipboard(text, event.currentTarget);
+  };
+}
+
+window.addEventListener('resize', function(){
+  setCanvasSize();
+  draw();
+});
+
+document.addEventListener('keydown', function(event){
+  if (!state || !state.running) return;
+  const map = { Digit1: 'pulse', Digit2: 'frost', Digit3: 'blast' };
+  if (!map[event.code]) return;
+  selectTower(map[event.code]);
+});
+
+renderHome();
+</script>
+</body>
+</html>

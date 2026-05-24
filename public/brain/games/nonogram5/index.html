@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>네모네모 로직 5×5 | 5분 퍼즐</title>
+<meta property="og:title" content="네모네모 로직 5×5">
+<meta property="og:description" content="숫자 힌트를 따라 그림을 복원하는 논리 퍼즐.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#617488; --accent-dark:#44576a; --accent-soft:#b9c4ce; }
+  .nono-wrap{ display:flex;flex-direction:column;align-items:center;gap:14px; }
+  .nono-table{ display:grid;gap:2px;background:#2a3d4e;padding:2px;border-radius:8px; }
+  /* 1 row of col hints + 5 rows of cells, 1 col of row hints + 5 cols of cells */
+  .hint-cell{ background:#dfe3e9;min-width:42px;min-height:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--accent-dark);padding:2px; }
+  .hint-cell.row{ min-width:52px; padding:0 6px; flex-direction:row;gap:4px; }
+  .cell{
+    background:white;width:42px;height:42px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:16px;user-select:none;
+    transition:all .08s;
+  }
+  .cell.filled{ background:var(--accent-dark);color:white; }
+  .cell.x{ color:var(--ink-faint); }
+  .cell.x::before{ content:"×"; }
+  .corner{ background:#dfe3e9; }
+  .actions{ display:flex;gap:10px;justify-content:center; }
+  .mode-btn{
+    padding:8px 18px;background:var(--card);border:2px solid var(--ink-faint);border-radius:8px;
+    font:inherit;font-weight:700;font-size:13px;cursor:pointer;transition:all .12s;
+  }
+  .mode-btn.active{ background:var(--accent);color:white;border-color:var(--accent); }
+  @media (max-width: 540px){
+    .hint-cell{ min-width:36px;min-height:36px;font-size:11px; }
+    .hint-cell.row{ min-width:44px;padding:0 4px;gap:3px; }
+    .cell{ width:36px;height:36px;font-size:14px; }
+  }
+  @media (max-width: 380px){
+    .hint-cell{ min-width:30px;min-height:30px;font-size:10px;padding:1px; }
+    .hint-cell.row{ min-width:36px;padding:0 3px;gap:2px; }
+    .cell{ width:30px;height:30px;font-size:12px; }
+    .mode-btn{ padding:8px 12px;font-size:12px; }
+  }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, seededPick, mulberry32, randomSeed, loadStats, recordBestTime,
+        injectBackLink, shareToClipboard, formatClock } = Brain;
+injectBackLink('../../');
+
+const N = 5;
+const KEY = 'nonogram5_stats';
+const app = document.getElementById('app');
+
+/* 5×5 puzzle bank. 1 = filled, 0 = empty */
+const PUZZLES = [
+  // Heart
+  [[0,1,0,1,0],[1,1,1,1,1],[1,1,1,1,1],[0,1,1,1,0],[0,0,1,0,0]],
+  // Diamond
+  [[0,0,1,0,0],[0,1,1,1,0],[1,1,1,1,1],[0,1,1,1,0],[0,0,1,0,0]],
+  // Smile
+  [[0,1,0,1,0],[0,0,0,0,0],[1,0,0,0,1],[0,1,1,1,0],[0,0,0,0,0]],
+  // Arrow up
+  [[0,0,1,0,0],[0,1,1,1,0],[1,0,1,0,1],[0,0,1,0,0],[0,0,1,0,0]],
+  // Cross
+  [[0,0,1,0,0],[0,0,1,0,0],[1,1,1,1,1],[0,0,1,0,0],[0,0,1,0,0]],
+  // House
+  [[0,0,1,0,0],[0,1,1,1,0],[1,1,1,1,1],[1,0,1,0,1],[1,1,1,1,1]]
+];
+
+function rowHints(row){
+  const hints = [];
+  let run = 0;
+  for(const v of row){
+    if(v === 1) run++;
+    else if(run){ hints.push(run); run = 0; }
+  }
+  if(run) hints.push(run);
+  return hints.length ? hints : [0];
+}
+function colHints(puz, c){
+  return rowHints(puz.map(r => r[c]));
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestMs:null });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">⬛</div>
+    <h1 class="hero-title">네모네모 <span style="color:var(--accent);">로직 5×5</span></h1>
+    <div class="hero-sub">행·열의 숫자는 <b>연속으로 칠해진 칸의 길이</b>.<br>모두 맞춰서 그림을 완성하세요.</div>
+    ${stats.bestMs ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${formatClock(stats.bestMs)}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const puz = seededPick(PUZZLES, rng);
+  const state = {
+    puzzle: puz,
+    user: Array.from({length:N}, ()=>Array(N).fill(0)), // 0=empty, 1=filled, 2=x
+    mode: 'fill',
+    startedAt: performance.now(),
+    timer: null,
+    finished: false
+  };
+
+  clear(app);
+  const topbar = $el('div','topbar');
+  topbar.innerHTML = `<div class="stat" id="mode-info">✏️ 칠하기</div><div class="stat" id="t">0:00</div>`;
+  app.appendChild(topbar);
+  const card = $el('div','card');
+  card.innerHTML = `<div class="nono-wrap">
+    <div class="nono-table" id="table"></div>
+    <div class="actions">
+      <button class="mode-btn active" id="m-fill">✏️ 칠하기</button>
+      <button class="mode-btn" id="m-x">✕ 표시</button>
+      <button class="mode-btn" id="m-reset">⟲ 초기화</button>
+    </div>
+  </div>`;
+  app.appendChild(card);
+
+  function render(){
+    const t = document.getElementById('table');
+    t.innerHTML = '';
+    t.style.gridTemplateColumns = 'max-content repeat('+N+', 42px)';
+    // Row 0: corner + col hints
+    const corner = $el('div','corner hint-cell'); t.appendChild(corner);
+    for(let c=0;c<N;c++){
+      const h = $el('div','hint-cell');
+      h.innerHTML = colHints(state.puzzle, c).map(n=>`<div>${n}</div>`).join('');
+      t.appendChild(h);
+    }
+    for(let r=0;r<N;r++){
+      const rh = $el('div','hint-cell row');
+      rh.innerHTML = rowHints(state.puzzle[r]).map(n=>`<div>${n}</div>`).join('');
+      t.appendChild(rh);
+      for(let c=0;c<N;c++){
+        const cell = $el('div','cell');
+        const v = state.user[r][c];
+        if(v === 1) cell.classList.add('filled');
+        if(v === 2) cell.classList.add('x');
+        cell.onclick = ()=>{
+          const target = state.mode === 'fill' ? 1 : 2;
+          state.user[r][c] = state.user[r][c] === target ? 0 : target;
+          render();
+          checkWin();
+        };
+        t.appendChild(cell);
+      }
+    }
+  }
+  function checkWin(){
+    for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+      const target = state.puzzle[r][c];
+      const cur = state.user[r][c] === 1 ? 1 : 0;
+      if(target !== cur) return;
+    }
+    finish();
+  }
+  function tick(){
+    const el = document.getElementById('t');
+    if(el) el.textContent = formatClock(performance.now() - state.startedAt);
+  }
+  function finish(){
+    state.finished = true;
+    clearInterval(state.timer);
+    const elapsed = performance.now() - state.startedAt;
+    const stats = recordBestTime(KEY, Math.round(elapsed), {});
+    const isBest = stats.bestMs === Math.round(elapsed);
+    setTimeout(()=>{
+      clear(app);
+      const r = $el('div','result-card');
+      r.innerHTML = `
+        <div class="result-emoji">${elapsed<90000?'🏆':'🎉'}</div>
+        <div class="result-title">그림 완성!</div>
+        <div class="result-big">${formatClock(elapsed)}</div>
+        ${isBest ? '<div class="ribbon">🌟 개인 최고</div>' : ''}
+        <div class="btn-row">
+          <button class="btn" id="btn-share">공유</button>
+          <button class="btn secondary" id="btn-again">다시</button>
+          <button class="btn ghost" id="btn-home">홈</button>
+        </div>
+      `;
+      app.appendChild(r);
+      document.getElementById('btn-again').onclick = startGame;
+      document.getElementById('btn-home').onclick = showTitle;
+      document.getElementById('btn-share').onclick = (e)=>
+        shareToClipboard(`네모네모 5×5\n⬛ ${formatClock(elapsed)}${isBest?'\n🌟 최고':''}`, e.target);
+    }, 500);
+  }
+
+  document.getElementById('m-fill').onclick = ()=>{
+    state.mode = 'fill';
+    document.getElementById('m-fill').classList.add('active');
+    document.getElementById('m-x').classList.remove('active');
+    document.getElementById('mode-info').textContent = '✏️ 칠하기';
+  };
+  document.getElementById('m-x').onclick = ()=>{
+    state.mode = 'x';
+    document.getElementById('m-x').classList.add('active');
+    document.getElementById('m-fill').classList.remove('active');
+    document.getElementById('mode-info').textContent = '✕ 표시';
+  };
+  document.getElementById('m-reset').onclick = ()=>{
+    state.user = Array.from({length:N},()=>Array(N).fill(0));
+    render();
+  };
+  state.timer = setInterval(tick, 250);
+  render();
+}
+
+showTitle();
+window.__GAME__ = { PUZZLES, rowHints, colHints, N, KEY };
+</script>
+</body>
+</html>

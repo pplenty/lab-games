@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>움직이는 타겟 | 5분 퍼즐</title>
+<meta property="og:title" content="움직이는 타겟">
+<meta property="og:description" content="20초 안에 움직이는 타겟을 최대한 많이 맞혀보세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#c93c3c;--accent-dark:#9c2a2a;--accent-soft:#e6a8a8; }
+  .arena{
+    position:relative;width:100%;max-width:480px;aspect-ratio:1;
+    background:radial-gradient(circle at center, var(--accent-soft) 0%, var(--bg) 80%);
+    border-radius:14px;margin:0 auto 12px;overflow:hidden;cursor:crosshair;
+    box-shadow:var(--shadow);touch-action:none;
+  }
+  .target{
+    position:absolute;border-radius:50%;background:radial-gradient(circle at 30% 30%, white, var(--accent) 50%, var(--accent-dark));
+    transform:translate(-50%,-50%);cursor:pointer;user-select:none;
+    transition:transform .05s;box-shadow:0 0 12px rgba(201,60,60,.4);
+  }
+  .target:hover{ transform:translate(-50%,-50%) scale(1.05); }
+  .target.hit{ animation:hit .25s forwards; }
+  @keyframes hit{ to{transform:translate(-50%,-50%) scale(2);opacity:0;} }
+  .miss-marker{ position:absolute;width:18px;height:18px;transform:translate(-50%,-50%);border:2px solid var(--red);border-radius:50%;pointer-events:none;animation:fadeout .6s forwards; }
+  @keyframes fadeout{ to{opacity:0;transform:translate(-50%,-50%) scale(2);} }
+  .timer-bar{ height:8px;background:var(--card);border-radius:4px;overflow:hidden;margin-bottom:12px;box-shadow:var(--shadow); }
+  .timer-fill{ height:100%;background:linear-gradient(to right,var(--accent),var(--accent-dark)); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const DURATION = 20000;
+const KEY = 'sniper_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🎯</div>
+    <h1 class="hero-title">움직이는 <span style="color:var(--accent);">타겟</span></h1>
+    <div class="hero-sub">20초 동안 움직이는 빨간 타겟을<br>최대한 많이 맞혀보세요.</div>
+    <div class="rule-card">
+      타겟은 나타났다가 일정 시간 후 사라집니다.<br>
+      맞추면 +1점, 빗나가면 −1점. 후반으로 갈수록 작아집니다.
+      ${stats.bestScore > 0 ? `<div class="best">🌟 최고 ${stats.bestScore}점</div>` : ''}
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const startedAt = performance.now();
+  const state = { score:0, hits:0, misses:0, current:null, timer:null, despawnTimer:null };
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">🎯 <span id="score">0</span></div><div class="stat" id="time">20.0s</div>`;
+  app.appendChild(top);
+  const bar = $el('div','timer-bar');
+  bar.innerHTML = `<div class="timer-fill" id="fill" style="width:100%"></div>`;
+  app.appendChild(bar);
+  const arena = $el('div','arena');
+  arena.id = 'arena';
+  app.appendChild(arena);
+
+  arena.addEventListener('click', e => {
+    // if we clicked directly on a target, target's handler runs; otherwise count as miss
+    if(e.target === arena){
+      state.score = Math.max(0, state.score - 1);
+      state.misses++;
+      document.getElementById('score').textContent = state.score;
+      const rect = arena.getBoundingClientRect();
+      const x = e.clientX - rect.left, y = e.clientY - rect.top;
+      const m = $el('div','miss-marker');
+      m.style.left = x + 'px'; m.style.top = y + 'px';
+      arena.appendChild(m);
+      setTimeout(()=>m.remove(), 600);
+    }
+  });
+
+  function spawn(){
+    if(state.current){ state.current.remove(); state.current = null; }
+    const elapsed = performance.now() - startedAt;
+    const rect = arena.getBoundingClientRect();
+    const progress = elapsed / DURATION;
+    // Size shrinks from 80 to 36
+    const size = Math.round(80 - progress * 44);
+    const pad = size/2 + 6;
+    const x = pad + Math.random() * (rect.width - pad*2);
+    const y = pad + Math.random() * (rect.height - pad*2);
+    const t = $el('div','target');
+    t.style.width = size + 'px';
+    t.style.height = size + 'px';
+    t.style.left = x + 'px';
+    t.style.top = y + 'px';
+    t.onclick = (e)=>{
+      e.stopPropagation();
+      t.classList.add('hit');
+      state.score++;
+      state.hits++;
+      document.getElementById('score').textContent = state.score;
+      clearTimeout(state.despawnTimer);
+      setTimeout(spawn, 200);
+    };
+    arena.appendChild(t);
+    state.current = t;
+    // auto despawn after 1.2s - 0.5s by progress
+    const life = Math.max(500, 1200 - progress * 500);
+    state.despawnTimer = setTimeout(()=>{
+      if(t.parentElement) t.remove();
+      if(performance.now() - startedAt < DURATION) spawn();
+    }, life);
+  }
+
+  function tick(){
+    const el = performance.now() - startedAt;
+    const rem = Math.max(0, DURATION - el);
+    document.getElementById('time').textContent = (rem/1000).toFixed(1)+'s';
+    document.getElementById('fill').style.width = (rem/DURATION*100)+'%';
+    if(rem <= 0){
+      clearInterval(state.timer);
+      clearTimeout(state.despawnTimer);
+      if(state.current) state.current.remove();
+      finish();
+    }
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.score, { hits: state.hits, misses: state.misses });
+    const isBest = stats.bestScore === state.score && state.score > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = state.score >= 20 ? '🏆' : state.score >= 12 ? '🎉' : '👏';
+    const acc = state.hits + state.misses > 0 ? Math.round(state.hits/(state.hits+state.misses)*100) : 0;
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">20초 종료</div>
+      <div class="result-big">${state.score}점</div>
+      <div class="result-sub">명중 ${state.hits} · 빗나감 ${state.misses} · 정확도 ${acc}%</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`움직이는 타겟\n🎯 ${state.score}점 (${acc}%)${isBest?' 🌟':''}`, e.target);
+  }
+  setTimeout(spawn, 400);
+  state.timer = setInterval(tick, 80);
+}
+showTitle();
+window.__GAME__ = { DURATION, KEY };
+</script>
+</body>
+</html>

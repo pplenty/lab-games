@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>박자 탭 | 5분 퍼즐</title>
+<meta property="og:title" content="박자 탭">
+<meta property="og:description" content="일정한 박자에 정확히 맞춰 탭하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#c56b9e;--accent-dark:#96477a;--accent-soft:#e4b5cd; }
+  .pulse{ aspect-ratio:1;max-width:300px;margin:0 auto 14px;border-radius:50%;background:var(--accent-soft);display:flex;align-items:center;justify-content:center;font-size:60px;color:white;cursor:pointer;transition:transform .1s;user-select:none; }
+  .pulse.on{ background:var(--accent);transform:scale(1.05); }
+  .pulse.off{ background:var(--accent-soft); }
+  .info{ text-align:center;color:var(--ink-dim);font-size:14px;margin-bottom:10px; }
+  .bpm{ text-align:center;color:var(--accent-dark);font-weight:700;font-size:20px;margin-bottom:10px; }
+  .progress-dots{ display:flex;gap:3px;justify-content:center;margin-top:10px; }
+  .p-dot{ width:14px;height:5px;border-radius:2px;background:var(--ink-faint); }
+  .p-dot.perfect{ background:var(--green); }
+  .p-dot.good{ background:var(--yellow); }
+  .p-dot.miss{ background:var(--red); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const BPM = 90;
+const INTERVAL_MS = 60000 / BPM;
+const TOTAL_BEATS = 12;
+const PULSE_ON_MS = 160;
+const KEY = 'beat_tap_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🎵</div>
+    <h1 class="hero-title">박자 <span style="color:var(--accent);">탭</span></h1>
+    <div class="hero-sub">원이 반짝이는 순간에 맞춰<br>화면을 정확히 탭하세요 (${BPM} BPM).</div>
+    <div class="rule-card">반짝임 ±80ms = PERFECT (+10)<br>±180ms = GOOD (+5)<br>그 외 = MISS (0)<br>${TOTAL_BEATS}번 측정.${stats.bestScore>0?`<div class="best">🌟 최고 ${stats.bestScore}점</div>`:''}</div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = { score:0, beatIdx:0, nextBeatAt:0, hits:[], done:false, startedAt:0 };
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">🎯 <span id="score">0</span></div><div class="stat" id="beat">0/${TOTAL_BEATS}</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="bpm">${BPM} BPM</div>
+    <div class="info" id="info">반짝임 준비…</div>
+    <div class="pulse off" id="pulse">●</div>
+    <div class="progress-dots" id="dots">
+      ${Array.from({length:TOTAL_BEATS},()=>'<div class="p-dot"></div>').join('')}
+    </div>
+  `;
+  app.appendChild(card);
+  const pulse = document.getElementById('pulse');
+  const dots = document.getElementById('dots').children;
+
+  state.startedAt = performance.now();
+  // Schedule beats with 2-second countdown
+  const COUNTDOWN = 2000;
+  state.nextBeatAt = state.startedAt + COUNTDOWN;
+
+  function tick(){
+    if(state.done) return;
+    const now = performance.now();
+    if(state.beatIdx >= TOTAL_BEATS){
+      state.done = true;
+      setTimeout(finish, 400);
+      return;
+    }
+    if(now >= state.nextBeatAt){
+      pulse.classList.remove('off'); pulse.classList.add('on');
+      setTimeout(()=>{
+        pulse.classList.remove('on'); pulse.classList.add('off');
+      }, PULSE_ON_MS);
+      state.nextBeatAt += INTERVAL_MS;
+      // Also check if previous beat was missed
+      if(state.hits.length < state.beatIdx){
+        dots[state.beatIdx].classList.add('miss');
+        state.hits.push(null);
+      }
+      state.beatIdx++;
+      document.getElementById('beat').textContent = state.beatIdx + '/' + TOTAL_BEATS;
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function onTap(){
+    if(state.done) return;
+    if(performance.now() - state.startedAt < COUNTDOWN) return;
+    // Find the nearest beat
+    const now = performance.now();
+    const expectedBeat = state.nextBeatAt - INTERVAL_MS; // the beat that was just shown
+    const diff = Math.abs(now - expectedBeat);
+    let tier, score;
+    if(diff <= 80){ tier='perfect'; score=10; }
+    else if(diff <= 180){ tier='good'; score=5; }
+    else { tier='miss'; score=0; }
+    const idx = state.beatIdx - 1;
+    if(idx >= 0 && state.hits.length === idx){
+      state.hits.push({ tier, diff });
+      dots[idx].classList.add(tier);
+      state.score += score;
+      document.getElementById('score').textContent = state.score;
+      document.getElementById('info').textContent = tier === 'perfect' ? 'PERFECT!' : tier === 'good' ? 'GOOD' : 'MISS';
+    }
+  }
+
+  pulse.addEventListener('click', onTap);
+  pulse.addEventListener('touchstart', (e)=>{ e.preventDefault(); onTap(); });
+  document.addEventListener('keydown', onKey);
+  function onKey(e){ if(e.code==='Space'){ e.preventDefault(); onTap(); } }
+
+  function finish(){
+    pulse.removeEventListener('click', onTap);
+    document.removeEventListener('keydown', onKey);
+    const stats = recordBestScore(KEY, state.score, {});
+    const isBest = stats.bestScore === state.score && state.score > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = state.score >= 100 ? '🏆' : state.score >= 60 ? '🎉' : '👏';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">박자 종료</div>
+      <div class="result-big">${state.score}점</div>
+      <div class="result-sub">${state.hits.filter(h=>h&&h.tier==='perfect').length} PERFECT · ${state.hits.filter(h=>h&&h.tier==='good').length} GOOD</div>
+      ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`박자 탭\n🎵 ${state.score}점${isBest?' 🌟':''}`, e.target);
+  }
+
+  requestAnimationFrame(tick);
+}
+showTitle();
+window.__GAME__ = { BPM, INTERVAL_MS, TOTAL_BEATS, KEY };
+</script>
+</body>
+</html>

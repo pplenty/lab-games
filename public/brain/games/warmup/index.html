@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>5분 뇌 워밍업</title>
+<style>
+  :root{
+    --bg:#fdf6e8;
+    --bg-2:#f6ebd5;
+    --card:#ffffff;
+    --ink:#2a2a2a;
+    --ink-dim:#7a7a7a;
+    --ink-faint:#b8b0a0;
+    --accent:#f08a3e;
+    --accent-dark:#d97429;
+    --accent-soft:#ffc896;
+    --cool:#6a9ac4;
+    --cool-dark:#4a7aa4;
+    --green:#8bc34a;
+    --green-dark:#6ca02c;
+    --red:#e57373;
+    --yellow:#f6c445;
+    --purple:#a177bc;
+    --shadow:0 4px 14px rgba(0,0,0,.07);
+    --shadow-strong:0 12px 30px rgba(0,0,0,.12);
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    background:linear-gradient(135deg,var(--bg) 0%,var(--bg-2) 100%);
+    color:var(--ink);
+    font-family:"Pretendard","Noto Sans KR","Apple SD Gothic Neo",system-ui,-apple-system,sans-serif;
+    font-size:16px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  main{max-width:640px;margin:0 auto;padding:5vh 24px 15vh;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;font-size:13px;color:var(--ink-dim);}
+  .progress-dots{display:flex;gap:6px;}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--ink-faint);transition:all .3s;}
+  .dot.active{background:var(--accent);transform:scale(1.2);}
+  .dot.done{background:var(--green);}
+  .timer{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink);}
+  .card{background:var(--card);border-radius:var(--radius);padding:32px 28px;box-shadow:var(--shadow);margin-bottom:20px;}
+  h1.title{font-size:30px;font-weight:800;letter-spacing:-.02em;margin-bottom:8px;}
+  .subtitle{color:var(--ink-dim);font-size:14px;letter-spacing:.1em;margin-bottom:24px;}
+  h2.puzzle-title{font-size:22px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em;}
+  .puzzle-desc{color:var(--ink-dim);font-size:14px;margin-bottom:24px;line-height:1.7;}
+
+  .btn{
+    background:var(--accent);color:white;border:0;border-radius:10px;
+    padding:14px 28px;font:inherit;font-weight:600;font-size:16px;cursor:pointer;
+    transition:all .2s;box-shadow:0 2px 8px rgba(240,138,62,.3);
+  }
+  .btn:hover:not(:disabled){background:var(--accent-dark);transform:translateY(-1px);box-shadow:0 4px 12px rgba(240,138,62,.4);}
+  .btn:active:not(:disabled){transform:translateY(0);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+  .btn.secondary{background:transparent;color:var(--ink);border:2px solid var(--ink);box-shadow:none;}
+  .btn.secondary:hover:not(:disabled){background:var(--ink);color:white;}
+  .btn.ghost{background:transparent;color:var(--ink-dim);border:1px solid var(--ink-faint);box-shadow:none;padding:10px 20px;font-size:14px;}
+  .btn.ghost:hover:not(:disabled){color:var(--ink);border-color:var(--ink);}
+  .btn-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:20px;}
+
+  /* Title screen */
+  #title-screen{text-align:center;padding-top:10vh;}
+  .brand{font-size:42px;margin-bottom:20px;}
+  .hero-title{font-size:36px;font-weight:800;margin-bottom:12px;letter-spacing:-.02em;}
+  .hero-sub{color:var(--ink-dim);font-size:16px;margin-bottom:36px;line-height:1.8;max-width:380px;margin-left:auto;margin-right:auto;}
+  .today-card{background:var(--card);border-radius:var(--radius);padding:20px;margin-bottom:24px;box-shadow:var(--shadow);}
+  .today-label{color:var(--ink-dim);font-size:12px;letter-spacing:.2em;margin-bottom:6px;}
+  .today-date{font-size:20px;font-weight:700;}
+  .best-score{color:var(--accent-dark);font-weight:700;margin-top:8px;}
+  .puzzle-list{text-align:left;margin-top:20px;}
+  .puzzle-list li{padding:8px 0;color:var(--ink-dim);font-size:14px;display:flex;align-items:center;gap:10px;}
+  .puzzle-list li .emoji{font-size:20px;}
+
+  /* Association puzzle */
+  .hints{display:flex;flex-direction:column;gap:12px;margin-bottom:24px;}
+  .hint-card{background:var(--bg-2);padding:14px 18px;border-radius:12px;display:flex;align-items:center;gap:12px;opacity:0;transform:translateY(8px);animation:slidein .5s ease forwards;}
+  @keyframes slidein{to{opacity:1;transform:translateY(0);}}
+  .hint-num{background:var(--accent);color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;}
+  .hint-text{font-size:17px;font-weight:500;}
+  .input-row{display:flex;gap:10px;align-items:stretch;}
+  .input-row input{flex:1;padding:14px 18px;border:2px solid var(--ink-faint);border-radius:10px;font:inherit;font-size:17px;background:white;transition:border-color .2s;}
+  .input-row input:focus{outline:none;border-color:var(--accent);}
+  .feedback{margin-top:12px;font-size:14px;min-height:20px;}
+  .feedback.wrong{color:var(--red);}
+  .feedback.right{color:var(--green-dark);font-weight:600;}
+  .attempts-left{color:var(--ink-dim);font-size:13px;text-align:right;margin-top:10px;}
+
+  /* Math 24 */
+  .numbers-row{display:flex;gap:10px;justify-content:center;margin-bottom:22px;flex-wrap:wrap;}
+  .num-chip{background:var(--cool);color:white;padding:12px 22px;border-radius:12px;font-size:24px;font-weight:700;min-width:60px;text-align:center;box-shadow:var(--shadow);}
+  .expr-input{width:100%;padding:16px 20px;border:2px solid var(--ink-faint);border-radius:12px;font:inherit;font-size:22px;font-family:"JetBrains Mono","Courier New",monospace;text-align:center;letter-spacing:.05em;background:white;}
+  .expr-input:focus{outline:none;border-color:var(--accent);}
+  .expr-result{text-align:center;font-size:18px;margin-top:14px;min-height:26px;font-weight:600;}
+  .expr-result.right{color:var(--green-dark);}
+  .expr-result.wrong{color:var(--red);}
+  .expr-result.neutral{color:var(--ink-dim);}
+  .op-buttons{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap;}
+  .op-btn{
+    background:var(--bg-2);color:var(--ink);border:0;border-radius:8px;
+    padding:10px 16px;font:inherit;font-size:20px;font-weight:600;cursor:pointer;
+    min-width:44px;transition:all .15s;
+  }
+  .op-btn:hover{background:var(--accent-soft);}
+
+  /* Deduction */
+  .statements{display:flex;flex-direction:column;gap:10px;margin-bottom:20px;}
+  .statement{background:var(--bg-2);padding:12px 16px;border-radius:10px;display:flex;align-items:center;gap:12px;}
+  .statement .who{background:var(--cool);color:white;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;}
+  .clue-box{background:#fff8e8;border-left:3px solid var(--yellow);padding:10px 14px;border-radius:6px;margin-bottom:20px;font-size:14px;color:#8a6f28;}
+  .suspect-buttons{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  .suspect-btn{
+    background:white;border:2px solid var(--ink-faint);border-radius:12px;
+    padding:16px 8px;font:inherit;font-size:18px;font-weight:700;cursor:pointer;
+    transition:all .2s;
+  }
+  .suspect-btn:hover{border-color:var(--accent);color:var(--accent-dark);}
+  .suspect-btn.selected{border-color:var(--accent);background:var(--accent-soft);}
+  .suspect-btn.correct{border-color:var(--green);background:#d4efc4;color:var(--green-dark);}
+  .suspect-btn.incorrect{border-color:var(--red);background:#fad4d4;color:#a04040;}
+
+  /* Memory sequence */
+  .memory-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:360px;margin:0 auto 20px;}
+  .mem-cell{
+    aspect-ratio:1;border-radius:14px;background:var(--bg-2);cursor:pointer;
+    transition:all .12s;display:flex;align-items:center;justify-content:center;font-size:32px;
+  }
+  .mem-cell.flash{box-shadow:inset 0 0 0 4px currentColor;}
+  .mem-cell[data-c="0"]{color:#e57373;}.mem-cell[data-c="0"].flash{background:#e57373;}
+  .mem-cell[data-c="1"]{color:#f6c445;}.mem-cell[data-c="1"].flash{background:#f6c445;}
+  .mem-cell[data-c="2"]{color:#8bc34a;}.mem-cell[data-c="2"].flash{background:#8bc34a;}
+  .mem-cell[data-c="3"]{color:#6a9ac4;}.mem-cell[data-c="3"].flash{background:#6a9ac4;}
+  .mem-cell[data-c="4"]{color:#a177bc;}.mem-cell[data-c="4"].flash{background:#a177bc;}
+  .mem-cell[data-c="5"]{color:#f08a3e;}.mem-cell[data-c="5"].flash{background:#f08a3e;}
+  .mem-cell[data-c="6"]{color:#4db6ac;}.mem-cell[data-c="6"].flash{background:#4db6ac;}
+  .mem-cell[data-c="7"]{color:#ba68c8;}.mem-cell[data-c="7"].flash{background:#ba68c8;}
+  .mem-cell[data-c="8"]{color:#8d6e63;}.mem-cell[data-c="8"].flash{background:#8d6e63;}
+  .mem-cell.disabled{cursor:not-allowed;opacity:.55;}
+  .mem-cell.user-click{box-shadow:inset 0 0 0 4px var(--ink);}
+  .mem-indicator{text-align:center;margin-bottom:16px;color:var(--ink-dim);font-size:14px;}
+  .seq-progress{display:flex;gap:5px;justify-content:center;margin-top:12px;}
+  .seq-dot{width:8px;height:8px;border-radius:50%;background:var(--ink-faint);}
+  .seq-dot.filled{background:var(--accent);}
+
+  /* Spot the odd one */
+  .spot-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:2px;margin:0 auto 16px;max-width:460px;}
+  .spot-cell{aspect-ratio:1;font-size:17px;display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:3px;transition:transform .1s;user-select:none;}
+  .spot-cell:hover{transform:scale(1.3);z-index:2;}
+  .spot-cell.found{background:var(--green);transform:scale(1.5);}
+  .spot-cell.miss{background:var(--red);opacity:.3;}
+  @media(max-width:540px){
+    .spot-grid{grid-template-columns:repeat(10,1fr);gap:2px;max-width:100%;}
+    .spot-cell{font-size:14px;}
+  }
+
+  /* Results */
+  .score-hero{text-align:center;padding:24px 0;}
+  .score-big{font-size:72px;font-weight:800;color:var(--accent);line-height:1;letter-spacing:-.03em;}
+  .score-label{color:var(--ink-dim);font-size:13px;letter-spacing:.2em;margin-top:8px;}
+  .score-grade{font-size:24px;font-weight:700;margin-top:16px;}
+  .score-comment{color:var(--ink-dim);font-size:15px;margin-top:6px;font-style:italic;}
+  .breakdown{margin-top:24px;}
+  .breakdown-row{display:flex;align-items:center;gap:14px;padding:12px 4px;border-bottom:1px solid #f0e8d8;}
+  .breakdown-row:last-child{border-bottom:0;}
+  .breakdown-icon{font-size:28px;width:40px;text-align:center;}
+  .breakdown-name{flex:1;font-weight:600;}
+  .breakdown-time{color:var(--ink-dim);font-size:13px;margin-right:14px;}
+  .breakdown-score{font-weight:700;color:var(--accent-dark);font-variant-numeric:tabular-nums;min-width:60px;text-align:right;}
+  .breakdown-bar{height:6px;background:#f0e8d8;border-radius:3px;overflow:hidden;margin-top:8px;}
+  .breakdown-bar-fill{height:100%;background:linear-gradient(to right,var(--accent-soft),var(--accent));border-radius:3px;transition:width 1s ease-out;}
+
+  .status-msg{text-align:center;padding:40px 0;font-size:18px;color:var(--ink-dim);}
+  .fade-in{animation:fadein .5s ease;}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+  .pulse{animation:pulse 1.6s ease infinite;}
+  @keyframes pulse{0%,100%{opacity:.8;}50%{opacity:1;}}
+
+  .credits{color:var(--ink-faint);font-size:11px;text-align:center;margin-top:40px;letter-spacing:.15em;}
+
+  @media(max-width:540px){
+    main{padding:3vh 16px 15vh;}
+    .card{padding:22px 18px;}
+    h1.title, .hero-title{font-size:26px;}
+    .score-big{font-size:58px;}
+  }
+</style>
+</head>
+<body>
+<a class="nav-back" href="../../" style="position:fixed;top:16px;left:16px;background:#fff;color:#666;text-decoration:none;padding:6px 14px;border-radius:20px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.07);z-index:10;">← 홈</a>
+<main id="app"></main>
+
+<script>
+/* =========================================================
+   『5분 뇌 워밍업』 — 5종 미니 퍼즐
+   ========================================================= */
+
+/* ---------- Data banks ---------- */
+const ASSOC_BANK = [
+  { hints:['빨간색','둥글다','아삭하다'], answer:'사과', alts:['APPLE','애플'] },
+  { hints:['초록색','여름 과일','씨앗이 많다'], answer:'수박', alts:[] },
+  { hints:['검다','아침에 마신다','쓰다'], answer:'커피', alts:['coffee'] },
+  { hints:['파랗다','넓다','짜다'], answer:'바다', alts:['SEA','바닥'] },
+  { hints:['하얗다','차갑다','겨울에 내린다'], answer:'눈', alts:['snow'] },
+  { hints:['노랗다','길다','원숭이가 좋아한다'], answer:'바나나', alts:['banana'] },
+  { hints:['밤하늘에 뜬다','둥글다','토끼가 산다고 한다'], answer:'달', alts:['moon'] },
+  { hints:['책장에 꽂혀있다','종이로 만든다','읽는다'], answer:'책', alts:['book'] },
+  { hints:['네 바퀴','도로를 달린다','휘발유를 먹는다'], answer:'자동차', alts:['차','car'] },
+  { hints:['빨간색과 초록색','크리스마스 상징','달다'], answer:'딸기', alts:['strawberry'] }
+];
+
+const MATH24_BANK = [
+  { numbers:[2,3,4,6], solutions:['3*4+6*2','(4+6-2)*3','4*6*(3-2)','(6-4)*(3)*(2)+12'] },
+  { numbers:[1,2,3,4], solutions:['1*2*3*4','(1+3)*(2+4)','4*3*2*1'] },
+  { numbers:[4,5,6,7], solutions:['(5+7)*(6-4)','4*6*(7-5)','(7-5)*4*6'] },
+  { numbers:[3,3,8,8], solutions:['8/(3-8/3)'] },
+  { numbers:[2,4,6,8], solutions:['4*8-6-2','(8-6)*(4+2)+12','8/(2-6/4)'] },
+  { numbers:[1,5,5,5], solutions:['(5-1/5)*5'] }
+];
+
+const DEDUCTION_BANK = [
+  {
+    scene:'사무실의 케이크가 몰래 먹혔다. 동료 세 명이 용의자다.',
+    statements:[
+      { who:'A', text:'"저는 범인이 아닙니다."' },
+      { who:'B', text:'"A가 범인이에요."' },
+      { who:'C', text:'"저는 케이크를 싫어해서 절대 안 먹어요."' }
+    ],
+    clue:'세 명 중 정확히 한 명만 진실을 말하고, 나머지 둘은 거짓. 범인은 1명.',
+    culprit:'C',
+    explanation:'A 진실만 가정: A는 범인 아님, B 거짓 → A 안 범인(일관), C 거짓 → C는 케이크 먹음 → 범인 C. 일관. B 진실 가정은 A 진실과 충돌(A도 "안 범인"이라 했으니 B가 진실이면 A 거짓이어야 하는데 그러면 A가 범인). C 진실 가정은 모순 발생. → 범인 C.'
+  },
+  {
+    scene:'어젯밤 냉장고의 아이스크림이 사라졌다. 셋이 용의자다.',
+    statements:[
+      { who:'가', text:'"나가 먹는 걸 봤어요."' },
+      { who:'나', text:'"가의 말은 사실이에요."' },
+      { who:'다', text:'"저는 어제 냉장고 근처에도 가지 않았어요."' }
+    ],
+    clue:'세 명 중 정확히 한 명만 거짓말을 했다. 범인은 1명.',
+    culprit:'나',
+    explanation:'가 거짓이면 나도 가의 말을 사실이라 했으므로 나도 거짓 → 거짓말쟁이 2명 모순. 나 거짓이면 가의 말이 거짓 → 가도 거짓이 되어 모순. 다 거짓 가정: 다가 냉장고에 갔었음. 가·나 진실 → 나가 먹음 → 범인 나. 일관.'
+  }
+];
+
+const MEMORY_EMOJIS = ['🔴','🟡','🟢','🔵','🟣','🟠','🟤','🩷','⚫'];
+
+const SPOT_PAIRS = [
+  { common:'😀', different:'🙂' },
+  { common:'🐱', different:'🐯' },
+  { common:'🍎', different:'🍏' },
+  { common:'🌸', different:'🌺' },
+  { common:'⭐', different:'✨' },
+  { common:'🔵', different:'🟣' },
+  { common:'🟡', different:'🟠' }
+];
+
+/* ---------- Seeded random ---------- */
+function todaySeed(){
+  const d = new Date();
+  return d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate();
+}
+function mulberry32(seed){
+  return function(){
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ t>>>15, t | 1);
+    t ^= t + Math.imul(t ^ t>>>7, t | 61);
+    return ((t ^ t>>>14) >>> 0) / 4294967296;
+  };
+}
+function seededPick(arr, rng){
+  return arr[Math.floor(rng() * arr.length)];
+}
+
+/* ---------- Scoring helpers ---------- */
+function clamp(n, lo, hi){ return Math.max(lo, Math.min(hi, n)); }
+function formatTime(ms){
+  const s = Math.floor(ms/1000);
+  const m = Math.floor(s/60);
+  const ss = (s % 60).toString().padStart(2,'0');
+  return m+':'+ss;
+}
+function gradeFor(score){
+  if(score >= 90) return {grade:'S', label:'명쾌한 정신',   color:'#d97429'};
+  if(score >= 75) return {grade:'A', label:'맑은 정신',     color:'#6ca02c'};
+  if(score >= 60) return {grade:'B', label:'준비된 하루',   color:'#4a7aa4'};
+  if(score >= 40) return {grade:'C', label:'조금 더 워밍업', color:'#a177bc'};
+  return             {grade:'D', label:'한 번 더 도전',       color:'#7a7a7a'};
+}
+
+/* ---------- Persistence ---------- */
+function loadBest(){
+  try{ return JSON.parse(localStorage.getItem('warmup_best')||'null'); }
+  catch(e){ return null; }
+}
+function saveBest(score, date){
+  const cur = loadBest();
+  if(!cur || score > cur.score){
+    try{ localStorage.setItem('warmup_best', JSON.stringify({score, date})); }catch(e){}
+  }
+}
+function loadStreak(){
+  try{ return JSON.parse(localStorage.getItem('warmup_streak')||'{"count":0,"last":null}'); }
+  catch(e){ return {count:0, last:null}; }
+}
+function bumpStreak(){
+  const st = loadStreak();
+  const today = new Date().toISOString().slice(0,10);
+  if(st.last === today) return st;
+  const y = new Date(Date.now()-86400000).toISOString().slice(0,10);
+  st.count = (st.last === y) ? st.count+1 : 1;
+  st.last = today;
+  try{ localStorage.setItem('warmup_streak', JSON.stringify(st)); }catch(e){}
+  return st;
+}
+
+/* ---------- DOM helpers ---------- */
+const app = document.getElementById('app');
+function $el(tag, cls, html){
+  const e = document.createElement(tag);
+  if(cls) e.className = cls;
+  if(html != null) e.innerHTML = html;
+  return e;
+}
+function clear(){ app.innerHTML = ''; }
+function escapeHtml(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ---------- Pipeline ---------- */
+const STEPS = [
+  { id:'assoc',  title:'연상 단어',    icon:'💡', desc:'힌트 3가지로 단어를 맞춥니다.',           run:runAssoc  },
+  { id:'math',   title:'숫자 24',       icon:'🔢', desc:'주어진 숫자 4개로 24를 만드세요.',        run:runMath   },
+  { id:'deduce', title:'범인은 누구',   icon:'🔍', desc:'진술을 분석해 범인을 찾습니다.',          run:runDeduce },
+  { id:'memory', title:'순서 외우기',   icon:'🧠', desc:'깜빡이는 순서를 그대로 재현합니다.',       run:runMemory },
+  { id:'spot',   title:'다른 하나 찾기', icon:'👁️', desc:'격자 속 하나뿐인 다른 모양을 찾습니다.', run:runSpot   }
+];
+const results = [];
+let stepIdx = 0;
+
+/* ========================================================
+   Title screen
+   ======================================================== */
+function showTitle(){
+  clear();
+  const best = loadBest();
+  const streak = loadStreak();
+  const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'.');
+  const ts = $el('div');
+  ts.id = 'title-screen';
+  ts.innerHTML = `
+    <div class="brand">☀️</div>
+    <h1 class="hero-title">5분 뇌 워밍업</h1>
+    <div class="hero-sub">
+      하루를 시작하기 전에 가볍게 뇌를 깨우는<br>
+      5가지 미니 퍼즐. 약 5~7분 소요.
+    </div>
+    <div class="today-card">
+      <div class="today-label">T O D A Y</div>
+      <div class="today-date">${dateStr}</div>
+      ${best ? `<div class="best-score">최고 점수  ${best.score} / 500</div>` : ''}
+      ${streak.count>0 ? `<div style="color:var(--ink-dim);font-size:13px;margin-top:4px;">연속 ${streak.count}일 🔥</div>` : ''}
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="btn-start">시 작 하 기</button>
+    </div>
+    <ul class="puzzle-list" style="max-width:320px;margin:28px auto 0;">
+      ${STEPS.map((s,i)=>`<li><span class="emoji">${s.icon}</span> ${i+1}. ${s.title}</li>`).join('')}
+    </ul>
+    <div class="credits">built by Claude · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = beginRun;
+}
+
+/* ========================================================
+   Runner
+   ======================================================== */
+function beginRun(){
+  results.length = 0;
+  stepIdx = 0;
+  nextStep();
+}
+
+function renderTopbar(){
+  const tb = $el('div','topbar');
+  const dots = STEPS.map((_,i)=>{
+    let cls = 'dot';
+    if(i < stepIdx) cls += ' done';
+    else if(i === stepIdx) cls += ' active';
+    return `<span class="${cls}"></span>`;
+  }).join('');
+  tb.innerHTML = `
+    <div>퍼즐 ${stepIdx+1} / ${STEPS.length}</div>
+    <div class="progress-dots">${dots}</div>
+  `;
+  return tb;
+}
+
+function nextStep(){
+  if(stepIdx >= STEPS.length) return showResults();
+  clear();
+  app.appendChild(renderTopbar());
+  const step = STEPS[stepIdx];
+  const started = performance.now();
+  step.run((score)=>{
+    const elapsed = performance.now() - started;
+    results.push({ id:step.id, title:step.title, icon:step.icon, score:clamp(Math.round(score),0,100), time:elapsed });
+    stepIdx++;
+    setTimeout(nextStep, 400);
+  });
+}
+
+/* ========================================================
+   Puzzle 1 — 연상 단어
+   ======================================================== */
+function runAssoc(done){
+  const rng = mulberry32(todaySeed());
+  const q = seededPick(ASSOC_BANK, rng);
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <h2 class="puzzle-title">💡 연상 단어</h2>
+    <div class="puzzle-desc">세 개의 힌트를 보고 떠오르는 단어를 적어주세요. 기회는 4번, 틀릴수록 점수가 깎여요.</div>
+    <div class="hints">
+      ${q.hints.map((h,i)=>`
+        <div class="hint-card" style="animation-delay:${i*0.15}s">
+          <div class="hint-num">${i+1}</div>
+          <div class="hint-text">${escapeHtml(h)}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="input-row">
+      <input type="text" id="assoc-input" placeholder="단어를 입력하세요" autocomplete="off" autofocus>
+      <button class="btn" id="assoc-submit">제출</button>
+    </div>
+    <div class="feedback" id="assoc-feedback"></div>
+    <div class="attempts-left" id="assoc-attempts">남은 기회: 4</div>
+  `;
+  app.appendChild(card);
+
+  let attempts = 4;
+  const scorePerAttempt = [100, 80, 60, 40];
+  const input = document.getElementById('assoc-input');
+  const submitBtn = document.getElementById('assoc-submit');
+  const feedback = document.getElementById('assoc-feedback');
+  const attemptsEl = document.getElementById('assoc-attempts');
+  input.focus();
+
+  function normalize(s){ return s.replace(/\s/g,'').toLowerCase(); }
+  function check(){
+    const val = normalize(input.value);
+    if(!val) return;
+    const allowed = [q.answer, ...q.alts].map(normalize);
+    if(allowed.includes(val)){
+      feedback.className = 'feedback right';
+      feedback.textContent = '정답! "'+q.answer+'"';
+      submitBtn.disabled = true; input.disabled = true;
+      const score = scorePerAttempt[4 - attempts];
+      setTimeout(()=>done(score), 900);
+      return;
+    }
+    attempts--;
+    if(attempts <= 0){
+      feedback.className = 'feedback wrong';
+      feedback.textContent = '정답은 "'+q.answer+'"였어요.';
+      submitBtn.disabled = true; input.disabled = true;
+      setTimeout(()=>done(0), 1400);
+      return;
+    }
+    feedback.className = 'feedback wrong';
+    feedback.textContent = '아쉬워요. 다시 한 번!';
+    attemptsEl.textContent = '남은 기회: '+attempts;
+    input.value = '';
+    input.focus();
+  }
+  submitBtn.onclick = check;
+  input.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+}
+
+/* ========================================================
+   Puzzle 2 — 24 게임
+   ======================================================== */
+function evalSafeExpr(expr, required){
+  if(!/^[\d+\-*/() .]+$/.test(expr)) return { ok:false, reason:'숫자와 + - * / ( ) 만 사용할 수 있어요.' };
+  const nums = (expr.match(/\d+/g)||[]).map(Number);
+  const reqSorted = [...required].sort((a,b)=>a-b);
+  const numSorted = [...nums].sort((a,b)=>a-b);
+  if(reqSorted.length !== numSorted.length || reqSorted.some((v,i)=>v!==numSorted[i])){
+    return { ok:false, reason:'주어진 숫자 4개를 정확히 한 번씩 모두 사용해주세요.' };
+  }
+  let val;
+  try { val = Function('"use strict";return ('+expr+')')(); }
+  catch(e){ return { ok:false, reason:'식을 평가할 수 없어요.' }; }
+  if(typeof val !== 'number' || !isFinite(val)) return { ok:false, reason:'식을 평가할 수 없어요.' };
+  return { ok:true, value:val };
+}
+
+function runMath(done){
+  const rng = mulberry32(todaySeed() ^ 0x5e5e);
+  const q = seededPick(MATH24_BANK, rng);
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <h2 class="puzzle-title">🔢 숫자 24</h2>
+    <div class="puzzle-desc">네 개의 숫자를 각각 한 번씩 사용하고, + − × ÷ 와 괄호로 식을 만들어 <b>24</b>를 만드세요.</div>
+    <div class="numbers-row">
+      ${q.numbers.map(n=>`<div class="num-chip">${n}</div>`).join('')}
+    </div>
+    <input class="expr-input" id="math-input" placeholder="예: (3+5)*4-8" autocomplete="off">
+    <div class="op-buttons">
+      ${['+','−','×','÷','(',')'].map(o=>`<button class="op-btn" data-op="${o}">${o}</button>`).join('')}
+      <button class="op-btn" data-op="back">⌫</button>
+    </div>
+    <div class="expr-result neutral" id="math-result">= ?</div>
+    <div class="btn-row">
+      <button class="btn" id="math-submit">제출</button>
+      <button class="btn ghost" id="math-skip">포기</button>
+    </div>
+  `;
+  app.appendChild(card);
+  const input = document.getElementById('math-input');
+  const result = document.getElementById('math-result');
+  const submit = document.getElementById('math-submit');
+  const skip = document.getElementById('math-skip');
+  const opMap = { '+':'+','−':'-','×':'*','÷':'/','(':'(',')':')' };
+
+  function preview(){
+    const raw = input.value;
+    if(!raw.trim()){ result.className='expr-result neutral'; result.textContent='= ?'; return; }
+    const res = evalSafeExpr(raw, q.numbers);
+    if(!res.ok){ result.className='expr-result neutral'; result.textContent = '= ?'; return; }
+    result.className = 'expr-result ' + (Math.abs(res.value-24)<1e-6?'right':'neutral');
+    const rounded = Math.round(res.value*1000)/1000;
+    result.textContent = '= ' + rounded;
+  }
+
+  document.querySelectorAll('.op-btn').forEach(b=>{
+    b.onclick = ()=>{
+      const op = b.dataset.op;
+      if(op==='back') input.value = input.value.slice(0,-1);
+      else input.value += opMap[op] || op;
+      preview();
+      input.focus();
+    };
+  });
+  input.addEventListener('input', preview);
+  input.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); submit.click(); }});
+  input.focus();
+
+  submit.onclick = ()=>{
+    const res = evalSafeExpr(input.value, q.numbers);
+    if(!res.ok){
+      result.className = 'expr-result wrong';
+      result.textContent = res.reason;
+      return;
+    }
+    if(Math.abs(res.value - 24) < 1e-6){
+      result.className = 'expr-result right';
+      result.textContent = '✓ 정답! = '+res.value;
+      submit.disabled = true; skip.disabled = true; input.disabled = true;
+      setTimeout(()=>done(100), 900);
+    } else {
+      result.className = 'expr-result wrong';
+      result.textContent = '= '+res.value+' (24가 아니에요)';
+    }
+  };
+  skip.onclick = ()=>{
+    result.className = 'expr-result neutral';
+    result.textContent = '예시 답안: '+q.solutions[0];
+    submit.disabled = true; skip.disabled = true; input.disabled = true;
+    setTimeout(()=>done(0), 1800);
+  };
+}
+
+/* ========================================================
+   Puzzle 3 — 논리 추론
+   ======================================================== */
+function runDeduce(done){
+  const rng = mulberry32(todaySeed() ^ 0xd00d);
+  const q = seededPick(DEDUCTION_BANK, rng);
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <h2 class="puzzle-title">🔍 범인은 누구</h2>
+    <div class="puzzle-desc">${escapeHtml(q.scene)}</div>
+    <div class="statements">
+      ${q.statements.map(s=>`
+        <div class="statement">
+          <div class="who">${escapeHtml(s.who)}</div>
+          <div>${escapeHtml(s.text)}</div>
+        </div>`).join('')}
+    </div>
+    <div class="clue-box">💡 ${escapeHtml(q.clue)}</div>
+    <div class="suspect-buttons" style="grid-template-columns:repeat(${q.statements.length},1fr);">
+      ${q.statements.map(s=>`<button class="suspect-btn" data-who="${escapeHtml(s.who)}">${escapeHtml(s.who)}</button>`).join('')}
+    </div>
+    <div class="feedback" id="deduce-feedback" style="margin-top:18px;"></div>
+  `;
+  app.appendChild(card);
+  const fb = document.getElementById('deduce-feedback');
+  const buttons = card.querySelectorAll('.suspect-btn');
+  let picked = 0;
+  buttons.forEach(b=>{
+    b.onclick = ()=>{
+      if(picked>=2) return;
+      picked++;
+      const who = b.dataset.who;
+      if(who === q.culprit){
+        b.classList.add('correct');
+        fb.className = 'feedback right';
+        fb.textContent = '✓ 맞아요. 범인은 '+q.culprit+'!';
+        buttons.forEach(bb=>bb.disabled=true);
+        const score = picked === 1 ? 100 : 50;
+        setTimeout(()=>done(score), 1100);
+      } else {
+        b.classList.add('incorrect');
+        b.disabled = true;
+        if(picked >= 2){
+          // show correct
+          buttons.forEach(bb=>{
+            if(bb.dataset.who === q.culprit) bb.classList.add('correct');
+            bb.disabled = true;
+          });
+          fb.className = 'feedback wrong';
+          fb.textContent = '아쉬워요. 범인은 '+q.culprit+'였어요.';
+          setTimeout(()=>done(0), 1400);
+        } else {
+          fb.className = 'feedback wrong';
+          fb.textContent = '아니에요. 한 번 더 시도해보세요.';
+        }
+      }
+    };
+  });
+}
+
+/* ========================================================
+   Puzzle 4 — 기억 시퀀스
+   ======================================================== */
+function runMemory(done){
+  const SEQ_LEN = 5;
+  const rng = mulberry32(todaySeed() ^ 0x7a7a);
+  const seq = [];
+  for(let i=0;i<SEQ_LEN;i++) seq.push(Math.floor(rng()*9));
+
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <h2 class="puzzle-title">🧠 순서 외우기</h2>
+    <div class="puzzle-desc">화면에 깜빡이는 순서를 기억했다가, 끝나면 그 순서대로 눌러주세요.</div>
+    <div class="mem-indicator" id="mem-indicator">잘 보세요…</div>
+    <div class="memory-grid" id="mem-grid">
+      ${Array.from({length:9}, (_,i)=>`<div class="mem-cell disabled" data-c="${i}" data-idx="${i}">${MEMORY_EMOJIS[i]}</div>`).join('')}
+    </div>
+    <div class="seq-progress" id="seq-progress">
+      ${Array.from({length:SEQ_LEN}, ()=>`<div class="seq-dot"></div>`).join('')}
+    </div>
+  `;
+  app.appendChild(card);
+  const indicator = document.getElementById('mem-indicator');
+  const cells = card.querySelectorAll('.mem-cell');
+  const dots  = card.querySelectorAll('.seq-dot');
+
+  // Playback phase
+  let step = 0;
+  function playback(){
+    if(step >= seq.length){
+      indicator.textContent = '이제 같은 순서로 눌러주세요!';
+      indicator.classList.add('pulse');
+      cells.forEach(c=>c.classList.remove('disabled'));
+      userInput();
+      return;
+    }
+    const idx = seq[step];
+    const cell = cells[idx];
+    cell.classList.add('flash');
+    setTimeout(()=>{
+      cell.classList.remove('flash');
+      step++;
+      setTimeout(playback, 220);
+    }, 520);
+  }
+
+  function userInput(){
+    let userStep = 0;
+    let correct = 0;
+    cells.forEach(c=>{
+      c.onclick = ()=>{
+        const idx = +c.dataset.idx;
+        c.classList.add('user-click');
+        setTimeout(()=>c.classList.remove('user-click'), 200);
+        if(idx === seq[userStep]){
+          correct++;
+          dots[userStep].classList.add('filled');
+        } else {
+          // mark wrong and continue
+          dots[userStep].style.background = 'var(--red)';
+        }
+        userStep++;
+        if(userStep >= seq.length){
+          cells.forEach(cc=>cc.classList.add('disabled'));
+          indicator.classList.remove('pulse');
+          const score = Math.round(correct / seq.length * 100);
+          indicator.textContent = correct === seq.length
+            ? '✓ 완벽!'
+            : correct+'개 / '+seq.length+'개 맞췄어요';
+          setTimeout(()=>done(score), 1100);
+        }
+      };
+    });
+  }
+  setTimeout(playback, 700);
+}
+
+/* ========================================================
+   Puzzle 5 — 다른 하나 찾기
+   ======================================================== */
+function runSpot(done){
+  const rng = mulberry32(todaySeed() ^ 0xf0ef);
+  const pair = seededPick(SPOT_PAIRS, rng);
+  const GRID = 12;
+  const total = GRID * GRID;
+  const oddIndex = Math.floor(rng() * total);
+
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <h2 class="puzzle-title">👁️ 다른 하나 찾기</h2>
+    <div class="puzzle-desc">격자 안에서 하나만 다른 모양을 찾아 클릭해주세요. 제한 시간 <b id="spot-timer">30</b>초.</div>
+    <div class="spot-grid" id="spot-grid">
+      ${Array.from({length:total}, (_,i)=>`<div class="spot-cell" data-i="${i}">${i===oddIndex ? pair.different : pair.common}</div>`).join('')}
+    </div>
+    <div class="feedback" id="spot-feedback" style="text-align:center;"></div>
+  `;
+  app.appendChild(card);
+  const grid = document.getElementById('spot-grid');
+  const timerEl = document.getElementById('spot-timer');
+  const fb = document.getElementById('spot-feedback');
+  const cells = grid.querySelectorAll('.spot-cell');
+  let remaining = 30;
+  const started = performance.now();
+  const interval = setInterval(()=>{
+    remaining--;
+    timerEl.textContent = remaining;
+    if(remaining <= 0){
+      clearInterval(interval);
+      cells.forEach(c=>c.onclick=null);
+      cells[oddIndex].classList.add('found');
+      fb.className = 'feedback wrong';
+      fb.textContent = '시간 종료! 다른 하나는 여기였어요.';
+      setTimeout(()=>done(0), 1500);
+    }
+  },1000);
+
+  let misses = 0;
+  cells.forEach(c=>{
+    c.onclick = ()=>{
+      const i = +c.dataset.i;
+      if(i === oddIndex){
+        clearInterval(interval);
+        c.classList.add('found');
+        const elapsed = (performance.now() - started) / 1000;
+        const timeScore = clamp(Math.round(100 - elapsed*3 - misses*10), 20, 100);
+        fb.className = 'feedback right';
+        fb.textContent = '✓ 찾았어요! ('+elapsed.toFixed(1)+'초)';
+        cells.forEach(cc=>cc.onclick=null);
+        setTimeout(()=>done(timeScore), 1100);
+      } else {
+        c.classList.add('miss');
+        setTimeout(()=>c.classList.remove('miss'), 500);
+        misses++;
+      }
+    };
+  });
+}
+
+/* ========================================================
+   Results
+   ======================================================== */
+function showResults(){
+  clear();
+  const total = results.reduce((a,r)=>a+r.score, 0);
+  const grade = gradeFor(total/5);
+  saveBest(total, new Date().toISOString().slice(0,10));
+  const streak = bumpStreak();
+
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <div class="score-hero">
+      <div class="score-big">${total}</div>
+      <div class="score-label">오늘의 뇌 점수 · / 500</div>
+      <div class="score-grade" style="color:${grade.color};">${grade.grade}  ${grade.label}</div>
+      <div class="score-comment">${comment(total)}</div>
+    </div>
+    <div class="breakdown">
+      ${results.map(r=>{
+        const pct = clamp(r.score, 0, 100);
+        return `
+          <div class="breakdown-row">
+            <div class="breakdown-icon">${r.icon}</div>
+            <div style="flex:1;">
+              <div class="breakdown-name">${r.title}</div>
+              <div class="breakdown-bar"><div class="breakdown-bar-fill" style="width:${pct}%"></div></div>
+            </div>
+            <div class="breakdown-time">${formatTime(r.time)}</div>
+            <div class="breakdown-score">${r.score}</div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="btn-share">결과 공유</button>
+      <button class="btn secondary" id="btn-restart">다시 도전</button>
+    </div>
+    ${streak.count>1 ? `<div style="text-align:center;color:var(--accent-dark);font-size:14px;margin-top:16px;font-weight:600;">🔥 연속 ${streak.count}일째!</div>` : ''}
+    <div class="credits">© 2026 · 5분 뇌 워밍업</div>
+  `;
+  app.appendChild(card);
+
+  document.getElementById('btn-restart').onclick = showTitle;
+  document.getElementById('btn-share').onclick = ()=>{
+    const date = new Date().toISOString().slice(0,10);
+    const bars = results.map(r=>{
+      const b = Math.round(r.score/20);
+      return r.icon + ' ' + '█'.repeat(b) + '░'.repeat(5-b);
+    }).join('\n');
+    const text = `5분 뇌 워밍업 — ${date}\n점수 ${total}/500  ${grade.grade}\n\n${bars}`;
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(text).then(()=>{
+        const btn = document.getElementById('btn-share');
+        const orig = btn.textContent;
+        btn.textContent = '✓ 복사됨';
+        setTimeout(()=>btn.textContent = orig, 1500);
+      });
+    } else {
+      alert(text);
+    }
+  };
+}
+function comment(total){
+  if(total >= 450) return '완벽해요. 오늘 어떤 일이든 잘 풀릴 것 같아요.';
+  if(total >= 380) return '오늘 시동 걸렸네요. 커피 한 잔 더?';
+  if(total >= 300) return '나쁘지 않은 출발. 하나씩 풀어가요.';
+  if(total >= 200) return '워밍업은 원래 꾸준히 해야 효과가 있어요.';
+  return '오늘은 살살. 내일 다시 만나요.';
+}
+
+/* ---------- Boot ---------- */
+showTitle();
+</script>
+</body>
+</html>

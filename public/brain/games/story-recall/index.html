@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>이야기 기억 | 5분 퍼즐</title>
+<meta property="og:title" content="이야기 기억">
+<meta property="og:description" content="짧은 이야기를 읽고 질문에 답하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#8e6bbc;--accent-dark:#664890;--accent-soft:#d1bee4; }
+  .story{ background:var(--bg-2);padding:18px;border-radius:12px;line-height:1.9;font-size:16px;margin-bottom:14px; }
+  .q-block{ background:var(--accent-soft);padding:14px 16px;border-radius:10px;margin-bottom:10px; }
+  .q-block .q{ font-weight:700;color:var(--accent-dark);margin-bottom:8px; }
+  .q-block .opts{ display:flex;flex-direction:column;gap:6px; }
+  .q-block button{ text-align:left;background:white;border:2px solid var(--ink-faint);border-radius:8px;padding:10px 14px;font:inherit;cursor:pointer;transition:all .12s; }
+  .q-block button:hover:not(:disabled){ border-color:var(--accent);background:#fff8ff; }
+  .q-block button.correct{ background:var(--green);color:white;border-color:var(--green-dark); }
+  .q-block button.wrong{ background:var(--red);color:white;border-color:#a43232; }
+  .timer{ text-align:center;color:var(--ink-dim);font-size:14px;margin-bottom:8px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, shuffle } = Brain;
+injectBackLink('../../');
+
+const STORIES = [
+  {
+    text:'민수는 월요일 아침 7시에 도서관에 갔다. 그는 파란 가방을 메고 있었고, 빨간 사과 두 개를 가져갔다. 친구 지영은 10시에 합류했고 둘은 한 시간 반 동안 같이 공부했다.',
+    questions:[
+      { q:'민수가 도서관에 간 요일은?', opts:['월요일','수요일','금요일','일요일'], ans:'월요일' },
+      { q:'민수 가방의 색은?', opts:['빨강','파랑','노랑','초록'], ans:'파랑' },
+      { q:'지영이 합류한 시각은?', opts:['8시','9시','10시','11시'], ans:'10시' },
+      { q:'사과를 몇 개 가져갔나?', opts:['한 개','두 개','세 개','네 개'], ans:'두 개' }
+    ]
+  },
+  {
+    text:'여름 밤 10시, 서연은 강변 카페에서 아메리카노와 치즈케이크를 주문했다. 카페 창가에서 흰 강아지를 데리고 산책하는 노부부가 보였고, 창 너머로 지나가는 지하철 소리가 들렸다.',
+    questions:[
+      { q:'서연은 무엇을 마셨나?', opts:['카페라떼','아메리카노','녹차','홍차'], ans:'아메리카노' },
+      { q:'강아지의 색은?', opts:['검정','갈색','흰색','회색'], ans:'흰색' },
+      { q:'시간대는?', opts:['아침 7시','오후 3시','저녁 8시','밤 10시'], ans:'밤 10시' },
+      { q:'함께 주문한 디저트는?', opts:['치즈케이크','초코케이크','마카롱','쿠키'], ans:'치즈케이크' }
+    ]
+  },
+  {
+    text:'할머니 정숙은 토요일 오후 3시, 초록 스카프를 두르고 공원에 갔다. 손주 재윤과 함께 노란 풍선 세 개를 들고 분수 앞에서 사진을 찍었고, 이후 근처 카페에서 따뜻한 코코아를 나눠 마셨다.',
+    questions:[
+      { q:'정숙 할머니가 공원에 간 요일은?', opts:['금요일','토요일','일요일','목요일'], ans:'토요일' },
+      { q:'스카프의 색은?', opts:['빨강','파랑','초록','노랑'], ans:'초록' },
+      { q:'풍선은 몇 개였나?', opts:['한 개','두 개','세 개','네 개'], ans:'세 개' },
+      { q:'카페에서 마신 것은?', opts:['코코아','녹차','커피','우유'], ans:'코코아' }
+    ]
+  },
+  {
+    text:'비가 내리는 수요일 저녁 6시, 재현은 검은 우산을 쓰고 회사에서 나와 지하철 2호선을 탔다. 가방 안에는 읽다 만 소설책과 귤 네 개가 있었고, 집 앞 편의점에서 따뜻한 두유를 샀다.',
+    questions:[
+      { q:'그날 날씨는?', opts:['맑음','흐림','비','눈'], ans:'비' },
+      { q:'탄 지하철은 몇 호선?', opts:['1호선','2호선','3호선','4호선'], ans:'2호선' },
+      { q:'가방 속 과일은?', opts:['사과','귤','바나나','포도'], ans:'귤' },
+      { q:'편의점에서 산 것은?', opts:['우유','두유','커피','차'], ans:'두유' }
+    ]
+  },
+  {
+    text:'여름 휴가 첫날, 주연은 기차를 타고 강릉으로 떠났다. 오전 9시에 출발해 오후 1시에 도착했고, 바닷가 펜션에 짐을 내린 뒤 회덮밥을 먹었다. 해 질 무렵에는 해변에서 조개 다섯 개를 주웠다.',
+    questions:[
+      { q:'주연이 간 여행지는?', opts:['부산','여수','강릉','속초'], ans:'강릉' },
+      { q:'이용한 교통수단은?', opts:['버스','기차','비행기','자동차'], ans:'기차' },
+      { q:'점심 메뉴는?', opts:['회덮밥','초밥','냉면','된장찌개'], ans:'회덮밥' },
+      { q:'해변에서 주운 조개는 몇 개?', opts:['세 개','네 개','다섯 개','여섯 개'], ans:'다섯 개' }
+    ]
+  },
+  {
+    text:'토요일 아침, 지훈은 자전거를 타고 시장에 갔다. 생선 장수에게서 고등어 두 마리를 샀고, 옆 가게에서 노란 참외 세 개를 장바구니에 담았다. 돌아오는 길에 편의점에서 초콜릿 우유 한 팩을 샀다.',
+    questions:[
+      { q:'지훈이 시장에 간 교통수단은?', opts:['버스','자전거','지하철','도보'], ans:'자전거' },
+      { q:'생선 장수에게서 산 것은?', opts:['갈치','고등어','삼치','조기'], ans:'고등어' },
+      { q:'참외는 몇 개 샀나?', opts:['두 개','세 개','네 개','다섯 개'], ans:'세 개' },
+      { q:'편의점에서 산 음료는?', opts:['딸기 우유','바나나 우유','초콜릿 우유','커피 우유'], ans:'초콜릿 우유' }
+    ]
+  }
+];
+const READ_MS = 20000;
+const KEY = 'story_recall_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">📖</div>
+    <h1 class="hero-title">이야기 <span style="color:var(--accent);">기억</span></h1>
+    <div class="hero-sub">20초 동안 이야기를 읽은 뒤<br>네 개의 질문에 답하세요.</div>
+    ${stats.bestScore>0?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/4</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const s = STORIES[Math.floor(Math.random()*STORIES.length)];
+  clear(app);
+  const card = $el('div','card');
+  card.innerHTML = `<div class="timer" id="t">20.0s 남음</div><div class="story">${Brain.escapeHtml(s.text)}</div>`;
+  app.appendChild(card);
+  const start = performance.now();
+  const iv = setInterval(()=>{
+    const rem = Math.max(0, READ_MS - (performance.now() - start));
+    document.getElementById('t').textContent = (rem/1000).toFixed(1)+'s 남음';
+    if(rem <= 0){ clearInterval(iv); showQuestions(s); }
+  }, 100);
+}
+
+function showQuestions(s){
+  const state = { i:0, correct:0, total:s.questions.length };
+  next();
+  function next(){
+    if(state.i >= state.total) return finish(state, s);
+    const q = s.questions[state.i];
+    const opts = shuffle(q.opts);
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">질문 ${state.i+1}/${state.total}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="q-block">
+        <div class="q">${Brain.escapeHtml(q.q)}</div>
+        <div class="opts">${opts.map(o=>`<button data-v="${Brain.escapeHtml(o)}">${Brain.escapeHtml(o)}</button>`).join('')}</div>
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    card.querySelectorAll('button').forEach(b=>{
+      b.onclick = ()=>{
+        card.querySelectorAll('button').forEach(x=>x.disabled=true);
+        const fb = document.getElementById('fb');
+        if(b.dataset.v === q.ans){ b.classList.add('correct'); fb.className='feedback right'; fb.textContent='✓'; state.correct++; }
+        else { b.classList.add('wrong'); [...card.querySelectorAll('button')].find(x=>x.dataset.v===q.ans).classList.add('correct'); fb.className='feedback wrong'; fb.textContent='정답: '+q.ans; }
+        setTimeout(()=>{ state.i++; next(); }, 1100);
+      };
+    });
+  }
+}
+function finish(state, s){
+  const stats = Brain.recordBestScore(KEY, state.correct, { total: state.total });
+  const isBest = stats.bestScore === state.correct;
+  clear(app);
+  const r = $el('div','result-card');
+  r.innerHTML = `
+    <div class="result-emoji">${state.correct===state.total?'🏆':state.correct>=3?'🎉':'👏'}</div>
+    <div class="result-title">이야기 회상 완료</div>
+    <div class="result-big">${state.correct}/${state.total}</div>
+    ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+    <div class="btn-row">
+      <button class="btn" id="s">공유</button>
+      <button class="btn secondary" id="a">다시</button>
+      <button class="btn ghost" id="h">홈</button>
+    </div>
+  `;
+  app.appendChild(r);
+  document.getElementById('a').onclick = startGame;
+  document.getElementById('h').onclick = showTitle;
+  document.getElementById('s').onclick = (e)=>Brain.shareToClipboard(`이야기 기억\n📖 ${state.correct}/${state.total}${isBest?' 🌟':''}`, e.target);
+}
+showTitle();
+window.__GAME__ = { STORIES, READ_MS, KEY };
+</script>
+</body>
+</html>

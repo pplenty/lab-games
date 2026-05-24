@@ -1,0 +1,1464 @@
+{
+  "site": {
+    "title": "5분 퍼즐",
+    "subtitle": "매일 하나씩",
+    "description": "매일 하나씩, 짧고 선명한 두뇌 게임. 로그인·설치 없이 브라우저에서 바로 플레이.",
+    "url": "https://games.jdgrid.com/brain",
+    "author": "JD Grid Games"
+  },
+  "categories": {
+    "vocab": {
+      "label": "단어",
+      "emoji": "Aa"
+    },
+    "korean": {
+      "label": "한글",
+      "emoji": "Ko"
+    },
+    "typing": {
+      "label": "타이핑",
+      "emoji": "Ty"
+    },
+    "math": {
+      "label": "숫자",
+      "emoji": "12"
+    },
+    "arithmetic": {
+      "label": "암산",
+      "emoji": "+-"
+    },
+    "chance": {
+      "label": "확률",
+      "emoji": "%"
+    },
+    "logic": {
+      "label": "논리",
+      "emoji": "Lo"
+    },
+    "deduction": {
+      "label": "추론",
+      "emoji": "?"
+    },
+    "strategy": {
+      "label": "전략",
+      "emoji": "St"
+    },
+    "memory": {
+      "label": "기억",
+      "emoji": "Me"
+    },
+    "focus": {
+      "label": "집중",
+      "emoji": "Fo"
+    },
+    "space": {
+      "label": "공간",
+      "emoji": "3D"
+    },
+    "pattern": {
+      "label": "패턴",
+      "emoji": "Pt"
+    },
+    "reflex": {
+      "label": "순발",
+      "emoji": "Rx"
+    },
+    "timing": {
+      "label": "타이밍",
+      "emoji": "Tm"
+    },
+    "rhythm": {
+      "label": "리듬",
+      "emoji": "Rh"
+    },
+    "arcade": {
+      "label": "아케이드",
+      "emoji": "Ac"
+    },
+    "trivia": {
+      "label": "상식",
+      "emoji": "Qz"
+    },
+    "story": {
+      "label": "스토리",
+      "emoji": "St"
+    },
+    "daily": {
+      "label": "데일리",
+      "emoji": "Dy"
+    },
+    "mix": {
+      "label": "종합",
+      "emoji": "Mx"
+    }
+  },
+  "games": [
+    {
+      "id": "wordle3",
+      "title": "세 글자 맞추기",
+      "short": "세 글자 단어 여섯 번 안에",
+      "icon": "🔤",
+      "tags": [
+        "vocab",
+        "korean",
+        "logic",
+        "daily"
+      ],
+      "tagLabels": [
+        "단어",
+        "한글",
+        "논리"
+      ],
+      "accent": "#6a9ac4",
+      "duration": "2~4분",
+      "slug": "wordle3",
+      "path": "games/wordle3/"
+    },
+    {
+      "id": "slide3",
+      "title": "슬라이딩 퍼즐 · 3×3",
+      "short": "여덟 조각을 순서대로",
+      "icon": "🧩",
+      "tags": [
+        "space",
+        "pattern"
+      ],
+      "tagLabels": [
+        "공간",
+        "패턴"
+      ],
+      "accent": "#a177bc",
+      "duration": "2~5분",
+      "slug": "slide3",
+      "path": "games/slide3/"
+    },
+    {
+      "id": "schulte",
+      "title": "숫자 1~25 · 집중 스프린트",
+      "short": "1부터 25까지 빠르게",
+      "icon": "🎯",
+      "tags": [
+        "focus",
+        "timing"
+      ],
+      "tagLabels": [
+        "집중",
+        "타이밍"
+      ],
+      "accent": "#e57373",
+      "duration": "1~2분",
+      "slug": "schulte",
+      "path": "games/schulte/"
+    },
+    {
+      "id": "arith-sprint",
+      "title": "연산 릴레이 · 60초",
+      "short": "60초 암산 스프린트",
+      "icon": "➗",
+      "tags": [
+        "math",
+        "arithmetic",
+        "reflex"
+      ],
+      "tagLabels": [
+        "숫자",
+        "암산",
+        "순발"
+      ],
+      "accent": "#6ca02c",
+      "duration": "1분",
+      "slug": "arith-sprint",
+      "path": "games/arith-sprint/"
+    },
+    {
+      "id": "warmup",
+      "title": "5분 뇌 워밍업",
+      "short": "연상·24·범인·기억·관찰",
+      "icon": "☀️",
+      "tags": [
+        "mix",
+        "daily"
+      ],
+      "tagLabels": [
+        "종합",
+        "데일리"
+      ],
+      "accent": "#f08a3e",
+      "duration": "5~7분",
+      "slug": "warmup",
+      "path": "games/warmup/"
+    },
+    {
+      "id": "stretch",
+      "title": "5분 집중 세트",
+      "short": "애너그램·스도쿠·스트룹·미로",
+      "icon": "🔄",
+      "tags": [
+        "mix",
+        "focus"
+      ],
+      "tagLabels": [
+        "종합",
+        "집중"
+      ],
+      "accent": "#2ab0a0",
+      "duration": "5~7분",
+      "slug": "stretch",
+      "path": "games/stretch/"
+    },
+    {
+      "id": "reaction",
+      "title": "반응 속도 테스트",
+      "short": "초록 신호 즉시 클릭, 빨강은 함정",
+      "icon": "⚡",
+      "tags": [
+        "reflex",
+        "timing",
+        "focus"
+      ],
+      "tagLabels": [
+        "순발",
+        "타이밍",
+        "집중"
+      ],
+      "accent": "#3db569",
+      "duration": "1분",
+      "slug": "reaction",
+      "path": "games/reaction/"
+    },
+    {
+      "id": "simon",
+      "title": "색 시퀀스",
+      "short": "깜빡이는 순서를 그대로 재현",
+      "icon": "🎵",
+      "tags": [
+        "memory",
+        "pattern",
+        "focus"
+      ],
+      "tagLabels": [
+        "기억",
+        "패턴",
+        "집중"
+      ],
+      "accent": "#c96dad",
+      "duration": "2~4분",
+      "slug": "simon",
+      "path": "games/simon/"
+    },
+    {
+      "id": "match-pair",
+      "title": "카드 짝 맞추기",
+      "short": "16장 카드 중 같은 그림 8쌍 찾기",
+      "icon": "🃏",
+      "tags": [
+        "memory",
+        "pattern"
+      ],
+      "tagLabels": [
+        "기억",
+        "패턴"
+      ],
+      "accent": "#d8864e",
+      "duration": "2~3분",
+      "slug": "match-pair",
+      "path": "games/match-pair/"
+    },
+    {
+      "id": "num-seq",
+      "title": "수열 완성",
+      "short": "다음에 올 숫자를 찾아라",
+      "icon": "🔢",
+      "tags": [
+        "math",
+        "pattern",
+        "logic"
+      ],
+      "tagLabels": [
+        "숫자",
+        "패턴",
+        "논리"
+      ],
+      "accent": "#4a8fc0",
+      "duration": "2~3분",
+      "slug": "num-seq",
+      "path": "games/num-seq/"
+    },
+    {
+      "id": "grid-memory",
+      "title": "격자 기억",
+      "short": "깜빡인 위치를 그대로 재현",
+      "icon": "💭",
+      "tags": [
+        "memory",
+        "space"
+      ],
+      "tagLabels": [
+        "기억",
+        "공간"
+      ],
+      "accent": "#8866b8",
+      "duration": "2~4분",
+      "slug": "grid-memory",
+      "path": "games/grid-memory/"
+    },
+    {
+      "id": "2048-mini",
+      "title": "128 도달",
+      "short": "같은 숫자 합쳐 128 만들기",
+      "icon": "🧮",
+      "tags": [
+        "math",
+        "space",
+        "pattern"
+      ],
+      "tagLabels": [
+        "숫자",
+        "공간",
+        "패턴"
+      ],
+      "accent": "#e09340",
+      "duration": "3~5분",
+      "slug": "2048-mini",
+      "path": "games/2048-mini/"
+    },
+    {
+      "id": "stroop-rush",
+      "title": "스트룹 러시 · 60초",
+      "short": "글자의 뜻이 아닌 실제 색을 고르기",
+      "icon": "🎨",
+      "tags": [
+        "reflex",
+        "focus"
+      ],
+      "tagLabels": [
+        "순발",
+        "집중"
+      ],
+      "accent": "#d05a80",
+      "duration": "1분",
+      "slug": "stroop-rush",
+      "path": "games/stroop-rush/"
+    },
+    {
+      "id": "magic-square",
+      "title": "마방진 3×3",
+      "short": "1~9로 행·열·대각 합 15 만들기",
+      "icon": "🔣",
+      "tags": [
+        "math",
+        "logic",
+        "pattern"
+      ],
+      "tagLabels": [
+        "숫자",
+        "논리",
+        "패턴"
+      ],
+      "accent": "#5a9b84",
+      "duration": "2~4분",
+      "slug": "magic-square",
+      "path": "games/magic-square/"
+    },
+    {
+      "id": "n-back",
+      "title": "N-back · 2",
+      "short": "2칸 전과 같은 자극인지 판단",
+      "icon": "🧠",
+      "tags": [
+        "memory",
+        "focus"
+      ],
+      "tagLabels": [
+        "기억",
+        "집중"
+      ],
+      "accent": "#7c7dc4",
+      "duration": "2~3분",
+      "slug": "n-back",
+      "path": "games/n-back/"
+    },
+    {
+      "id": "nonogram5",
+      "title": "네모네모 로직 5×5",
+      "short": "숫자 힌트로 그림을 복원",
+      "icon": "⬛",
+      "tags": [
+        "logic",
+        "space",
+        "pattern"
+      ],
+      "tagLabels": [
+        "논리",
+        "공간",
+        "패턴"
+      ],
+      "accent": "#617488",
+      "duration": "3~5분",
+      "slug": "nonogram5",
+      "path": "games/nonogram5/"
+    },
+    {
+      "id": "number-baseball",
+      "title": "숫자 야구",
+      "short": "세 자리 숫자 9이닝 안에 맞추기",
+      "icon": "⚾",
+      "tags": [
+        "logic",
+        "deduction"
+      ],
+      "tagLabels": [
+        "논리",
+        "추론"
+      ],
+      "accent": "#2b7b5d",
+      "duration": "3~5분",
+      "slug": "number-baseball",
+      "path": "games/number-baseball/"
+    },
+    {
+      "id": "chosung-quiz",
+      "title": "초성 퀴즈",
+      "short": "초성만 보고 단어 맞추기",
+      "icon": "ㅊㅅ",
+      "tags": [
+        "vocab",
+        "korean"
+      ],
+      "tagLabels": [
+        "단어",
+        "한글"
+      ],
+      "accent": "#c9864b",
+      "duration": "2~3분",
+      "slug": "chosung-quiz",
+      "path": "games/chosung-quiz/"
+    },
+    {
+      "id": "rock-paper-scissors",
+      "title": "가위바위보 AI",
+      "short": "패턴을 학습하는 AI와 15판",
+      "icon": "✊",
+      "tags": [
+        "strategy",
+        "logic",
+        "reflex"
+      ],
+      "tagLabels": [
+        "전략",
+        "논리",
+        "순발"
+      ],
+      "accent": "#d85f7c",
+      "duration": "2분",
+      "slug": "rock-paper-scissors",
+      "path": "games/rock-paper-scissors/"
+    },
+    {
+      "id": "mastermind",
+      "title": "색 코드 해독",
+      "short": "4색 순서를 8번 안에 해독",
+      "icon": "🎨",
+      "tags": [
+        "logic",
+        "deduction",
+        "pattern"
+      ],
+      "tagLabels": [
+        "논리",
+        "추론",
+        "패턴"
+      ],
+      "accent": "#5a7cc7",
+      "duration": "3~5분",
+      "slug": "mastermind",
+      "path": "games/mastermind/"
+    },
+    {
+      "id": "countdown",
+      "title": "거꾸로 세기",
+      "short": "임의 간격 ×8번 거꾸로",
+      "icon": "⏬",
+      "tags": [
+        "math",
+        "focus",
+        "timing"
+      ],
+      "tagLabels": [
+        "숫자",
+        "집중",
+        "타이밍"
+      ],
+      "accent": "#4a9aa5",
+      "duration": "1~2분",
+      "slug": "countdown",
+      "path": "games/countdown/"
+    },
+    {
+      "id": "color-rush",
+      "title": "빠른 색 찾기",
+      "short": "30초 동안 타겟 색만 클릭",
+      "icon": "🎯",
+      "tags": [
+        "reflex",
+        "focus"
+      ],
+      "tagLabels": [
+        "순발",
+        "집중"
+      ],
+      "accent": "#d64a4a",
+      "duration": "30초",
+      "slug": "color-rush",
+      "path": "games/color-rush/"
+    },
+    {
+      "id": "prime-check",
+      "title": "소수 판별",
+      "short": "60초 동안 소수/비소수 판별",
+      "icon": "🔢",
+      "tags": [
+        "math",
+        "reflex"
+      ],
+      "tagLabels": [
+        "숫자",
+        "순발"
+      ],
+      "accent": "#7a6bc4",
+      "duration": "1분",
+      "slug": "prime-check",
+      "path": "games/prime-check/"
+    },
+    {
+      "id": "weekday-calc",
+      "title": "요일 계산",
+      "short": "주어진 날짜의 요일 맞추기",
+      "icon": "📅",
+      "tags": [
+        "math",
+        "logic"
+      ],
+      "tagLabels": [
+        "숫자",
+        "논리"
+      ],
+      "accent": "#bd4080",
+      "duration": "2분",
+      "slug": "weekday-calc",
+      "path": "games/weekday-calc/"
+    },
+    {
+      "id": "roman-num",
+      "title": "로마 숫자 변환",
+      "short": "아라비아 ↔ 로마 양방향",
+      "icon": "Ⅷ",
+      "tags": [
+        "math",
+        "pattern"
+      ],
+      "tagLabels": [
+        "숫자",
+        "패턴"
+      ],
+      "accent": "#8b6c3f",
+      "duration": "2~3분",
+      "slug": "roman-num",
+      "path": "games/roman-num/"
+    },
+    {
+      "id": "typing-30s",
+      "title": "30초 타자",
+      "short": "분당 타이핑 수 측정",
+      "icon": "⌨️",
+      "tags": [
+        "typing",
+        "reflex"
+      ],
+      "tagLabels": [
+        "타이핑",
+        "순발"
+      ],
+      "accent": "#4a7a9a",
+      "duration": "30초",
+      "slug": "typing-30s",
+      "path": "games/typing-30s/"
+    },
+    {
+      "id": "reverse-word",
+      "title": "거꾸로 단어",
+      "short": "거꾸로 읽힌 단어 원형 맞추기",
+      "icon": "🔄",
+      "tags": [
+        "vocab",
+        "korean"
+      ],
+      "tagLabels": [
+        "단어",
+        "한글"
+      ],
+      "accent": "#6f9b4b",
+      "duration": "2분",
+      "slug": "reverse-word",
+      "path": "games/reverse-word/"
+    },
+    {
+      "id": "flash-vocab",
+      "title": "영단어 플래시",
+      "short": "영단어 뜻 4지선다",
+      "icon": "🔤",
+      "tags": [
+        "vocab",
+        "memory"
+      ],
+      "tagLabels": [
+        "단어",
+        "기억"
+      ],
+      "accent": "#3e7ba0",
+      "duration": "2~3분",
+      "slug": "flash-vocab",
+      "path": "games/flash-vocab/"
+    },
+    {
+      "id": "liar-find",
+      "title": "라이어 찾기",
+      "short": "진술 분석으로 범인 지목",
+      "icon": "🔍",
+      "tags": [
+        "logic",
+        "deduction"
+      ],
+      "tagLabels": [
+        "논리",
+        "추론"
+      ],
+      "accent": "#8c5a9e",
+      "duration": "2~4분",
+      "slug": "liar-find",
+      "path": "games/liar-find/"
+    },
+    {
+      "id": "dice-sum",
+      "title": "주사위 합산",
+      "short": "주사위들의 합을 빠르게",
+      "icon": "🎲",
+      "tags": [
+        "math",
+        "chance",
+        "reflex"
+      ],
+      "tagLabels": [
+        "숫자",
+        "확률",
+        "순발"
+      ],
+      "accent": "#b8482e",
+      "duration": "1~2분",
+      "slug": "dice-sum",
+      "path": "games/dice-sum/"
+    },
+    {
+      "id": "timing-bar",
+      "title": "타이밍 바",
+      "short": "움직이는 인디케이터 정지",
+      "icon": "🎯",
+      "tags": [
+        "timing",
+        "reflex"
+      ],
+      "tagLabels": [
+        "타이밍",
+        "순발"
+      ],
+      "accent": "#4aa58f",
+      "duration": "1~2분",
+      "slug": "timing-bar",
+      "path": "games/timing-bar/"
+    },
+    {
+      "id": "speed-sum",
+      "title": "속기 합",
+      "short": "깜빡이는 숫자들의 합 암산",
+      "icon": "⚡",
+      "tags": [
+        "memory",
+        "math",
+        "arithmetic"
+      ],
+      "tagLabels": [
+        "기억",
+        "숫자",
+        "암산"
+      ],
+      "accent": "#6a7cc8",
+      "duration": "2분",
+      "slug": "speed-sum",
+      "path": "games/speed-sum/"
+    },
+    {
+      "id": "word-chain",
+      "title": "끝말잇기",
+      "short": "AI와 단어 이어 붙이기",
+      "icon": "🔗",
+      "tags": [
+        "vocab",
+        "korean"
+      ],
+      "tagLabels": [
+        "단어",
+        "한글"
+      ],
+      "accent": "#c97a6c",
+      "duration": "1분",
+      "slug": "word-chain",
+      "path": "games/word-chain/"
+    },
+    {
+      "id": "fraction-compare",
+      "title": "분수 비교",
+      "short": "60초 분수 크기 비교",
+      "icon": "⅔",
+      "tags": [
+        "math",
+        "arithmetic",
+        "reflex"
+      ],
+      "tagLabels": [
+        "숫자",
+        "암산",
+        "순발"
+      ],
+      "accent": "#5a9bd2",
+      "duration": "1분",
+      "slug": "fraction-compare",
+      "path": "games/fraction-compare/"
+    },
+    {
+      "id": "pct-rush",
+      "title": "퍼센트 러시",
+      "short": "60초 퍼센트 계산",
+      "icon": "%",
+      "tags": [
+        "math",
+        "arithmetic",
+        "reflex"
+      ],
+      "tagLabels": [
+        "숫자",
+        "암산",
+        "순발"
+      ],
+      "accent": "#c87a3a",
+      "duration": "1분",
+      "slug": "pct-rush",
+      "path": "games/pct-rush/"
+    },
+    {
+      "id": "change-calc",
+      "title": "거스름돈 계산",
+      "short": "가게 계산원의 암산",
+      "icon": "💴",
+      "tags": [
+        "math",
+        "arithmetic"
+      ],
+      "tagLabels": [
+        "숫자",
+        "암산"
+      ],
+      "accent": "#478b77",
+      "duration": "2~3분",
+      "slug": "change-calc",
+      "path": "games/change-calc/"
+    },
+    {
+      "id": "temperature-flip",
+      "title": "섭씨 ↔ 화씨",
+      "short": "온도 단위 변환",
+      "icon": "🌡️",
+      "tags": [
+        "math",
+        "arithmetic"
+      ],
+      "tagLabels": [
+        "숫자",
+        "암산"
+      ],
+      "accent": "#e05555",
+      "duration": "2~3분",
+      "slug": "temperature-flip",
+      "path": "games/temperature-flip/"
+    },
+    {
+      "id": "knight-knave",
+      "title": "기사와 악당",
+      "short": "진실과 거짓을 가려내는 논리",
+      "icon": "🛡️",
+      "tags": [
+        "logic",
+        "deduction"
+      ],
+      "tagLabels": [
+        "논리",
+        "추론"
+      ],
+      "accent": "#6c4b8e",
+      "duration": "3~4분",
+      "slug": "knight-knave",
+      "path": "games/knight-knave/"
+    },
+    {
+      "id": "balance-coin",
+      "title": "가짜 동전 찾기",
+      "short": "저울 2번으로 가짜 1개 찾기",
+      "icon": "⚖️",
+      "tags": [
+        "logic",
+        "deduction"
+      ],
+      "tagLabels": [
+        "논리",
+        "추론"
+      ],
+      "accent": "#8b7855",
+      "duration": "2~4분",
+      "slug": "balance-coin",
+      "path": "games/balance-coin/"
+    },
+    {
+      "id": "card-order",
+      "title": "카드 순서 기억",
+      "short": "반짝이는 순서를 재현",
+      "icon": "🃏",
+      "tags": [
+        "memory",
+        "pattern"
+      ],
+      "tagLabels": [
+        "기억",
+        "패턴"
+      ],
+      "accent": "#6b4e8a",
+      "duration": "2~4분",
+      "slug": "card-order",
+      "path": "games/card-order/"
+    },
+    {
+      "id": "sniper",
+      "title": "움직이는 타겟",
+      "short": "20초 타겟 클릭 스프린트",
+      "icon": "🎯",
+      "tags": [
+        "arcade",
+        "reflex",
+        "focus"
+      ],
+      "tagLabels": [
+        "아케이드",
+        "순발",
+        "집중"
+      ],
+      "accent": "#c93c3c",
+      "duration": "20초",
+      "slug": "sniper",
+      "path": "games/sniper/"
+    },
+    {
+      "id": "crossword-mini",
+      "title": "미니 크로스워드",
+      "short": "3×3 영단어 크로스워드",
+      "icon": "🔡",
+      "tags": [
+        "vocab",
+        "logic"
+      ],
+      "tagLabels": [
+        "단어",
+        "논리"
+      ],
+      "accent": "#516c8a",
+      "duration": "2~3분",
+      "slug": "crossword-mini",
+      "path": "games/crossword-mini/"
+    },
+    {
+      "id": "24-hard",
+      "title": "24 게임 · 고난도",
+      "short": "분수·나눗셈이 필요한 4문제",
+      "icon": "24",
+      "tags": [
+        "math",
+        "logic",
+        "arithmetic"
+      ],
+      "tagLabels": [
+        "숫자",
+        "논리",
+        "암산"
+      ],
+      "accent": "#b85c2e",
+      "duration": "4~6분",
+      "slug": "24-hard",
+      "path": "games/24-hard/"
+    },
+    {
+      "id": "digit-span",
+      "title": "숫자 암기",
+      "short": "어디까지 기억하는가",
+      "icon": "🔢",
+      "tags": [
+        "memory"
+      ],
+      "tagLabels": [
+        "기억"
+      ],
+      "accent": "#c44d7a",
+      "duration": "2~3분",
+      "slug": "digit-span",
+      "path": "games/digit-span/"
+    },
+    {
+      "id": "char-count",
+      "title": "글자 세기",
+      "short": "문단에서 특정 글자 개수",
+      "icon": "🔍",
+      "tags": [
+        "focus",
+        "vocab"
+      ],
+      "tagLabels": [
+        "집중",
+        "단어"
+      ],
+      "accent": "#6a8a4d",
+      "duration": "2~3분",
+      "slug": "char-count",
+      "path": "games/char-count/"
+    },
+    {
+      "id": "map-location",
+      "title": "지도 위치 기억",
+      "short": "깜빡인 위치를 그대로 재현",
+      "icon": "📍",
+      "tags": [
+        "memory",
+        "space"
+      ],
+      "tagLabels": [
+        "기억",
+        "공간"
+      ],
+      "accent": "#3e8b87",
+      "duration": "3~5분",
+      "slug": "map-location",
+      "path": "games/map-location/"
+    },
+    {
+      "id": "story-recall",
+      "title": "이야기 기억",
+      "short": "짧은 이야기 4개 질문",
+      "icon": "📖",
+      "tags": [
+        "memory",
+        "story"
+      ],
+      "tagLabels": [
+        "기억",
+        "스토리"
+      ],
+      "accent": "#8e6bbc",
+      "duration": "2~3분",
+      "slug": "story-recall",
+      "path": "games/story-recall/"
+    },
+    {
+      "id": "face-name",
+      "title": "얼굴과 이름",
+      "short": "5명 얼굴-이름 매칭",
+      "icon": "🙂",
+      "tags": [
+        "memory"
+      ],
+      "tagLabels": [
+        "기억"
+      ],
+      "accent": "#d67a54",
+      "duration": "2~3분",
+      "slug": "face-name",
+      "path": "games/face-name/"
+    },
+    {
+      "id": "parity-recall",
+      "title": "짝홀 기억",
+      "short": "숫자 위치의 짝·홀 구분",
+      "icon": "🔢",
+      "tags": [
+        "memory",
+        "math"
+      ],
+      "tagLabels": [
+        "기억",
+        "숫자"
+      ],
+      "accent": "#5b7ccc",
+      "duration": "2분",
+      "slug": "parity-recall",
+      "path": "games/parity-recall/"
+    },
+    {
+      "id": "jamo-combine",
+      "title": "자모 조합",
+      "short": "초성으로 단어 떠올리기",
+      "icon": "ㅈㅁ",
+      "tags": [
+        "vocab",
+        "korean"
+      ],
+      "tagLabels": [
+        "단어",
+        "한글"
+      ],
+      "accent": "#8c6cb6",
+      "duration": "2~3분",
+      "slug": "jamo-combine",
+      "path": "games/jamo-combine/"
+    },
+    {
+      "id": "einstein-mini",
+      "title": "아인슈타인 미니",
+      "short": "진술로 속성 매칭",
+      "icon": "🧩",
+      "tags": [
+        "logic",
+        "deduction"
+      ],
+      "tagLabels": [
+        "논리",
+        "추론"
+      ],
+      "accent": "#5a8ba0",
+      "duration": "3~4분",
+      "slug": "einstein-mini",
+      "path": "games/einstein-mini/"
+    },
+    {
+      "id": "beat-tap",
+      "title": "박자 탭",
+      "short": "90 BPM 박자에 맞춰 탭",
+      "icon": "🎵",
+      "tags": [
+        "rhythm",
+        "timing",
+        "reflex"
+      ],
+      "tagLabels": [
+        "리듬",
+        "타이밍",
+        "순발"
+      ],
+      "accent": "#c56b9e",
+      "duration": "1분",
+      "slug": "beat-tap",
+      "path": "games/beat-tap/"
+    },
+    {
+      "id": "typing-accuracy",
+      "title": "타이핑 정확도",
+      "short": "오타 없이 정확하게",
+      "icon": "✍️",
+      "tags": [
+        "typing",
+        "focus"
+      ],
+      "tagLabels": [
+        "타이핑",
+        "집중"
+      ],
+      "accent": "#5a8e8b",
+      "duration": "1~2분",
+      "slug": "typing-accuracy",
+      "path": "games/typing-accuracy/"
+    },
+    {
+      "id": "tetris-lite",
+      "title": "블록 쌓기",
+      "short": "같은 색 3개 연결로 제거",
+      "icon": "🧱",
+      "tags": [
+        "arcade",
+        "space",
+        "reflex"
+      ],
+      "tagLabels": [
+        "아케이드",
+        "공간",
+        "순발"
+      ],
+      "accent": "#507abf",
+      "duration": "3~5분",
+      "slug": "tetris-lite",
+      "path": "games/tetris-lite/"
+    },
+    {
+      "id": "probability-gut",
+      "title": "확률 직감",
+      "short": "두 상황 중 어느 쪽이 더 가능?",
+      "icon": "🎲",
+      "tags": [
+        "chance",
+        "logic",
+        "math"
+      ],
+      "tagLabels": [
+        "확률",
+        "논리",
+        "숫자"
+      ],
+      "accent": "#6ca0c0",
+      "duration": "3~4분",
+      "slug": "probability-gut",
+      "path": "games/probability-gut/"
+    },
+    {
+      "id": "lucky-day",
+      "title": "오늘의 운세",
+      "short": "재미로 보는 하루치 운세",
+      "icon": "🌟",
+      "tags": [
+        "daily",
+        "mix"
+      ],
+      "tagLabels": [
+        "데일리",
+        "종합"
+      ],
+      "accent": "#d49f3b",
+      "duration": "30초",
+      "slug": "lucky-day",
+      "path": "games/lucky-day/"
+    },
+    {
+      "id": "trivia-korea",
+      "title": "한국 상식 퀴즈",
+      "short": "한국에 대한 일반 상식 8문제",
+      "icon": "🇰🇷",
+      "tags": [
+        "trivia",
+        "vocab",
+        "logic"
+      ],
+      "tagLabels": [
+        "상식",
+        "단어",
+        "논리"
+      ],
+      "accent": "#2e74a8",
+      "duration": "3~4분",
+      "slug": "trivia-korea",
+      "path": "games/trivia-korea/"
+    },
+    {
+      "id": "dino-runner",
+      "title": "점프 러너",
+      "short": "장애물 뛰어넘기 무한 러너",
+      "icon": "🦖",
+      "tags": [
+        "arcade",
+        "reflex"
+      ],
+      "tagLabels": [
+        "아케이드",
+        "순발"
+      ],
+      "accent": "#8da35a",
+      "duration": "무한",
+      "slug": "dino-runner",
+      "path": "games/dino-runner/"
+    },
+    {
+      "id": "mirror-match",
+      "title": "거울상 찾기",
+      "short": "좌우 반전 도형 고르기",
+      "icon": "🪞",
+      "tags": [
+        "space",
+        "logic",
+        "pattern"
+      ],
+      "tagLabels": [
+        "공간",
+        "논리",
+        "패턴"
+      ],
+      "accent": "#5f8f98",
+      "duration": "2~3분",
+      "slug": "mirror-match",
+      "path": "games/mirror-match/"
+    },
+    {
+      "id": "rotation-match",
+      "title": "회전 매칭",
+      "short": "회전만으로 같아지는 도형",
+      "icon": "🔄",
+      "tags": [
+        "space",
+        "logic",
+        "pattern"
+      ],
+      "tagLabels": [
+        "공간",
+        "논리",
+        "패턴"
+      ],
+      "accent": "#8a5ca0",
+      "duration": "2~3분",
+      "slug": "rotation-match",
+      "path": "games/rotation-match/"
+    },
+    {
+      "id": "dice-net",
+      "title": "주사위 전개도",
+      "short": "마주 보는 면의 합은 7",
+      "icon": "🎲",
+      "tags": [
+        "space",
+        "math",
+        "pattern"
+      ],
+      "tagLabels": [
+        "공간",
+        "숫자",
+        "패턴"
+      ],
+      "accent": "#6d8c5b",
+      "duration": "2~3분",
+      "slug": "dice-net",
+      "path": "games/dice-net/"
+    },
+    {
+      "id": "maze-rush",
+      "title": "미로 러시 · 30초",
+      "short": "30초에 미로 몇 개 연속 탈출?",
+      "icon": "🌀",
+      "tags": [
+        "arcade",
+        "space",
+        "reflex"
+      ],
+      "tagLabels": [
+        "아케이드",
+        "공간",
+        "순발"
+      ],
+      "accent": "#7a5e9e",
+      "duration": "30초",
+      "slug": "maze-rush",
+      "path": "games/maze-rush/"
+    },
+    {
+      "id": "multi-tap",
+      "title": "1→10 순서 탭",
+      "short": "흩어진 숫자 빠르게 순서대로",
+      "icon": "1️⃣",
+      "tags": [
+        "reflex",
+        "focus",
+        "timing"
+      ],
+      "tagLabels": [
+        "순발",
+        "집중",
+        "타이밍"
+      ],
+      "accent": "#da5d3c",
+      "duration": "30초",
+      "slug": "multi-tap",
+      "path": "games/multi-tap/"
+    },
+    {
+      "id": "go-nogo",
+      "title": "Go / No-Go",
+      "short": "파랑만 클릭, 빨강은 참기",
+      "icon": "🚦",
+      "tags": [
+        "reflex",
+        "focus"
+      ],
+      "tagLabels": [
+        "순발",
+        "집중"
+      ],
+      "accent": "#3a7cc9",
+      "duration": "2분",
+      "slug": "go-nogo",
+      "path": "games/go-nogo/"
+    },
+    {
+      "id": "pipe-water",
+      "title": "파이프 연결",
+      "short": "회전해서 물이 흐를 경로 완성",
+      "icon": "🚰",
+      "tags": [
+        "logic",
+        "space",
+        "pattern"
+      ],
+      "tagLabels": [
+        "논리",
+        "공간",
+        "패턴"
+      ],
+      "accent": "#3e8ca6",
+      "duration": "2~4분",
+      "slug": "pipe-water",
+      "path": "games/pipe-water/"
+    },
+    {
+      "id": "tangram-mini",
+      "title": "도형 맞추기",
+      "short": "3조각으로 목표 모양 완성",
+      "icon": "🔶",
+      "tags": [
+        "space",
+        "logic",
+        "pattern"
+      ],
+      "tagLabels": [
+        "공간",
+        "논리",
+        "패턴"
+      ],
+      "accent": "#b66e3f",
+      "duration": "2~4분",
+      "slug": "tangram-mini",
+      "path": "games/tangram-mini/"
+    },
+    {
+      "id": "orbit-tap",
+      "title": "오빗 탭",
+      "short": "회전하는 점이 타겟을 지날 때 탭",
+      "icon": "◎",
+      "tags": [
+        "arcade",
+        "reflex",
+        "timing",
+        "focus"
+      ],
+      "tagLabels": [
+        "아케이드",
+        "순발",
+        "타이밍"
+      ],
+      "accent": "#2f7d62",
+      "duration": "45초",
+      "slug": "orbit-tap",
+      "path": "games/orbit-tap/"
+    },
+    {
+      "id": "comet-catcher",
+      "title": "코멧 캐처",
+      "short": "별비 속에서 혜성을 모으고 운석을 피하기",
+      "icon": "✦",
+      "tags": [
+        "arcade",
+        "reflex",
+        "focus",
+        "space"
+      ],
+      "tagLabels": [
+        "아케이드",
+        "순발",
+        "집중"
+      ],
+      "accent": "#516fd8",
+      "duration": "60초",
+      "slug": "comet-catcher",
+      "path": "games/comet-catcher/"
+    },
+    {
+      "id": "laser-mirror",
+      "title": "레이저 미러",
+      "short": "거울을 돌려 빛을 목표까지 연결",
+      "icon": "◇",
+      "tags": [
+        "logic",
+        "space",
+        "pattern",
+        "focus"
+      ],
+      "tagLabels": [
+        "논리",
+        "공간",
+        "패턴"
+      ],
+      "accent": "#c64f72",
+      "duration": "3~5분",
+      "slug": "laser-mirror",
+      "path": "games/laser-mirror/"
+    },
+    {
+      "id": "rhythm-lane",
+      "title": "리듬 레인",
+      "short": "떨어지는 노트를 판정선에 맞춰 탭",
+      "icon": "♪",
+      "tags": [
+        "rhythm",
+        "timing",
+        "reflex",
+        "focus"
+      ],
+      "tagLabels": [
+        "리듬",
+        "타이밍",
+        "순발"
+      ],
+      "accent": "#7b5cff",
+      "duration": "60초",
+      "slug": "rhythm-lane",
+      "path": "games/rhythm-lane/"
+    },
+    {
+      "id": "bounce-putt",
+      "title": "바운스 퍼트",
+      "short": "벽 반사를 이용해 공을 홀에 넣기",
+      "icon": "●",
+      "tags": [
+        "strategy",
+        "space",
+        "timing",
+        "focus"
+      ],
+      "tagLabels": [
+        "전략",
+        "공간",
+        "타이밍"
+      ],
+      "accent": "#2f9d72",
+      "duration": "3~5분",
+      "slug": "bounce-putt",
+      "path": "games/bounce-putt/"
+    },
+    {
+      "id": "micro-defense",
+      "title": "마이크로 디펜스",
+      "short": "3종 타워를 조합해 웨이브 막기",
+      "icon": "◆",
+      "tags": [
+        "strategy",
+        "arcade",
+        "focus",
+        "logic"
+      ],
+      "tagLabels": [
+        "전략",
+        "아케이드",
+        "집중"
+      ],
+      "accent": "#b45f2a",
+      "duration": "3~5분",
+      "slug": "micro-defense",
+      "path": "games/micro-defense/"
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>카드 짝 맞추기 | 5분 퍼즐</title>
+<meta property="og:title" content="카드 짝 맞추기">
+<meta property="og:description" content="16장 카드 중 같은 그림 8쌍을 찾아주세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#d8864e; --accent-dark:#b56a34; --accent-soft:#f0c7a6; }
+  .grid{ display:grid;grid-template-columns:repeat(4,1fr);gap:8px;max-width:380px;margin:0 auto 16px; }
+  .card-tile{
+    aspect-ratio:3/4;background:var(--accent);border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:36px;cursor:pointer;user-select:none;
+    transition:all .2s;box-shadow:var(--shadow);
+    perspective:600px;
+  }
+  .card-tile.flipped{ background:white;transform:rotateY(0); }
+  .card-tile.matched{ background:#c4d8b0;cursor:default;opacity:.7; }
+  .card-tile.hidden{ color:transparent; }
+  .card-tile.hidden::before{ content:"?"; color:white; font-size:28px; font-weight:700; }
+  .info-row{ display:flex;justify-content:space-between;gap:14px;color:var(--ink-dim);font-size:14px;margin-bottom:8px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestTime, shuffle, mulberry32, randomSeed,
+        injectBackLink, shareToClipboard, formatClock } = Brain;
+injectBackLink('../../');
+
+const EMOJIS = ['🍎','🍌','🍇','🍓','🥝','🍑','🍉','🥥'];
+const KEY = 'match_pair_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestMs:null, recent:[] });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🃏</div>
+    <h1 class="hero-title">카드 짝 <span style="color:var(--accent);">맞추기</span></h1>
+    <div class="hero-sub">16장 카드 중 같은 그림 여덟 쌍을 찾으세요.<br>적은 시도와 빠른 시간이 좋은 점수.</div>
+    ${stats.bestMs ? `<div class="today-card"><div class="today-label">B E S T  T I M E</div><div class="today-date">${formatClock(stats.bestMs)}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const deck = shuffle([...EMOJIS, ...EMOJIS], rng);
+  const state = { deck, flipped:[], matched:new Set(), moves:0, startedAt:performance.now(), timer:null };
+
+  clear(app);
+  const topbar = $el('div','topbar');
+  topbar.innerHTML = `<div class="stat" id="moves">시도 0</div><div class="stat" id="timer">0:00</div>`;
+  app.appendChild(topbar);
+  const grid = $el('div','grid');
+  grid.id = 'grid';
+  app.appendChild(grid);
+  const info = $el('div','round-info');
+  info.id = 'info';
+  info.style.textAlign='center';
+  info.style.color='var(--ink-dim)';
+  app.appendChild(info);
+
+  function render(){
+    grid.innerHTML = '';
+    state.deck.forEach((em, idx)=>{
+      const tile = $el('div', 'card-tile');
+      const isFlipped = state.flipped.includes(idx) || state.matched.has(idx);
+      if(state.matched.has(idx)) tile.classList.add('matched');
+      else if(!isFlipped) tile.classList.add('hidden');
+      if(isFlipped) tile.textContent = em;
+      tile.onclick = ()=>flip(idx);
+      grid.appendChild(tile);
+    });
+  }
+  function flip(idx){
+    if(state.flipped.includes(idx) || state.matched.has(idx)) return;
+    if(state.flipped.length >= 2) return;
+    state.flipped.push(idx);
+    render();
+    if(state.flipped.length === 2){
+      state.moves++;
+      document.getElementById('moves').textContent = '시도 ' + state.moves;
+      const [a,b] = state.flipped;
+      if(state.deck[a] === state.deck[b]){
+        setTimeout(()=>{
+          state.matched.add(a); state.matched.add(b);
+          state.flipped = [];
+          render();
+          if(state.matched.size === state.deck.length) finish();
+        }, 400);
+      } else {
+        setTimeout(()=>{
+          state.flipped = [];
+          render();
+        }, 900);
+      }
+    }
+  }
+  function tick(){
+    const el = document.getElementById('timer');
+    if(el) el.textContent = formatClock(performance.now() - state.startedAt);
+  }
+  function finish(){
+    clearInterval(state.timer);
+    const elapsed = performance.now() - state.startedAt;
+    const stats = recordBestTime(KEY, Math.round(elapsed), { moves: state.moves });
+    const isBest = stats.bestMs === Math.round(elapsed);
+    setTimeout(()=>{
+      clear(app);
+      const r = $el('div','result-card');
+      r.innerHTML = `
+        <div class="result-emoji">${state.moves <= 10 ? '🏆' : state.moves <= 14 ? '🎉' : '👏'}</div>
+        <div class="result-title">완성!</div>
+        <div class="result-big">${formatClock(elapsed)}</div>
+        <div class="result-sub">시도 ${state.moves}회 · 완벽 8회</div>
+        ${isBest ? '<div class="ribbon">🌟 개인 최고 기록</div>' : ''}
+        <div class="btn-row">
+          <button class="btn" id="btn-share">결과 공유</button>
+          <button class="btn secondary" id="btn-again">다시</button>
+          <button class="btn ghost" id="btn-home">홈</button>
+        </div>
+      `;
+      app.appendChild(r);
+      document.getElementById('btn-again').onclick = startGame;
+      document.getElementById('btn-home').onclick = showTitle;
+      document.getElementById('btn-share').onclick = (e)=>
+        shareToClipboard(`카드 짝 맞추기\n⏱ ${formatClock(elapsed)} / 시도 ${state.moves}회${isBest?'\n🌟 개인 최고':''}`, e.target);
+    }, 500);
+  }
+
+  state.timer = setInterval(tick, 250);
+  render();
+}
+
+showTitle();
+window.__GAME__ = { EMOJIS, KEY };
+</script>
+</body>
+</html>

@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>연산 릴레이 · 60초</title>
+<meta property="og:title" content="연산 릴레이 · 60초">
+<meta property="og:description" content="60초 동안 덧셈, 뺄셈, 곱셈, 나눗셈 암산 스프린트. 빨리 많이 풀수록 점수 상승.">
+<meta property="og:type" content="website">
+<style>
+  :root{
+    --bg:#f4f9ed;
+    --bg-2:#e5f0d5;
+    --card:#ffffff;
+    --ink:#1f2a17;
+    --ink-dim:#677062;
+    --ink-faint:#acb7a6;
+    --accent:#6ca02c;
+    --accent-dark:#4e7a1e;
+    --accent-soft:#c4db9d;
+    --green:#7db167;
+    --red:#d06060;
+    --yellow:#e0b040;
+    --shadow:0 4px 14px rgba(0,0,0,.08);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    background:linear-gradient(135deg,var(--bg) 0%,var(--bg-2) 100%);
+    color:var(--ink);
+    font-family:"Pretendard","Noto Sans KR","Apple SD Gothic Neo",system-ui,sans-serif;
+    font-size:16px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  main{max-width:480px;margin:0 auto;padding:4vh 20px 10vh;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;font-size:14px;}
+  .topbar .stat{background:var(--card);padding:8px 14px;border-radius:20px;font-weight:700;box-shadow:var(--shadow);color:var(--accent-dark);font-variant-numeric:tabular-nums;}
+
+  .timer-bar{height:8px;background:var(--card);border-radius:4px;overflow:hidden;margin-bottom:18px;box-shadow:var(--shadow);}
+  .timer-fill{height:100%;background:linear-gradient(to right,var(--accent),var(--accent-dark));transition:width .1s linear;}
+  .timer-bar.warn .timer-fill{background:linear-gradient(to right,var(--yellow),#e08a30);}
+  .timer-bar.danger .timer-fill{background:linear-gradient(to right,var(--red),#a04040);}
+
+  .card{background:var(--card);border-radius:var(--radius);padding:28px 22px;box-shadow:var(--shadow);margin-bottom:16px;}
+
+  .problem{text-align:center;margin-bottom:22px;min-height:84px;display:flex;align-items:center;justify-content:center;}
+  .problem .expr{font-size:48px;font-weight:800;letter-spacing:.04em;color:var(--ink);font-variant-numeric:tabular-nums;}
+  .problem .expr .op{color:var(--accent);margin:0 .2em;}
+  .problem.right .expr{color:var(--green);animation:popgreen .3s;}
+  .problem.wrong .expr{color:var(--red);animation:shake .3s;}
+  @keyframes popgreen{0%{transform:scale(1);}50%{transform:scale(1.1);}100%{transform:scale(1);}}
+  @keyframes shake{0%,100%{transform:translateX(0);}25%{transform:translateX(-6px);}75%{transform:translateX(6px);}}
+
+  .answer-input{
+    width:100%;padding:14px 16px;border:2px solid var(--ink-faint);border-radius:10px;
+    font:inherit;font-size:30px;font-weight:700;text-align:center;
+    background:var(--bg);color:var(--ink);letter-spacing:.05em;
+    font-variant-numeric:tabular-nums;-moz-appearance:textfield;
+  }
+  .answer-input::-webkit-outer-spin-button,
+  .answer-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+  .answer-input:focus{outline:none;border-color:var(--accent);background:white;}
+
+  .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;}
+  .key{
+    aspect-ratio:1.6;background:var(--bg-2);border:0;border-radius:10px;
+    font:inherit;font-weight:700;font-size:22px;cursor:pointer;transition:all .1s;
+    color:var(--ink);
+  }
+  .key:hover{background:var(--accent-soft);}
+  .key:active{transform:scale(.95);}
+  .key.clear{background:#f0d8d8;color:var(--red);}
+  .key.enter{background:var(--accent);color:white;font-size:16px;grid-column:span 1;}
+  .key.enter:hover{background:var(--accent-dark);}
+
+  #title-screen{text-align:center;padding-top:6vh;}
+  .phone-icon{font-size:46px;margin-bottom:12px;}
+  .hero-title{font-size:30px;font-weight:800;margin-bottom:10px;}
+  .hero-sub{color:var(--ink-dim);font-size:15px;margin:0 auto 22px;max-width:330px;line-height:1.8;}
+  .rule-card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:16px;box-shadow:var(--shadow);text-align:left;font-size:13px;color:var(--ink-dim);line-height:1.8;}
+  .rule-card h3{color:var(--accent-dark);font-size:14px;margin-bottom:6px;letter-spacing:.1em;}
+  .best{color:var(--accent-dark);font-weight:700;margin-top:6px;}
+
+  .btn{
+    background:var(--accent);color:white;border:0;border-radius:10px;
+    padding:13px 28px;font:inherit;font-weight:700;font-size:15px;cursor:pointer;
+    transition:all .2s;box-shadow:0 2px 8px rgba(108,160,44,.3);letter-spacing:.08em;
+  }
+  .btn:hover{background:var(--accent-dark);transform:translateY(-1px);}
+  .btn.secondary{background:transparent;color:var(--ink);border:2px solid var(--ink);box-shadow:none;}
+  .btn.ghost{background:transparent;color:var(--ink-dim);border:1px solid var(--ink-faint);box-shadow:none;padding:10px 20px;font-size:13px;}
+  .btn-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:16px;}
+
+  .result-emoji{font-size:48px;margin-bottom:6px;text-align:center;}
+  .result-title{font-size:22px;font-weight:800;text-align:center;margin-bottom:6px;}
+  .stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0;}
+  .stat-item{background:var(--bg);padding:12px;border-radius:10px;text-align:center;}
+  .stat-item .label{color:var(--ink-dim);font-size:11px;letter-spacing:.1em;}
+  .stat-item .value{font-weight:800;font-size:22px;color:var(--accent-dark);margin-top:4px;}
+  .history-list{margin-top:12px;color:var(--ink-dim);font-size:13px;}
+  .history-list .entry{display:flex;justify-content:space-between;padding:4px 10px;}
+  .history-list .entry.best{color:var(--accent-dark);font-weight:700;}
+
+  .credits{color:var(--ink-faint);font-size:11px;text-align:center;margin-top:26px;letter-spacing:.15em;}
+
+  @media(max-width:480px){
+    .problem .expr{font-size:38px;}
+    .answer-input{font-size:26px;}
+  }
+</style>
+</head>
+<body>
+<a class="nav-back" href="../../" style="position:fixed;top:16px;left:16px;background:#fff;color:#666;text-decoration:none;padding:6px 14px;border-radius:20px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.07);z-index:10;">← 홈</a>
+<main id="app"></main>
+<script>
+/* =========================================================
+   『연산 릴레이 · 60초』 — game8
+   ========================================================= */
+
+const DURATION_SEC = 60;
+
+/* PRNG */
+function mulberry32(seed){
+  return function(){
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ t>>>15, t | 1);
+    t ^= t + Math.imul(t ^ t>>>7, t | 61);
+    return ((t ^ t>>>14) >>> 0) / 4294967296;
+  };
+}
+function rand(rng, lo, hi){ return lo + Math.floor(rng() * (hi - lo + 1)); }
+
+/* Problem generator — difficulty ramps with solved count */
+function generateProblem(solvedCount, rng){
+  // Tier by solvedCount:
+  //  0-4  : +/− small
+  //  5-9  : +/− medium, ×/÷ small
+  //  10-19: +/− large, ×/÷ medium
+  //  20+  : all ops with larger range
+  let ops;
+  let ranges;
+  if(solvedCount < 5){
+    ops = ['+','-'];
+    ranges = {add:[5,30], sub:[5,30]};
+  } else if(solvedCount < 10){
+    ops = ['+','-','×','÷'];
+    ranges = {add:[10,50], sub:[10,50], mul:[2,9], div:[2,9]};
+  } else if(solvedCount < 20){
+    ops = ['+','-','×','÷'];
+    ranges = {add:[20,99], sub:[20,99], mul:[3,12], div:[3,12]};
+  } else {
+    ops = ['+','-','×','÷'];
+    ranges = {add:[30,120], sub:[30,120], mul:[6,15], div:[4,15]};
+  }
+  const op = ops[Math.floor(rng() * ops.length)];
+  let a, b, ans;
+  if(op === '+'){
+    a = rand(rng, ranges.add[0], ranges.add[1]);
+    b = rand(rng, ranges.add[0], ranges.add[1]);
+    ans = a + b;
+  } else if(op === '-'){
+    a = rand(rng, ranges.sub[0], ranges.sub[1]);
+    b = rand(rng, ranges.sub[0], Math.min(ranges.sub[1], a));
+    if(b > a){ [a,b] = [b,a]; }
+    ans = a - b;
+  } else if(op === '×'){
+    a = rand(rng, ranges.mul[0], ranges.mul[1]);
+    b = rand(rng, ranges.mul[0], ranges.mul[1]);
+    ans = a * b;
+  } else { // ÷
+    b = rand(rng, ranges.div[0], ranges.div[1]);
+    const q = rand(rng, ranges.div[0], ranges.div[1]);
+    a = b * q;
+    ans = q;
+  }
+  return { a, b, op, ans };
+}
+
+/* Persistence */
+const KEY = 'arithsprint_stats';
+function loadStats(){
+  try{ return JSON.parse(localStorage.getItem(KEY)||'{"played":0,"bestScore":0,"recent":[]}'); }
+  catch(e){ return {played:0,bestScore:0,recent:[]}; }
+}
+function saveStats(s){ try{ localStorage.setItem(KEY, JSON.stringify(s)); }catch(e){} }
+function recordScore(score, solved, wrong){
+  const s = loadStats();
+  s.played++;
+  if(score > s.bestScore) s.bestScore = score;
+  s.recent.unshift({score, solved, wrong});
+  if(s.recent.length > 5) s.recent = s.recent.slice(0,5);
+  saveStats(s);
+  return s;
+}
+
+/* State */
+const state = {
+  rng: null,
+  startedAt: 0,
+  finished: false,
+  solved: 0,
+  wrong: 0,
+  score: 0,
+  current: null,
+  history: [] // for visual feedback
+};
+
+const app = document.getElementById('app');
+function clear(){ app.innerHTML = ''; }
+function $el(tag, cls, html){ const e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; }
+
+let tickInterval = null;
+
+function showTitle(){
+  clear();
+  const stats = loadStats();
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="phone-icon">➗</div>
+    <h1 class="hero-title">연산 릴레이 · <span style="color:var(--accent);">60초</span></h1>
+    <div class="hero-sub">덧셈, 뺄셈, 곱셈, 나눗셈.<br>60초 안에 최대한 많이 맞혀보세요.</div>
+    <div class="rule-card">
+      <h3>점수 규칙</h3>
+      정답 하나당 <b>+10점</b>, 오답 하나당 <b>−3점</b>.<br>
+      난이도가 점점 올라갑니다. 후반엔 한 문제당 점수가 더 커집니다 (최대 <b>×2</b>).<br>
+      ${stats.bestScore > 0 ? `<div class="best">🌟 개인 최고 ${stats.bestScore}점</div>` : ''}
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="btn-start">시 작 하 기</button>
+    </div>
+    <div class="credits">built by Claude · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  state.rng = mulberry32((Date.now() & 0xffffffff) ^ 0x8a8a);
+  state.startedAt = performance.now();
+  state.finished = false;
+  state.solved = 0;
+  state.wrong = 0;
+  state.score = 0;
+  state.current = generateProblem(0, state.rng);
+  render();
+
+  if(tickInterval) clearInterval(tickInterval);
+  tickInterval = setInterval(tick, 100);
+}
+
+function tick(){
+  if(state.finished) return;
+  const elapsed = (performance.now() - state.startedAt) / 1000;
+  const remaining = Math.max(0, DURATION_SEC - elapsed);
+  updateTimer(remaining);
+  if(remaining <= 0){
+    state.finished = true;
+    clearInterval(tickInterval);
+    finishGame();
+  }
+}
+
+function updateTimer(remaining){
+  const pct = (remaining / DURATION_SEC) * 100;
+  const bar = document.getElementById('timer-bar');
+  const fill = document.getElementById('timer-fill');
+  const numEl = document.getElementById('timer-num');
+  if(fill) fill.style.width = pct + '%';
+  if(numEl) numEl.textContent = remaining.toFixed(1) + 's';
+  if(bar){
+    bar.classList.toggle('warn', remaining < 20 && remaining >= 10);
+    bar.classList.toggle('danger', remaining < 10);
+  }
+}
+
+function pointValueFor(solved){
+  // Tier bonus: base 10, multiplier grows with solved count
+  if(solved < 5) return 10;
+  if(solved < 10) return 13;
+  if(solved < 20) return 16;
+  return 20;
+}
+
+function render(){
+  clear();
+  const topbar = $el('div','topbar');
+  topbar.innerHTML = `
+    <div class="stat">✅ <span id="solved">${state.solved}</span></div>
+    <div class="stat" id="score-stat">🎯 <span id="score">${state.score}</span></div>
+    <div class="stat" id="timer-num-wrap">⏱ <span id="timer-num">${DURATION_SEC.toFixed(1)}s</span></div>
+  `;
+  app.appendChild(topbar);
+
+  const bar = $el('div','timer-bar');
+  bar.id = 'timer-bar';
+  bar.innerHTML = `<div class="timer-fill" id="timer-fill" style="width:100%"></div>`;
+  app.appendChild(bar);
+
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="problem" id="problem">
+      <div class="expr" id="expr"></div>
+    </div>
+    <input type="text" inputmode="numeric" pattern="-?[0-9]*" class="answer-input" id="answer" autofocus autocomplete="off" placeholder="?">
+    <div class="keypad">
+      ${[1,2,3,4,5,6,7,8,9].map(d=>`<button class="key" data-k="${d}">${d}</button>`).join('')}
+      <button class="key clear" data-k="clear">C</button>
+      <button class="key" data-k="0">0</button>
+      <button class="key enter" data-k="enter">Enter</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn ghost" id="btn-skip">건너뛰기 (−2점)</button>
+    </div>
+  `;
+  app.appendChild(card);
+  renderProblem();
+
+  const answer = document.getElementById('answer');
+  answer.focus();
+  answer.addEventListener('input', ()=>{
+    // strip non-digit/minus
+    answer.value = answer.value.replace(/[^0-9-]/g, '').replace(/(?!^)-/g, '');
+  });
+  answer.addEventListener('keydown',(e)=>{
+    if(e.key === 'Enter'){ e.preventDefault(); submitAnswer(); }
+  });
+
+  card.querySelectorAll('.key').forEach(btn=>{
+    btn.onclick = ()=>{
+      const k = btn.dataset.k;
+      if(k === 'clear'){ answer.value = ''; }
+      else if(k === 'enter'){ submitAnswer(); }
+      else { answer.value += k; }
+      answer.focus();
+    };
+  });
+  document.getElementById('btn-skip').onclick = ()=>{
+    state.score = Math.max(0, state.score - 2);
+    document.getElementById('score').textContent = state.score;
+    nextProblem();
+  };
+}
+
+function renderProblem(){
+  const p = state.current;
+  const expr = document.getElementById('expr');
+  if(expr){
+    expr.innerHTML = `${p.a}<span class="op">${p.op}</span>${p.b}<span class="op">=</span>?`;
+  }
+  const prob = document.getElementById('problem');
+  if(prob) prob.classList.remove('right','wrong');
+  const answer = document.getElementById('answer');
+  if(answer){ answer.value = ''; answer.focus(); }
+}
+
+function submitAnswer(){
+  if(state.finished) return;
+  const answer = document.getElementById('answer');
+  const val = parseInt(answer.value, 10);
+  if(isNaN(val)) return;
+  const p = state.current;
+  const prob = document.getElementById('problem');
+  if(val === p.ans){
+    state.solved++;
+    state.score += pointValueFor(state.solved - 1);
+    prob.classList.add('right');
+    document.getElementById('solved').textContent = state.solved;
+    document.getElementById('score').textContent = state.score;
+    setTimeout(nextProblem, 200);
+  } else {
+    state.wrong++;
+    state.score = Math.max(0, state.score - 3);
+    prob.classList.add('wrong');
+    document.getElementById('score').textContent = state.score;
+    setTimeout(()=>{ prob.classList.remove('wrong'); answer.value=''; answer.focus(); }, 300);
+  }
+}
+
+function nextProblem(){
+  state.current = generateProblem(state.solved, state.rng);
+  renderProblem();
+}
+
+function finishGame(){
+  const stats = recordScore(state.score, state.solved, state.wrong);
+  clear();
+  const isBest = stats.bestScore === state.score && state.score > 0;
+  const emoji = state.score >= 200 ? '🏆' : state.score >= 120 ? '🎉' : state.score >= 60 ? '👏' : '🙂';
+  const tier = state.score >= 200 ? '탁월함' : state.score >= 120 ? '빠릅니다' : state.score >= 60 ? '좋은 페이스' : '한 번 더!';
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="result-emoji">${emoji}</div>
+    <div class="result-title">${tier}</div>
+    <div class="stats-grid">
+      <div class="stat-item"><div class="label">점수</div><div class="value">${state.score}</div></div>
+      <div class="stat-item"><div class="label">정답</div><div class="value">${state.solved}</div></div>
+      <div class="stat-item"><div class="label">오답</div><div class="value">${state.wrong}</div></div>
+    </div>
+    ${isBest ? '<div style="text-align:center;color:var(--accent-dark);font-weight:700;margin-top:4px;">🌟 개인 최고 기록!</div>' : ''}
+    <div class="history-list">
+      ${stats.recent.map((e,i)=>`<div class="entry${e.score===stats.bestScore?' best':''}"><span>#${i+1}  정답 ${e.solved}  오답 ${e.wrong}</span><span>${e.score}점</span></div>`).join('')}
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="btn-share">결과 공유</button>
+      <button class="btn secondary" id="btn-again">다시</button>
+      <button class="btn ghost" id="btn-home">홈으로</button>
+    </div>
+  `;
+  app.appendChild(card);
+  document.getElementById('btn-again').onclick = startGame;
+  document.getElementById('btn-home').onclick = showTitle;
+  document.getElementById('btn-share').onclick = ()=>{
+    const txt = `연산 릴레이 60초\n🎯 ${state.score}점  (정답 ${state.solved} · 오답 ${state.wrong})${isBest?'\n🌟 개인 최고!':''}`;
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(txt).then(()=>{
+        const btn = document.getElementById('btn-share');
+        const orig = btn.textContent;
+        btn.textContent='✓ 복사됨';
+        setTimeout(()=>btn.textContent=orig, 1500);
+      });
+    }
+  };
+}
+
+/* Boot */
+showTitle();
+</script>
+</body>
+</html>

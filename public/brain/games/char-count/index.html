@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>글자 세기 | 5분 퍼즐</title>
+<meta property="og:title" content="글자 세기">
+<meta property="og:description" content="문단에서 특정 글자가 몇 번 나오는지 세보세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#6a8a4d;--accent-dark:#4a6a2d;--accent-soft:#c8dbb0; }
+  .para{ background:var(--bg-2);padding:16px;border-radius:12px;font-size:16px;line-height:1.9;margin-bottom:12px;min-height:100px; }
+  .target{ display:inline-block;background:var(--accent-soft);color:var(--accent-dark);font-weight:800;padding:4px 12px;border-radius:8px;font-size:22px; }
+  .hint{ text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:10px; }
+  .input-row{ background:var(--card);border-radius:10px;padding:12px;display:flex;gap:8px;box-shadow:var(--shadow); }
+  .input-row input{ flex:1;padding:12px;border:2px solid var(--ink-faint);border-radius:8px;font:inherit;font-size:26px;font-weight:700;text-align:center;background:var(--bg); }
+  .input-row button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const BANK = [
+  '오늘도 하늘은 파랗고 구름은 하얗게 흘러간다. 하늘을 올려다보니 하늘이 더 넓어 보였다.',
+  '그는 가방을 열고 노트를 꺼냈다. 노트의 첫 장에 오늘의 일정이 적혀 있었다.',
+  '바람이 불고 꽃잎이 떨어졌다. 바람은 차갑지만 꽃은 여전히 곱다.',
+  '커피 한 잔을 마시며 창밖을 바라본다. 거리엔 사람들이 오가고 차들이 지나간다.',
+  '길을 걷다 오래된 가게를 보았다. 가게 문을 열자 종소리가 났고 안은 조용했다.',
+  '산에 오르는 길은 길고 가파르지만 정상에서 보이는 풍경은 그만큼 넓다.'
+];
+const TOTAL = 5;
+const KEY = 'char_count_stats';
+const app = document.getElementById('app');
+
+function pickTarget(text){
+  // Only count single hangul syllables that appear at least 3 times
+  const counts = {};
+  for(const ch of text){
+    if(/[가-힣]/.test(ch)) counts[ch] = (counts[ch]||0)+1;
+  }
+  const candidates = Object.entries(counts).filter(([k,v]) => v >= 3 && v <= 8);
+  if(candidates.length === 0) return null;
+  const [ch, cnt] = candidates[Math.floor(Math.random()*candidates.length)];
+  return { ch, cnt };
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔍</div>
+    <h1 class="hero-title">글자 <span style="color:var(--accent);">세기</span></h1>
+    <div class="hero-sub">문단에서 특정 글자가<br>몇 번 나오는지 세어 입력. ${TOTAL}문제.</div>
+    ${stats.bestScore>0?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const qs = Brain.shuffle(BANK).slice(0, TOTAL).map(t => ({ text:t, target:pickTarget(t) })).filter(q => q.target);
+  while(qs.length < TOTAL){
+    const extra = BANK[Math.floor(Math.random()*BANK.length)];
+    const tg = pickTarget(extra);
+    if(tg) qs.push({ text:extra, target:tg });
+  }
+  const state = { qs, i:0, correct:0 };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const q = state.qs[state.i];
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="hint">아래 문단에서 <span class="target">${q.target.ch}</span> 글자가 몇 번 나오나요?</div>
+      <div class="para">${q.text}</div>
+      <div class="input-row">
+        <input type="number" id="ans" placeholder="개수" autocomplete="off" autofocus>
+        <button id="sub">→</button>
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    const input = document.getElementById('ans');
+    input.focus();
+    function check(){
+      const v = parseInt(input.value, 10);
+      if(isNaN(v)) return;
+      const fb = document.getElementById('fb');
+      if(v === q.target.cnt){ fb.className='feedback right'; fb.textContent='✓ '+q.target.cnt+'개'; state.correct++; }
+      else { fb.className='feedback wrong'; fb.textContent='정답: '+q.target.cnt+'개'; }
+      setTimeout(()=>{ state.i++; next(); }, 1100);
+    }
+    document.getElementById('sub').onclick = check;
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, {});
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=3?'🎉':'👏'}</div>
+      <div class="result-title">글자 세기 종료</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`글자 세기\n🔍 ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { BANK, TOTAL, KEY, pickTarget };
+</script>
+</body>
+</html>

@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>안 걸은 길에서 온 전화</title>
+<style>
+  :root{
+    --bg-1:#0c1624;
+    --bg-2:#152338;
+    --amber:#e5b86a;
+    --amber-soft:#d69a4c;
+    --amber-glow:#f0c77a;
+    --ink:#ece3d0;
+    --ink-dim:#8d8776;
+    --ink-faint:#5d5849;
+    --paper:#1a2537;
+    --paper-2:#23304a;
+    --accent-cool:#6f8aa8;
+    --accent-warm:#c96e5a;
+    --kakao-bg:#fde66c;
+    --kakao-ink:#1f1e1a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    background: radial-gradient(ellipse at 20% 10%, #1e2e48 0%, var(--bg-1) 55%, #050811 100%);
+    color: var(--ink);
+    font-family: "Noto Serif KR","Nanum Myeongjo","IBM Plex Serif",Georgia,"Apple SD Gothic Neo",serif;
+    font-size:17px;
+    line-height:1.9;
+    letter-spacing:0.01em;
+    overflow-x:hidden;
+    min-height:100%;
+    transition: background 1.2s ease;
+  }
+  body.warm{
+    background: radial-gradient(ellipse at 25% 15%, #2a2e3c 0%, #14182a 55%, #05070f 100%);
+  }
+  /* Slow city lights drift */
+  #citynight{position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.45;overflow:hidden;}
+  #citynight .spark{position:absolute;width:2px;height:2px;border-radius:50%;background:rgba(240,199,122,.6);box-shadow:0 0 4px rgba(240,199,122,.5);animation:drift linear infinite;}
+  #citynight .train{position:absolute;height:1px;background:linear-gradient(to right,transparent,rgba(200,220,240,.35),transparent);animation:trainDrift linear infinite;}
+  @keyframes drift{
+    0%{transform:translateY(0) translateX(0);opacity:0;}
+    10%{opacity:.7;}
+    90%{opacity:.5;}
+    100%{transform:translateY(-30vh) translateX(20px);opacity:0;}
+  }
+  @keyframes trainDrift{
+    0%{transform:translateX(-20vw);opacity:0;}
+    10%{opacity:1;}
+    90%{opacity:1;}
+    100%{transform:translateX(120vw);opacity:0;}
+  }
+  .vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 42%,rgba(0,0,0,.5) 100%);z-index:1;}
+  main{position:relative;z-index:2;max-width:680px;margin:0 auto;padding:7vh 28px 30vh;}
+  h1.title{
+    font-size:32px;font-weight:400;letter-spacing:0.08em;text-align:center;
+    color:var(--amber);margin-bottom:0.3em;
+  }
+  .subtitle{text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:3em;letter-spacing:0.25em;}
+  .story{display:flex;flex-direction:column;gap:1.35em;}
+  .node{opacity:0;transform:translateY(6px);animation:fadein .9s ease forwards;}
+  @keyframes fadein{to{opacity:1;transform:translateY(0);}}
+  .n{color:var(--ink);}
+  .n.emphasis{color:#f5e7c4;font-style:italic;}
+  .n.bell{color:var(--amber-glow);font-weight:600;letter-spacing:.1em;text-align:center;font-size:18px;}
+  .n.kakao{
+    display:inline-block;background:var(--kakao-bg);color:var(--kakao-ink);
+    padding:8px 14px;border-radius:14px 14px 14px 2px;font-size:14px;
+    font-family:"Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+    margin-left:1.5em;max-width:85%;
+  }
+  .n.kakao.me{background:#fde88a;border-radius:14px 14px 2px 14px;margin-left:auto;margin-right:1.5em;align-self:flex-end;}
+  .n.kakao-wrap{display:flex;flex-direction:column;}
+  .s{color:var(--ink);}
+  .s .name{color:var(--amber-soft);font-weight:600;letter-spacing:0.03em;margin-right:0.4em;font-size:14px;display:block;margin-bottom:0.2em;}
+  .s .emotion{color:var(--ink-faint);font-size:13px;font-style:italic;margin-left:0.3em;}
+  .s .text{color:#f4eadb;padding-left:1em;border-left:1px solid var(--amber-soft);display:block;}
+  .s.A .name{color:#a7b9cc;}
+  .s.A .text{border-left-color:#a7b9cc;}
+  .s.B .name{color:#dcb17c;}
+  .s.B .text{border-left-color:#dcb17c;font-style:italic;}
+  .s.yeoreum .name{color:#c96e5a;}
+  .s.yeoreum .text{border-left-color:#c96e5a;}
+  .separator{height:1px;background:linear-gradient(to right,transparent,var(--ink-faint),transparent);margin:1.5em 0;}
+  .scene-tag{color:var(--ink-faint);font-size:12px;text-align:center;letter-spacing:0.35em;padding:1em 0;text-transform:uppercase;}
+  .choices{display:flex;flex-direction:column;gap:10px;margin:2em 0 1em;}
+  .choice-btn{
+    background:transparent;color:var(--ink);font:inherit;font-size:16px;
+    border:1px solid var(--ink-faint);padding:14px 18px;cursor:pointer;
+    text-align:left;transition:all .3s ease;border-radius:2px;
+  }
+  .choice-btn:hover:not(:disabled){border-color:var(--amber);color:#fff;background:rgba(229,184,106,.07);}
+  .choice-btn:disabled{opacity:.35;cursor:not-allowed;border-style:dashed;}
+  .choice-btn.special{border-color:var(--amber-soft);color:var(--amber-glow);}
+  .choice-btn.special:hover:not(:disabled){background:rgba(229,184,106,.12);}
+  .continue-hint{
+    color:var(--ink-faint);font-size:13px;text-align:center;margin-top:1em;
+    animation:blink 2s ease-in-out infinite;letter-spacing:0.3em;
+  }
+  @keyframes blink{0%,100%{opacity:.4;}50%{opacity:.9;}}
+  .ending-card{
+    border:1px solid var(--amber-soft);padding:2em 1.5em;margin-top:3em;text-align:center;
+    background:rgba(26,37,55,.5);
+  }
+  .ending-card .label{color:var(--ink-faint);font-size:13px;letter-spacing:0.4em;}
+  .ending-card .name{color:var(--amber);font-size:26px;margin:0.6em 0;letter-spacing:0.05em;}
+  .ending-card .summary{color:var(--ink-dim);font-size:14px;font-style:italic;}
+  .gallery{margin-top:2em;display:grid;grid-template-columns:repeat(6,1fr);gap:8px;}
+  .gallery .slot{
+    border:1px solid var(--ink-faint);padding:8px 4px;font-size:12px;text-align:center;
+    color:var(--ink-faint);border-radius:2px;
+  }
+  .gallery .slot.got{border-color:var(--amber);color:var(--amber);}
+  .btn-row{display:flex;gap:10px;justify-content:center;margin-top:2em;flex-wrap:wrap;}
+  .btn-row button{
+    background:transparent;color:var(--ink);font:inherit;border:1px solid var(--amber-soft);
+    padding:11px 22px;cursor:pointer;letter-spacing:0.1em;transition:all .2s;
+  }
+  .btn-row button:hover{background:var(--amber);color:#1a1410;}
+  #title-screen{text-align:center;padding-top:22vh;min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding-bottom:15vh;}
+  #title-screen .logline{color:var(--ink-dim);font-size:15px;margin:1em auto 3em;max-width:28em;line-height:1.9;font-style:italic;}
+  #title-screen .hint{color:var(--ink-faint);font-size:12px;margin-top:4em;letter-spacing:0.2em;}
+  .phone-icon{font-size:36px;color:var(--amber);margin-bottom:.6em;filter:drop-shadow(0 0 8px rgba(229,184,106,.4));}
+  .clock{color:var(--ink-faint);font-size:12px;text-align:center;margin-top:3em;letter-spacing:0.3em;}
+  .credits{color:var(--ink-faint);font-size:12px;text-align:center;margin-top:4em;letter-spacing:0.15em;}
+  .ring-anim{animation:ring .8s ease-in-out 3;}
+  @keyframes ring{
+    0%,100%{transform:translateX(0);}
+    25%{transform:translateX(-3px) rotate(-2deg);}
+    75%{transform:translateX(3px) rotate(2deg);}
+  }
+  @media(max-width:540px){
+    body{font-size:16px;}
+    main{padding:5vh 18px 25vh;}
+    h1.title{font-size:26px;}
+    .gallery{grid-template-columns:repeat(6,1fr);font-size:10px;}
+  }
+</style>
+</head>
+<body>
+<div id="citynight"></div>
+<div class="vignette"></div>
+<main id="app"></main>
+
+<script>
+/* =========================================================
+   『안 걸은 길에서 온 전화』 — 2번작
+   엔진은 game.html과 동일 구조.
+   ========================================================= */
+
+/* ---------- City night ambience ---------- */
+(function(){
+  const layer = document.getElementById('citynight');
+  const sparkCount = Math.min(70, Math.floor(window.innerWidth/18));
+  for(let i=0;i<sparkCount;i++){
+    const d = document.createElement('div');
+    d.className='spark';
+    d.style.left = Math.random()*100+'vw';
+    d.style.top = (60 + Math.random()*40)+'vh';
+    d.style.animationDuration = (6 + Math.random()*10)+'s';
+    d.style.animationDelay = (Math.random()*-8)+'s';
+    d.style.opacity = (0.3 + Math.random()*0.5);
+    layer.appendChild(d);
+  }
+  for(let i=0;i<3;i++){
+    const t = document.createElement('div');
+    t.className='train';
+    t.style.top = (70 + Math.random()*25)+'vh';
+    t.style.width = (20 + Math.random()*30)+'vw';
+    t.style.animationDuration = (12 + Math.random()*8)+'s';
+    t.style.animationDelay = (Math.random()*-12)+'s';
+    layer.appendChild(t);
+  }
+})();
+
+/* ---------- Node DSL ---------- */
+const n = (text, cls) => ({t:'n', text, cls});
+const s = (who, text, emotion) => ({t:'s', who, text, emotion});
+const kakao = (text, me) => ({t:'n', text, cls: 'kakao' + (me?' me':'')});
+const bell = (text) => ({t:'n', text, cls:'bell'});
+const f = (obj) => ({t:'f', flags:obj});
+const L  = (id) => ({t:'l', id});
+const J  = (id) => ({t:'j', label:id});
+const GO = (scene) => ({t:'g', scene});
+const IF = (cond, jumpLabel) => ({t:'b', cond, jump:jumpLabel});
+const UNLESS = (cond, jumpLabel) => ({t:'b', cond: st => !cond(st), jump:jumpLabel});
+const C  = (id, options) => ({t:'c', id, options});
+const CD = (id, build) => ({t:'cd', id, build});
+const SEP = () => ({t:'sep'});
+const TAG = (text) => ({t:'tag', text});
+const WARM = () => ({t:'warm'});
+
+/* ---------- Game state ---------- */
+const FRESH_FLAGS = {
+  picked_up:false,
+  tone:null,
+  shared_deep:false,
+  compare_mode:null,
+  yeoreum_reply:false,
+  crack_noticed:false,
+  called_who_first:null,
+  final_action:null,
+  seen_clue_1:false, seen_clue_2:false, seen_clue_3:false,
+  seen_clue_4:false, seen_clue_5:false, seen_clue_6:false,
+  seen_clue_7:false, seen_clue_7_confirmed:false,
+  mirror_speech_1:false, mirror_speech_2:false,
+  reached_twist_1:false, reached_twist_2:false,
+  stand_tone_warm:false
+};
+const state = {
+  flags: {...FRESH_FLAGS},
+  sceneId: null,
+  pc: 0,
+  awaiting: false
+};
+function clueCount(st){
+  let c=0; for(let i=1;i<=7;i++) if(st.flags['seen_clue_'+i]) c++;
+  return c;
+}
+function s5Density(st){
+  const keys = ['seen_clue_1','seen_clue_2','seen_clue_3','seen_clue_4','seen_clue_5','seen_clue_7','seen_clue_7_confirmed','mirror_speech_1','mirror_speech_2','shared_deep','crack_noticed'];
+  return keys.reduce((a,k)=>a+(st.flags[k]?1:0),0);
+}
+function reachedTwist2(st){
+  return st.flags.called_who_first === 'confessed'
+    || (st.flags.compare_mode === 'mirror' && st.flags.crack_noticed === true);
+}
+
+/* ---------- Ending metadata ---------- */
+const ENDINGS = {
+  A:{name:"내일 아침 커피",       summary:"따뜻한 격려, 소박한 전진"},
+  B:{name:"둘 다 틀리지 않았어",  summary:"비교를 내려놓은 다정한 공존"},
+  C:{name:"수화기를 내려놓는 법",  summary:"곁의 사람에게 먼저 손을"},
+  D:{name:"발코니의 불빛",         summary:"세상이 조금 더 넓어진 밤"},
+  H:{name:"다음 벨이 울릴 때",     summary:"먼저 걸어보는 용기 (히든)"},
+  MINI:{name:"그 밤의 벨소리",     summary:"받지 않은 밤의 작은 궁금증"}
+};
+const ENDING_ORDER = ['A','B','C','D','H','MINI'];
+function unlocked(){
+  try{ return JSON.parse(localStorage.getItem('call_unlocked')||'{}'); }
+  catch(e){ return {}; }
+}
+function saveUnlocked(id){
+  const u = unlocked(); u[id]=true;
+  try{ localStorage.setItem('call_unlocked', JSON.stringify(u)); }catch(e){}
+}
+
+/* ---------- Rendering ---------- */
+const app = document.getElementById('app');
+let storyEl = null;
+let choicesEl = null;
+let hintEl = null;
+
+function clearScreen(){ app.innerHTML=''; }
+function mountStory(){
+  clearScreen();
+  storyEl = document.createElement('div'); storyEl.className='story';
+  choicesEl = document.createElement('div'); choicesEl.className='choices';
+  hintEl = document.createElement('div'); hintEl.className='continue-hint'; hintEl.textContent='▼  계속 (클릭 또는 스페이스)';
+  app.appendChild(storyEl);
+  app.appendChild(choicesEl);
+  app.appendChild(hintEl);
+  hintEl.style.display='none';
+}
+function addNode(html, cls){
+  const d = document.createElement('div');
+  d.className='node '+(cls||'');
+  d.innerHTML = html;
+  storyEl.appendChild(d);
+  window.scrollTo({top:document.body.scrollHeight, behavior:'smooth'});
+}
+function addSceneTag(text){
+  const d = document.createElement('div'); d.className='scene-tag'; d.textContent=text;
+  storyEl.appendChild(d);
+}
+function addSeparator(){
+  const d = document.createElement('div'); d.className='separator'; storyEl.appendChild(d);
+}
+function escapeHtml(t){ return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ---------- Scene execution ---------- */
+function loadScene(id){
+  state.sceneId = id;
+  state.pc = 0;
+  advance();
+}
+function findLabel(nodes, id){
+  for(let i=0;i<nodes.length;i++) if(nodes[i].t==='l' && nodes[i].id===id) return i;
+  return -1;
+}
+function evalCond(cond){ try{ return !!cond(state); }catch(e){ console.warn(e); return false; } }
+
+function advance(){
+  const scene = SCENES[state.sceneId];
+  if(!scene){ console.error('unknown scene', state.sceneId); return; }
+  const nodes = scene;
+  while(state.pc < nodes.length){
+    const node = nodes[state.pc];
+    state.pc++;
+    switch(node.t){
+      case 'l': continue;
+      case 'f':
+        Object.assign(state.flags, node.flags);
+        continue;
+      case 'j': {
+        const idx = findLabel(nodes, node.label);
+        if(idx<0){ console.error('missing label', node.label); return; }
+        state.pc = idx+1;
+        continue;
+      }
+      case 'g':
+        return loadScene(node.scene);
+      case 'b':
+        if(evalCond(node.cond)){
+          const idx = findLabel(nodes, node.jump);
+          if(idx>=0) state.pc = idx+1;
+        }
+        continue;
+      case 'warm':
+        document.body.classList.add('warm');
+        continue;
+      case 'n': {
+        const cls = node.cls || '';
+        if(cls.indexOf('kakao') >= 0){
+          addNode('<div class="n '+cls+'">'+escapeHtml(node.text)+'</div>');
+        } else {
+          addNode('<div class="n '+cls+'">'+escapeHtml(node.text)+'</div>');
+        }
+        waitUser();
+        return;
+      }
+      case 's': {
+        const who = node.who;
+        const nameMap = {A:'하진 (이쪽)', B:'하진 (저쪽)', yeoreum:'여름'};
+        const cls = 's '+who;
+        const nm = nameMap[who]||who;
+        const em = node.emotion?'<span class="emotion">('+escapeHtml(node.emotion)+')</span>':'';
+        addNode('<div class="'+cls+'"><span class="name">'+nm+em+'</span><span class="text">'+escapeHtml(node.text)+'</span></div>');
+        waitUser();
+        return;
+      }
+      case 'sep':
+        addSeparator();
+        continue;
+      case 'tag':
+        addSceneTag(node.text);
+        continue;
+      case 'c':
+        showChoice(node);
+        return;
+      case 'cd': {
+        const built = node.build(state);
+        showChoice({id:node.id, options:built});
+        return;
+      }
+      case 'end':
+        showEndingCard(node.id);
+        return;
+    }
+  }
+  console.log('scene ended without goto', state.sceneId);
+}
+
+let userClickHandler = null;
+function waitUser(){
+  state.awaiting = true;
+  hintEl.style.display='block';
+  userClickHandler = () => {
+    if(!state.awaiting) return;
+    state.awaiting = false;
+    hintEl.style.display='none';
+    advance();
+  };
+}
+document.addEventListener('click', (e)=>{
+  if(e.target.closest('button')) return;
+  if(userClickHandler) userClickHandler();
+});
+document.addEventListener('keydown', (e)=>{
+  if(['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if(e.code==='Space'||e.code==='Enter'){
+    e.preventDefault();
+    if(userClickHandler) userClickHandler();
+  }
+  if(/^Digit[1-9]$/.test(e.code)){
+    const btn = choicesEl.querySelectorAll('button.choice-btn')[parseInt(e.code.slice(5))-1];
+    if(btn && !btn.disabled) btn.click();
+  }
+});
+
+function showChoice(node){
+  hintEl.style.display='none';
+  state.awaiting = false;
+  choicesEl.innerHTML='';
+  const visibleOpts = [];
+  node.options.forEach((opt)=>{
+    if(opt.show && !opt.show(state)) return;
+    visibleOpts.push(opt);
+  });
+  visibleOpts.forEach((opt,idx)=>{
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn' + (opt.special?' special':'');
+    const unlockedCond = opt.cond ? evalCond(opt.cond) : true;
+    btn.textContent = (idx+1)+'.  '+opt.text + (opt.hint && !unlockedCond?'  '+opt.hint:'');
+    if(!unlockedCond) btn.disabled = true;
+    btn.onclick = ()=>{
+      choicesEl.innerHTML='';
+      if(opt.flags) Object.assign(state.flags, opt.flags);
+      if(opt.goto){ loadScene(opt.goto); return; }
+      if(opt.jump){
+        const idx2 = findLabel(SCENES[state.sceneId], opt.jump);
+        if(idx2<0){ console.error('missing jump label', opt.jump); return; }
+        state.pc = idx2+1;
+        advance();
+        return;
+      }
+      advance();
+    };
+    choicesEl.appendChild(btn);
+  });
+  window.scrollTo({top:document.body.scrollHeight, behavior:'smooth'});
+}
+
+/* ---------- Title / ending screens ---------- */
+function showTitle(){
+  document.body.classList.remove('warm');
+  clearScreen();
+  const u = unlocked();
+  const endings = ENDING_ORDER.map(id=>{
+    const got = u[id];
+    const label = got ? ('엔딩 '+id+'<br><span style="font-size:10px;">'+ENDINGS[id].name+'</span>') : '? ? ?';
+    return '<div class="slot '+(got?'got':'')+'">'+label+'</div>';
+  }).join('');
+  const anyUnlocked = Object.keys(u).length>0;
+  const title = document.createElement('div');
+  title.id='title-screen';
+  title.innerHTML = `
+    <div class="phone-icon">&#9742;</div>
+    <h1 class="title">안 걸은 길에서 온 전화</h1>
+    <div class="subtitle">T H E &nbsp; C A L L &nbsp; F R O M &nbsp; T H E &nbsp; R O A D &nbsp; N O T &nbsp; T A K E N</div>
+    <div class="logline">
+      늦은 밤, 끊어둔 유선전화가 울린다.<br>
+      수화기 너머에서 들려온 건 분명히 내 목소리 —<br>
+      다만 내가 한 번도 고른 적 없는 그 "다른 길"의 나였다.
+    </div>
+    <div class="btn-row">
+      <button id="btn-start">수 화 기 를  든 다</button>
+    </div>
+    ${ anyUnlocked ? '<div class="gallery">'+endings+'</div><div class="clock">도달한 엔딩 — '+Object.keys(u).length+' / 6</div>' : '' }
+    <div class="hint">플레이타임 약 15~20분 · 클릭 또는 스페이스로 진행</div>
+    <div class="credits">written &amp; built by Claude · 2026</div>
+  `;
+  app.appendChild(title);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  state.flags = {...FRESH_FLAGS};
+  document.body.classList.remove('warm');
+  mountStory();
+  loadScene('S1_ring');
+}
+
+function showEndingCard(endId){
+  saveUnlocked(endId);
+  const meta = ENDINGS[endId];
+  const u = unlocked();
+  const endings = ENDING_ORDER.map(id=>{
+    const got = u[id];
+    const label = got ? ('엔딩 '+id+'<br><span style="font-size:10px;">'+ENDINGS[id].name+'</span>') : '? ? ?';
+    return '<div class="slot '+(got?'got':'')+'">'+label+'</div>';
+  }).join('');
+  const card = document.createElement('div');
+  card.className='node';
+  card.innerHTML = `
+    <div class="ending-card">
+      <div class="label">E N D I N G &nbsp; ${endId}</div>
+      <div class="name">${meta.name}</div>
+      <div class="summary">${meta.summary}</div>
+    </div>
+    <div class="gallery">${endings}</div>
+    <div class="btn-row">
+      <button onclick="showTitle()">처음으로 돌아가기</button>
+      <button onclick="startGame()">다시 그 밤부터</button>
+    </div>
+    <div class="clock">도달한 엔딩 — ${Object.keys(u).length} / 6</div>
+  `;
+  storyEl.appendChild(card);
+  window.scrollTo({top:document.body.scrollHeight, behavior:'smooth'});
+}
+
+/* ---------- Story Data ---------- */
+const SCENES = {
+/* ------------- S1 : 선이 빠진 전화 ------------- */
+S1_ring: [
+  TAG("1. 선이 빠진 전화"),
+  n("화요일 밤 11시 7분."),
+  n("스탠드 조명이 연노란 빛으로 거실 한구석만 밝히고 있다. 소파에 엎어져 있는 책 한 권. 아까 전에 세 페이지 읽다가 놓아둔 것 같은데, 사실 한 시간은 됐다."),
+  n("핸드폰 화면을 다시 켜본다. 카톡 알림 없음. SNS 새 글 없음. …화요일 밤이 이렇게 길었나."),
+  f({seen_clue_7:true}),
+  n("소파에 비스듬히 기대서 괜히 핸드폰만 만지작거리고 있는데."),
+  bell("따르릉."),
+  n("…어?"),
+  bell("따르릉."),
+  s('A',"…이거, 소리가, 어디서…","혼잣말, 말끝 흐림"),
+  n("식탁 끝에서 난다. 구형 유선전화기. 이사 올 때 집주인이 \"그냥 두고 가요\"라고 했던 물건. 한 번도 써본 적이 없다."),
+  bell("따르릉."),
+  n("다가간다. 수화기 아래 받침에서 먼지가 살짝 일어난다. 그리고 전화기 뒷면 — 벽 단자 쪽을 본다."),
+  n("선이, 빠져 있다.", 'emphasis'),
+  f({seen_clue_1:true}),
+  s('A',"…이거, 선도 안 꽂혀 있는데 어떻게 울려?","한 박자 쉬고"),
+  n("벨이 한 번 더."),
+  n("수화기 위로 손을 얹는다. 차갑다. 내가 만지는 것만으로 벨이 멈출 리는 없는데, 왜 그걸 기대하고 있는지."),
+  n("멈추지 않는다."),
+
+  C("CH_pick", [
+    { text:"(수화기를 든다)", jump:"pick_yes", flags:{picked_up:true} },
+    { text:"…잘못 걸렸겠지. (돌아선다)", jump:"pick_no", flags:{picked_up:false} }
+  ]),
+
+  L("pick_yes"),
+  n("수화기를 든다. 생각보다 가볍다."),
+  n("귀에 갖다 댄다. 숨소리 — 내 숨소리인지, 저쪽인지 잠시 구분이 안 된다."),
+  GO("S2_hello_you"),
+
+  L("pick_no"),
+  s('A',"…잘못 걸렸겠지. 선도 안 꽂혀 있는데 뭐.","혼잣말"),
+  n("돌아선다. 소파로 돌아가려는데 벨이 두어 번 더 울리다가, 잦아든다. 마치 누가 \"아, 됐어\" 하고 끊어버린 것처럼."),
+  n("소파에 다시 앉는다. 핸드폰을 본다. 여름의 카톡이 새로 한 줄 와 있다."),
+  GO("S7_mini_bellsound")
+],
+
+/* ------------- S2 : 너야? 너야. ------------- */
+S2_hello_you: [
+  TAG("2. 너야? 너야."),
+  n("수화기 너머, 숨."),
+  s('B',"…여보세요?","수화기 너머, 조심스럽게"),
+  n("어?"),
+  n("그게, 그러니까."),
+  n("내 목소리다.", 'emphasis'),
+  s('A',"…여보세요.","거의 동시에"),
+  n("짧은 침묵. 수화기 너머에서도 같은 크기의 침묵이 돌아온다."),
+  s('B',"어, 뭐야. 목소리가 왜 이래, 나랑 똑같…","당황, 한 박자 쉬고"),
+  s('A',"어, 뭐야.","거의 겹쳐서"),
+  f({mirror_speech_1:true}),
+  n("동시에 같은 말을 했다. 거울 앞에서 혼자 연극하는 기분. 그런데 거울 저쪽에서 내가 나를 쳐다보고 있다."),
+
+  C("CH_tone", [
+    { text:"\"…누구세요. 장난 전화면 끊습니다.\"", jump:"tone_guarded", flags:{tone:'guarded'} },
+    { text:"\"잠깐… 너 목소리가 왜 내 목소리야?\"", jump:"tone_curious", flags:{tone:'curious'} },
+    { text:"\"여보세요? 나야, 나. 누구세요 하면 서운하지.\"", jump:"tone_playful", flags:{tone:'playful'} }
+  ]),
+
+  L("tone_guarded"),
+  s('A',"…누구세요. 장난 전화면 끊습니다.","경계"),
+  s('B',"…아니, 잠깐만. 끊지 마. 나도 지금 너만큼 당황했어.","한 박자 쉬고"),
+  s('A',"누구냐고."),
+  s('B',"그게… 나도 몰라. 여보세요 했는데 내 목소리가 돌아오면 누가 안 당황해.","조심스럽게"),
+  n("저쪽도 방어적으로 숨을 고른다. 같은 템포로."),
+  J("tone_common"),
+
+  L("tone_curious"),
+  s('A',"잠깐… 너 목소리가 왜 내 목소리야?","호기심"),
+  s('B',"야, 그건 내가 물을 말인데.","짧게 웃음"),
+  s('A',"…그러네."),
+  s('B',"응. 그러네."),
+  n("둘 다 짧게 웃는다. 긴장이 조금 풀린다."),
+  J("tone_common"),
+
+  L("tone_playful"),
+  s('A',"여보세요? 나야, 나. 누구세요 하면 서운하지.","농담"),
+  s('B',"푸학. 야, 그건 내가 할 말이고.","폭소"),
+  s('A',"야, 그건 내가 할 말이고!","같이 웃음"),
+  n("수화기 너머에서 한참을 웃는다. 나도 같이 웃는다. 웃다 보니, 두 사람의 웃음이 어느 순간 음높이까지 겹친다. 묘하다."),
+  J("tone_common"),
+
+  L("tone_common"),
+  n("웃음이 잦아든 뒤, 저쪽이 먼저 숨을 고른다."),
+  s('B',"…그래서.","한 박자 쉬고"),
+  s('B',"너 지금 어디 살아?"),
+  n("갑자기 훅 들어온다. 근데 그 말투가, 어딘가 익숙하다. 오랜만에 만난 친구에게 던지는 그런 톤. 나는 모르는데 저쪽은 나를 아는 것 같다."),
+  s('A',"…나? 서울. 한강변. 13층짜리 아파트. 뭐, 그냥… 그런 집.","말끝 흐림"),
+  s('B',"13층? 아, 맞다. 너 그때도 13층이었지.","놀라며"),
+  n("그때? 언제?"),
+  s('A',"…잠깐. 그때가 언제?"),
+  s('B',"…있잖아. 너 그거 있잖아.","짧게 생각하더니"),
+  n("뭔가 답을 피하는 것 같은데, 저쪽도 뭘 어떻게 말해야 할지 모르는 눈치다."),
+  s('B',"…나는, 바닷가. 작은 도시. 너 기억나지, 그때 내가 가고 싶었던 거.","조심스럽게 화제 돌리며"),
+  n("그때 내가 가고 싶었던 거."),
+  n("유학. 3년 전에 포기한 그거.", 'emphasis'),
+  n("아, 그러니까 이 목소리는 — 혹시?"),
+  s('A',"…너, 혹시…","혼잣말처럼"),
+  s('B',"응?"),
+  s('A',"…아니. 일단, 얘기나 해보자.","말끝 흐림"),
+  GO("S3_two_lives")
+],
+
+/* ------------- S3 : 바닷가와 한강 ------------- */
+S3_two_lives: [
+  TAG("3. 바닷가와 한강"),
+  n("수화기를 들고 소파로 간다. 꼬인 선을 한 번 풀고 앉는다. 뭐랄까, 이 자세 — 예전에 드라마에서나 본 것 같다. 유선전화를 들고 진지하게 앉아 있는 사람."),
+  n("저쪽이 먼저 풀어놓는다."),
+  s('B',"나는 여기 3년 됐어. 유학 갔다가… 어쩌다 눌러앉았지."),
+  n("3년 전. 내가 포기한 바로 그 해. 심장이 한 박자 떨어졌다가 다시 올라온다."),
+  s('B',"처음엔 그냥 학교 근처 원룸이었는데, 졸업하고 나서 좀 더 남쪽으로 내려왔어. 바다 보이는 데로."),
+  s('A',"…바다. 좋네.","말끝 흐림"),
+  s('B',"응, 좋아. 아침에 일어나면 창문 열어두고 커피 한 잔 내려. 노을 볼 시간엔 일 끝내고."),
+  n("[수화기 너머로 작게, 파도 소리 같은 게 섞인다]"),
+  s('B',"지금도 창문 열어놨어. 들려?"),
+  s('A',"…응. 들려."),
+  n("안 들린다고 하면 뭔가 미안할 것 같아서 그렇다고 했다. 근데 진짜 들리기도 한다. 파도 소리 같은 게. 아니면 냉장고 소리였나."),
+  s('B',"너네 쪽은 뭐가 들려?","부드럽게"),
+  n("나는 창문 쪽으로 고개를 돌려본다. 베란다 밖으로 강변 도로. 멀리서 지하철 한 량이 지나가는 소리. 도시의 느린 숨결."),
+  s('A',"…지하철. 저 멀리서. 그리고 어딘가에서 누가 TV 켜놓은 것 같은, 그런 소리."),
+  s('B',"아, 서울밤 그거. 맞아. 나 그거 은근히 그리워해."),
+  f({seen_clue_4:true}),
+  n("파도와 지하철. 같은 밤인데 들리는 게 다르다. 당연한 건데, 왜 이 당연한 게 지금 이렇게 묘하게 느껴지지."),
+  s('B',"…근데 너 지금 몇 살이지?","문득"),
+  s('A',"서른셋. 왜?"),
+  s('B',"…아, 응. 그냥.","짧게 멈칫"),
+  f({seen_clue_3:true}),
+  n("잠깐. 저쪽이 과거의 나라면 — 서른셋이 아니라 서른이나 스물아홉이어야 하는 거 아닌가?"),
+  n("아니, 근데 저쪽은 \"응, 그냥\" 하고 넘어갔다. 내가 너무 예민한 걸 수도 있다. 일단 넘어가자."),
+  s('B',"너는? 거기 남아서 어떻게 지내?"),
+
+  C("CH_share", [
+    { text:"\"나? 출판사 편집자야. 6년째. 가끔 밤에… 그때 유학 갔으면 어땠을까, 생각은 해.\"", jump:"share_deep", flags:{shared_deep:true} },
+    { text:"\"그냥. 일하고, 집에 오고, 야식 시켜 먹고. 뭐 그런 거.\"", jump:"share_shallow", flags:{shared_deep:false} }
+  ]),
+
+  L("share_deep"),
+  s('A',"나? 출판사 편집자야. 6년째.","말끝 흐림"),
+  s('A',"…가끔 밤에, 그때 유학 갔으면 어땠을까, 생각은 해. 후회까진 아닌데. 그냥, 그 길에 있었으면 어땠을까.","한 박자 쉬고"),
+  s('B',"…아.","조용히"),
+  s('B',"나도 사실은, 가끔."),
+  s('A',"너도?"),
+  s('B',"응. 바다 보면서도, 서울의 그 밤 생각해. 지하철 소리. 택시 잡는 법. 종로 지나다니던 거."),
+  n("저쪽도 공허함을 살짝 내비친다. 그 틈이 이상하게 반갑다."),
+  J("share_common"),
+
+  L("share_shallow"),
+  s('A',"그냥. 일하고, 집에 오고, 야식 시켜 먹고. 뭐 그런 거."),
+  s('B',"오, 평화롭네.","가볍게"),
+  s('A',"평화로운 건지, 게으른 건지."),
+  s('B',"그 둘, 사실 같은 거 아니야?","웃음"),
+  s('A',"…맞는 말이네."),
+  n("대화가 표면에서 깨끗하게 튕긴다. 깊게 안 들어간다. 그게 편하다. 편해야 할 텐데, 이상하게 한구석이 가렵다."),
+  J("share_common"),
+
+  L("share_common"),
+  n("[수화기 너머 고양이 울음] — 짧게 한 번, \"냐—옹.\""),
+  s('A',"어, 뭐야. 방금 고양이야?","놀라서"),
+  s('B',"응, 우리 애. 이름이 여름이야.","웃음"),
+  s('A',"…여름?","멈칫"),
+  s('B',"어, 왜?"),
+  s('A',"아니… 내 친구 이름이 여름이거든.","말끝 흐림"),
+  s('B',"아, 걔. 나도 걔 생각하면서 이 이름 지었어.","짧게 웃음"),
+  n("저쪽도 여름을 안다. 당연한 건가, 이상한 건가."),
+  s('B',"여름이는 지금 내 무릎 위. 고양이 발톱이 간지러워."),
+  s('A',"…좋네."),
+  n("좋네, 라고 말했는데 내 목소리가 조금 부러운 톤이었다. 저쪽도 그걸 캐치했다."),
+  s('B',"…네 쪽도 좋은 거 있잖아.","부드럽게"),
+  s('A',"…있나?","쓴웃음"),
+  s('B',"있어. 있지."),
+  n("잠시 대화가 비어 있다. 스탠드 조명이 그대로다. 냉장고가 윙윙 돌아가는 소리가 오늘따라 크게 들린다."),
+  s('A',"…근데 네 쪽이 훨씬 좋아 보이는데.","거의 혼잣말"),
+  s('B',"근데 네 쪽이 훨씬 좋아 보여.","똑같은 순간"),
+  f({mirror_speech_2:true}),
+  n("…뭐야."),
+  n("방금 둘이 같은 말을 했다. 글자까지 거의 같았다.", 'emphasis'),
+  s('A',"어, 너 지금 뭐라고 했어?","당황"),
+  s('B',"아니, 네가 뭐라고 했어?","똑같이 당황"),
+  n("수화기 너머에서 짧게 기침 같은 웃음이 터진다. 나도 터진다. [동시에 웃음]"),
+  s('A',"…진짜, 뭐야."),
+  s('B',"나도, 진짜, 뭐야."),
+
+  C("CH_compare", [
+    { text:"\"야, 진짜 내가 저기 살았으면 어땠을까…\"", jump:"compare_envy", flags:{compare_mode:'envy'} },
+    { text:"\"뭐야, 우리 둘 다 서로 부러워하는 거야?\"", jump:"compare_mirror", flags:{compare_mode:'mirror'} },
+    { text:"\"응, 좋아 보여. 근데 나도 여기 좋은 거 있어.\"", jump:"compare_content", flags:{compare_mode:'content'} }
+  ]),
+
+  L("compare_envy"),
+  s('A',"야, 진짜 내가 저기 살았으면 어땠을까…","말끝 흐림"),
+  s('A',"아침에 노을 보면서 커피 내리는 삶. 고양이 무릎에 올리고. 마감도 내 페이스대로."),
+  s('B',"…근데 막상 살면 그게 또 그래. 외로울 땐 똑같이 외로워.","조용히"),
+  s('A',"…그런가."),
+  s('B',"응. 그런가."),
+  n("저쪽의 긍정 추임새가 조금 쓸쓸하게 돌아온다."),
+  J("compare_common"),
+
+  L("compare_mirror"),
+  s('A',"뭐야, 우리 둘 다 서로 부러워하는 거야?","짧게 웃음"),
+  s('B',"야, 이거 뭐 거울 보는 것도 아니고.","크게 웃음"),
+  s('A',"거울 맞네, 거울."),
+  s('B',"거울아 거울아, 누가 더 불쌍하니.","장난스럽게"),
+  s('A',"야야야, 그건 선 넘었다."),
+  n("둘 다 푸학 하고 터진다. 웃음 뒤에 뭔가 묘하게 말갛게 개는 기분이 든다."),
+  J("compare_common"),
+
+  L("compare_content"),
+  s('A',"응, 좋아 보여. 근데 나도 여기 좋은 거 있어."),
+  s('B',"오, 뭔데?"),
+  s('A',"…음. 밤에 창 열어놓으면 지하철 지나가는 소리. 단골 편의점 사장님이 맨날 같은 삼각김밥 챙겨주는 거. 여름이랑 라면 먹는 거. 뭐, 그런 거.","잠시 생각"),
+  s('B',"아… 좋네. 그런 거.","부드럽게"),
+  s('A',"응. 좋지."),
+  n("저쪽도 잠깐 조용하다. 부러워하는 것도 같고, 그냥 듣고 있는 것도 같다."),
+  J("compare_common"),
+
+  L("compare_common"),
+  n("대화가 한 템포 쉬어간다. 창밖으로 지하철이 한 량 더 지나간다. 내 쪽 밤은 지하철로 흘러가고, 저쪽 밤은 파도로 흘러간다. 같은 시간일 텐데."),
+  s('A',"…나 차 한 잔 더 타올게. 잠깐만 기다려."),
+  s('B',"어, 그래. 나도 커피 리필."),
+  GO("S4_kitchen_crack")
+],
+
+/* ------------- S4 : 달력에 동그라미 ------------- */
+S4_kitchen_crack: [
+  TAG("4. 달력에 동그라미"),
+  n("수화기를 어깨와 턱 사이에 끼우고 부엌으로 간다. 선이 팽팽하게 당겨진다. 거실과 부엌이 붙어 있는 게 다행이다."),
+  n("전기포트에 물을 올린다."),
+  s('B',"야 나도 지금 포트에 물 올리는 중.","수화기 너머"),
+  s('A',"…같은 템포네.","웃음"),
+  s('B',"응, 같은 템포."),
+  n("[전기포트가 딸깍]"),
+  n("부엌 한 귀퉁이에 달력이 붙어 있다. 자석으로. 이번 달 달력이다. 무심코 본다."),
+  n("오늘 날짜 — 아무 표시도 없다. 당연히 없지. 나는 달력에 뭘 적는 사람이 아니다."),
+  s('B',"아, 맞다. 너네 쪽 달력에도 오늘 동그라미 있지?","문득"),
+  s('A',"…동그라미?","멈칫"),
+  s('B',"어. 오늘 날짜에 네가 직접 그렸잖아. 빨간 볼펜으로."),
+  n("달력을 다시 본다. 아무것도 없다. 빈 사각형 하나."),
+  f({seen_clue_2:true}),
+  s('A',"…어, 나는 아무 표시도 없는데?","말끝 흐림"),
+  s('B',"…어? 아닌가? 내가 헷갈렸나.","한 박자 쉬고"),
+  n("저쪽도 잠깐 어색해진다. 근데 나는 안다. 저쪽은 헷갈린 게 아니다. 저쪽의 달력엔 진짜로 뭔가 그려져 있는 거다."),
+  n("일단 넘어간다. 컵을 꺼낸다."),
+  s('A',"야, 나 너랑 얘기하면서 이런 생각 했어. 혹시 이거 과거의 나한테 주식 정보라도 물어봐야 되나 싶은데ㅋㅋ","농담으로 돌리려"),
+  s('B',"푸학—!","같은 순간 웃음"),
+  s('A',"…어? 너 지금 웃었어?","멈칫"),
+  s('B',"어, 웃었어. 근데 나 지금 딴 거 생각하고 있었거든. 여름이가 볼펜을 발로 굴려서.","여전히 웃으면서"),
+  s('A',"…그러니까, 서로 다른 거 보고 동시에 웃은 거야?"),
+  s('B',"…어. 그렇네."),
+  f({seen_clue_5:true}),
+  n("이상하다. 이상한데, 그래도 같이 웃었다는 게 묘하게 기분 좋다."),
+  n("냉장고가 한 번 쿵 하고 운다. 오래된 냉장고의 그 소리. 이 집에 이사 와서 3년째 듣는 그 소리."),
+  n("그 때, 부엌 카운터 위의 핸드폰이 진동한다."),
+  n("[카톡 알림]", 'emphasis'),
+  kakao("[여름]  자? ㅋㅋ 내일 점심 될까?ㅋㅋㅋㅋ"),
+
+  C("CH_kakao", [
+    { text:"(지금 바로 답장한다) \"자는 중ㅋ 낼 점심 콜\"", jump:"kakao_reply", flags:{yeoreum_reply:true} },
+    { text:"…이따 답할게. (수화기로 돌아간다)", jump:"kakao_defer", flags:{yeoreum_reply:false} }
+  ]),
+
+  L("kakao_reply"),
+  n("한 손으로 빠르게 찍는다."),
+  kakao("[나]  자는 중ㅋ 낼 점심 콜", true),
+  kakao("[여름]  ㅇㅋㅇㅋ 회사 앞 그 김치찌개? ㅠㅠ 좀 걸려도 돼?"),
+  kakao("[나]  콜ㅋㅋ 내가 살게", true),
+  kakao("[여름]  오 웬일ㅋㅋㅋㅋ 땡큐땡큐"),
+  n("보내고 나서 작게 웃는다. 이 애는 대학 때부터 변한 게 없다. 변한 게 없어서 좋다."),
+  s('B',"…누구한테 답장했어?","수화기 너머"),
+  s('A',"여름이. 내일 점심 먹기로 했어."),
+  s('B',"…좋네. 그래, 너 그런 거 좋아했지.","부드럽게"),
+  n("그런 거. 그런 게 뭘까."),
+  J("kakao_common"),
+
+  L("kakao_defer"),
+  n("화면만 확인하고 엎어둔다. 이따가. 이따가 답하자. 지금은 이쪽이다."),
+  s('B',"…전화 왔어?","조심스럽게"),
+  s('A',"아니, 카톡. 여름이. 내일 점심."),
+  s('B',"답 안 해?"),
+  s('A',"…이따. 지금은 너랑 얘기하고 싶어서.","말끝 흐림"),
+  s('B',"…응. 고마워.","잠시 조용히"),
+  J("kakao_common"),
+
+  L("kakao_common"),
+  n("전기포트의 물이 한 번 더 찰랑인다. 컵에 티백을 넣고 뜨거운 물을 붓는다. 김이 오른다."),
+  s('B',"…근데 너.","조심스럽게"),
+  s('A',"응?"),
+  s('B',"아까 전화 받을 때 말이야. 혹시… 소파에서 핸드폰 만지고 있지 않았어?"),
+  n("수화기를 놓칠 뻔했다."),
+  s('A',"…어떻게 알았어?","말끝 흐림"),
+  s('B',"나도 그랬거든. 똑같이. 소파에 반쯤 누워서. 화면 꺼진 핸드폰 괜히 켰다 껐다 하고 있었어.","조용히"),
+  f({seen_clue_7_confirmed:true}),
+  n("손끝이 살짝 차가워진다. 이건 우연이 아니다."),
+  n("아니, 우연일 수도 있다. 30대 독신이 밤 11시에 뭘 할 수 있겠나. 대부분 그렇게 있지."),
+  n("근데 — 그래도."),
+
+  C("CH_crack", [
+    { text:"\"…잠깐, 너 혹시 과거의 내가 아니라 다른… 뭐야?\"", jump:"crack_yes", flags:{crack_noticed:true} },
+    { text:"\"뭐 이상한 일이긴 한데… 됐어, 재밌다.\"", jump:"crack_no", flags:{crack_noticed:false} }
+  ]),
+
+  L("crack_yes"),
+  s('A',"…잠깐. 너 혹시.","조심스럽게, 말끝 흐림"),
+  s('A',"과거의 내가 아니라… 다른, 뭐야?"),
+  n("수화기 저쪽에서 짧은 침묵. 저쪽도 그 말을 들은 순간 뭔가 굳었다."),
+  s('B',"…뭐야, 너 방금 나보다 먼저 생각했어?","한 박자 쉬고"),
+  s('A',"너도 지금 그 생각이었어?"),
+  s('B',"응. 나도 지금… 어, 이 사람 과거의 내가 맞나, 싶었어. 근데 맞다고 하기엔 너무 많이 어긋나잖아."),
+  s('A',"…그치."),
+  n("서로가 서로의 생각을 확인했다. 그런데 이 확인이 무섭기보다 — 이상하게, 안도감에 가깝다."),
+  J("crack_common"),
+
+  L("crack_no"),
+  s('A',"뭐 이상한 일이긴 한데… 됐어, 재밌다.","웃음"),
+  s('B',"응, 나도. 그냥 재밌어.","같이 웃음"),
+  s('A',"드라마에 나올 법한 거 아니야? 이런 거."),
+  s('B',"드라마면 우린 지금 CF 들어갈 타이밍."),
+  s('A',"푸학. 야, 맞다 맞아.","웃음"),
+  n("웃으면서 일단 넘긴다. 근데 내 가슴 한구석에선 아까부터 뭔가가 서서히 또박또박 정리되고 있다. 나는 모른 척하고 있을 뿐이다."),
+  J("crack_common"),
+
+  L("crack_common"),
+  n("차를 들고 거실로 돌아간다. 소파에 앉는다. 수화기 선을 한 번 더 푼다."),
+  n("베란다 창 너머로 강 건너편 불빛들이 느리게 흐른다. 한 층, 한 층. 어딘가엔 13층에 불이 켜진 집이 있고, 거기에도 누군가 있을 거다."),
+  n("스탠드 조명이 — 기분 탓인지 — 아주 살짝, 따뜻해진 느낌."),
+  f({stand_tone_warm:true}),
+  WARM(),
+  GO("S5_mirror_moment")
+],
+
+/* ------------- S5 : 누가 먼저 걸었어? ------------- */
+S5_mirror_moment: [
+  TAG("5. 누가 먼저 걸었어?"),
+  n("차를 한 모금. 뜨겁다. 혀를 데일 뻔했다. 컵을 테이블에 내려놓는다."),
+  s('B',"야… 근데 나 아까부터 이상한 게.","수화기 너머, 조심스럽게"),
+  s('A',"응."),
+  s('B',"너 지금 몇 살이지?"),
+  s('A',"…서른셋. 아까 말했잖아."),
+  s('B',"…나도, 서른셋이야.","한 박자 쉬고"),
+  n("수화기가 갑자기 무거워진다. 귀가 아니라 손목이 먼저 안다."),
+  n("[수화기가 살짝 지직거린다]"),
+  f({reached_twist_1:true}),
+
+  IF(st=>s5Density(st)>=7, "reveal_high"),
+  IF(st=>s5Density(st)>=4, "reveal_mid"),
+  J("reveal_low"),
+
+  L("reveal_high"),
+  n("그 순간, 지금까지의 모든 게 한꺼번에 재생된다."),
+  n("선이 빠진 전화기. 같은 자세로 핸드폰을 만지고 있던 우리. 달력의 동그라미. 동시에 웃은 타이밍. 같은 농담. 같은 목소리. 같은 나이."),
+  n("같은 나이.", 'emphasis'),
+  n("저쪽이 과거의 나라면 서른셋이 아니어야 한다. 근데 서른셋이다. 그 말은, 저쪽은 지금의 나와 같은 시간을 살고 있다는 거다."),
+  n("그 말은."),
+  s('A',"…너, 과거의 내가 아니구나.","말끝 흐림"),
+  s('B',"…응. 나도 방금, 그 생각 했어.","조용히"),
+  J("reveal_after"),
+
+  L("reveal_mid"),
+  n("서른셋. 둘 다 서른셋."),
+  n("저쪽에서 먼저 말을 꺼낸다. 천천히."),
+  s('B',"…잠깐만. 우리 혹시."),
+  s('A',"응."),
+  s('B',"과거-지금, 그런 게 아니라… 그냥 지금-지금, 인 거 아니야?"),
+  s('A',"…같은 시간에, 다른 곳에서, 다르게 살고 있는.","말끝 흐림"),
+  s('B',"응. 그런 거."),
+  J("reveal_after"),
+
+  L("reveal_low"),
+  n("나는 아직 머릿속이 정리가 안 된다. 저쪽이 천천히 대신 풀어준다."),
+  s('B',"야, 잠깐 들어봐. 내가 생각하는 거, 말도 안 되는 건데…"),
+  s('A',"응."),
+  s('B',"우리 둘 다 서른셋이야. 같은 시간을 살고 있어. 과거 미래가 아니고. 그냥, 같은 지금."),
+  s('A',"…그게 무슨 뜻이야?","한 박자 쉬고"),
+  s('B',"나도 잘 몰라. 근데 그게 설명이 되는 것 같아. 안 그러면 달력 동그라미나 창밖 풍경이나, 그런 게 다 이상하잖아."),
+  s('A',"…그런가."),
+  J("reveal_after"),
+
+  L("reveal_after"),
+  n("\"평행세계\"라는 단어는 아무도 안 꺼냈다. 그런 드라마 같은 말은 뭐랄까, 이 밤에 안 어울리는 느낌이다. 그냥 둘 다 알고 있다. 이건 그런 종류의 밤이다."),
+  s('A',"…그래서, 너는, 내가 안 간 그 길에 있는 거고."),
+  s('B',"응. 그리고 너는, 내가 안 간 그 길에 있어.","조용히"),
+  n("잠깐 멎는다. 저쪽도. 나도."),
+  f({reached_twist_2:true}),
+  s('B',"…나, 솔직히 말할게.","천천히"),
+  s('B',"오늘 밤에… 네 생각 되게 많이 했어. 네 쪽은 어떻게 살고 있을까. 서울에 남은 그 사람은."),
+  s('B',"부러워했어. 거기 남은 거. 안정적인 거. 출판사 다니면서 친구랑 가끔 술 마시고."),
+  n("부러워했다고."),
+  n("내 쪽을.", 'emphasis'),
+  s('A',"…야, 나도.","말끝 흐림"),
+  s('A',"나도, 네 쪽 계속 생각했어. 유학 갔으면 어땠을까, 바닷가 살면 어땠을까, 고양이 키우면…"),
+  s('A',"…우리 둘 다, 서로를 안 걸은 길이라고 생각하고 있었네.","짧게 웃음"),
+  s('B',"…그러네. 완전 대칭이네.","같이 웃음"),
+  n("[동시에 웃음] — 웃는데 눈가가 조금 뜨겁다. 슬픈 건 아닌데. 뭔가, 뭔가 풀리는 느낌."),
+  n("스탠드 조명이 분명히 더 따뜻해졌다. 기분 탓이 아니다. 이건 진짜다."),
+  n("저쪽이 숨을 고른다. 조심스럽게."),
+  s('B',"…근데 잠깐. 한 가지만 물어봐도 돼?"),
+  s('A',"응."),
+  s('B',"이 전화, 네가 건 거야?","천천히"),
+  n("어?"),
+  n("나는 받은 쪽이다. 수화기를 든 건 나다. 근데 저쪽은, 저쪽도 지금 \"나도 받은 쪽인데?\"라는 얼굴을 하고 있을 거다. 안 봐도 안다. 같은 얼굴일 테니까."),
+  n("논리적으로는 누군가는 걸었어야 한다. 그런데 — 그런데 —"),
+
+  C("CH_confess", [
+    { text:"\"…사실은, 걸고 싶었어. 누군가 목소리가 듣고 싶었거든.\"", jump:"confess_yes", flags:{called_who_first:'confessed'}, special:true },
+    { text:"\"나는 받은 쪽이야. 너는?\"", jump:"confess_deflect", flags:{called_who_first:'deflected'} },
+    { text:"\"…모르겠어. 그냥 전화가 울렸어.\"", jump:"confess_silent", flags:{called_who_first:'silent'} }
+  ]),
+
+  L("confess_yes"),
+  s('A',"…사실은.","한 박자 쉬고, 말끝 흐림"),
+  s('A',"걸고 싶었어. 누군가 목소리가 듣고 싶었거든. 오늘 밤."),
+  s('A',"아까 소파에서 핸드폰 만지작거리던 거, 누구한테 전화할까 생각하고 있었어. 근데 딱히 걸 데가 없어서. 그냥 화면만 켰다 껐다 했어."),
+  s('A',"…근데 벨이 울렸어.","짧게"),
+  n("수화기 너머에서 숨을 삼키는 소리."),
+  s('B',"…나도.","아주 천천히"),
+  s('B',"나도 그랬어. 나도 받은 쪽인데, 받기 직전까지 너한테 걸고 싶었어."),
+  s('B',"정확히는, 네 쪽의 나한테. 서울에 남은 그 사람한테. 목소리라도 한 번 듣고 싶었어."),
+  s('A',"…그러니까 우리 둘 다.","말끝 흐림"),
+  s('B',"응. 둘 다 받은 쪽이야. 근데 둘 다, 걸고 싶었어."),
+  n("[수화기가 살짝 지직거린다]"),
+  n("그 순간, 알게 된다. 설명할 수 없지만 알게 된다. 누구도 먼저 걸지 않았다. 우리 둘 다 \"누군가 목소리가 듣고 싶다\"고 너무 강하게 생각한 순간, 어떤 오래된 회로가 — 평소에는 닿지 않을 어떤 선이 — 저절로 이어진 거다."),
+  n("외로움이, 회로를 이었다.", 'emphasis'),
+  n("근데 이상하다. 이게 슬프지가 않다. 오히려 따뜻하다."),
+  n("저쪽의 나도 나를 생각하고 있었다. 오늘 밤에."),
+  s('A',"…우리 둘 다 외로웠네.","짧게 웃음"),
+  s('B',"응, 외로웠네. 아, 근데 외로웠다고 말하니까 그게 또 좀 덜 외로워지네.","같이 웃음"),
+  s('A',"야, 말장난하지 마."),
+  s('B',"말장난 아니거든? 진심이거든?"),
+  n("[동시에 웃음]"),
+  J("confess_common"),
+
+  L("confess_deflect"),
+  s('A',"나는 받은 쪽이야. 너는?"),
+  s('B',"…나도, 받은 쪽인데.","한 박자 쉬고"),
+  s('A',"그럼 누가 걸었어?"),
+  s('B',"…모르겠어. 근데.","조용히"),
+  s('B',"받기 직전에, 나 누군가 목소리 듣고 싶었어. 특히 네 쪽의 나."),
+  s('A',"…나도.","말끝 흐림"),
+  s('B',"너도?"),
+  s('A',"응. 핸드폰 만지작거리면서, 누구한테 전화할까 하고 있었어."),
+  n("저쪽이 잠깐 숨을 고른다. 나도 고른다. 정확히 같은 타이밍에."),
+  s('B',"…그러니까, 우리 둘 다 걸고 싶었는데, 둘 다 받은 쪽이라고 생각하는 거네.","부드럽게"),
+  s('A',"…어떻게 그게 돼?"),
+  s('B',"몰라. 근데 그렇게 된 것 같아."),
+  n("설명은 없다. 근데 묘하게 받아들여진다. 오늘 밤은 그런 종류의 밤이다."),
+  J("confess_common"),
+
+  L("confess_silent"),
+  s('A',"…모르겠어.","말끝 흐림"),
+  s('A',"그냥, 전화가 울렸어."),
+  s('B',"…응. 나도 그냥 울렸어.","조용히"),
+  n("둘 다 침묵한다. 긴 침묵은 아닌데, 뭔가 많이 담긴 침묵이다. 설명하려고 애쓰지 않기로 한다. 이 통화는 이 통화대로 그냥 있으면 된다."),
+  s('B',"…야, 설명 안 해도 괜찮아. 우리 지금 얘기하고 있잖아.","한 박자 쉬고"),
+  s('A',"…응. 맞네."),
+  J("confess_common"),
+
+  L("confess_common"),
+  n("[수화기가 살짝 지직거린다]"),
+  s('B',"…야, 우리 시간 얼마 안 남은 것 같아.","문득, 조용히"),
+  s('A',"…느껴져?"),
+  s('B',"응. 이상하게 느껴져. 전화가 곧 끊길 것 같다는 감각."),
+  s('A',"…나도.","말끝 흐림"),
+  n("시계를 본다. 자정까지 얼마 안 남았다. 통화는 이미 한 시간 가까이 되었고, 둘 다 알고 있다. 이 밤은 한 번뿐이라는 걸."),
+  s('B',"일단 잠깐만 베란다 나가봐. 나도 나가볼게. 마지막으로."),
+  s('A',"…왜?"),
+  s('B',"그냥. 하늘 같은 거 볼 수 있는 동안.","부드럽게"),
+  GO("S6_balcony_breath")
+],
+
+/* ------------- S6 : 창문 하나의 거리 ------------- */
+S6_balcony_breath: [
+  TAG("6. 창문 하나의 거리"),
+  n("수화기를 들고 베란다 문 앞에 선다. 미닫이문 손잡이에 손을 얹는다. 한 번 숨을 들이쉰다."),
+  n("밤공기. 초여름의 조금 선선한 공기."),
+  n("문을 연다. [창밖에서 지하철 지나가는 소리]"),
+  s('B',"나 지금 창 열었어.","수화기 너머, 같은 순간"),
+  s('A',"…나도."),
+  n("수화기 저쪽에서 바람 소리가 커진다. 바닷바람. 멀리 파도. 아주 작게 갈매기 한 마리."),
+  n("내 쪽에서는 강변 도로의 차들. 어느 집에선가 새어나오는 음악. 오래된 에어컨 실외기가 돌아가는 소리."),
+  n("둘 다 같은 밤을, 다른 소리로 듣고 있다."),
+  s('A',"…야. 나 강 건너 쪽에 불 켜진 집 하나 보여."),
+  s('B',"어디?"),
+  s('A',"저기. 13층짜리 아파트. 거기 한 집만 불이 켜져 있어. 늦게까지 사는 사람 있네."),
+  f({seen_clue_6:true}),
+  s('B',"…나는, 바다 건너 등대 불빛 보여.","잠시 조용히"),
+  s('A',"…오."),
+  s('B',"깜빡깜빡해. 일정하게."),
+  s('A',"우리, 같은 불빛 보고 있는 것 같으면서도 완전 다르네.","짧게 웃음"),
+  s('B',"응. 완전 다르네. 근데 기분은 비슷해.","웃음"),
+  n("기분은 비슷하다. 그 말이 묘하게 단단한 밧줄 같다."),
+
+  IF(st=>st.flags.yeoreum_reply, "yeoreum_call"),
+  J("after_yeoreum"),
+
+  L("yeoreum_call"),
+  n("그 때."),
+  n("핸드폰이 울린다. 카톡 진동이 아니다. 진짜 전화."),
+  n("화면 — 여름.", 'emphasis'),
+  s('A',"…어, 잠깐. 여름이 전화 왔어.","당황"),
+  s('B',"받아. 괜찮아.","부드럽게"),
+  s('A',"너는?"),
+  s('B',"나 잠깐 기다릴게. 받아."),
+  n("유선전화 수화기를 귀에서 살짝 떼고, 핸드폰으로 바꿔 든다. 받는다."),
+  s('yeoreum',"야, 자냐?","빠른 반말"),
+  s('A',"…아니. 안 자.","작게 웃음"),
+  s('yeoreum',"아니 내가 갑자기 왜 전화했냐면, 내일 점심 약속한 거 내가 회사 앞 김치찌개 말고 그 옆 골목 국수집으로 바꾸자. 거기가 더 맛있대. 근데 좀 걸어야 돼."),
+  s('A',"…응, 콜. 걸어가는 거 좋아."),
+  s('yeoreum',"…야.","짧은 침묵 뒤, 조금 진지해짐"),
+  s('A',"응?"),
+  s('yeoreum',"너 오늘 괜찮지? 목소리가 좀 이상해서."),
+  s('A',"…어. 괜찮아. 오히려, 오늘 좀 좋아.","말끝 흐림"),
+  s('yeoreum',"…그래? 다행이네. 암튼 내일 보자. 10초 충분했다. 끊어!"),
+  n("뚝. 여름이는 원래 이렇게 툭 끊는다. 그게 여름이답다."),
+  n("유선전화 수화기를 다시 귀에 갖다 댄다."),
+  s('B',"…친구?","조용히"),
+  s('A',"응. 여름이. 내일 점심 약속이 바뀌었대."),
+  s('B',"…좋다."),
+  s('A',"응, 좋아."),
+  n("좋다. 이 말이 오늘따라 유독 따뜻하게 느껴진다."),
+  J("after_yeoreum"),
+
+  L("after_yeoreum"),
+  s('B',"…야, 우리 다시 연결될 수 있을까?","조심스럽게"),
+  n("대답을 생각한다. 솔직한 대답은 — 아마도 아니다. 둘 다 안다. 오늘 밤은 딱 한 번이고, 다음은 없다. 근데."),
+  s('A',"…모르겠어. 근데, 없어도 괜찮을 것 같아.","한 박자 쉬고"),
+  s('B',"…왜?","살짝 놀라며"),
+  s('A',"오늘 네 목소리 들었잖아. 네가 잘 지내고 있다는 거 알았잖아."),
+  s('A',"…그걸로 충분해. 진짜로.","말끝 흐림"),
+  s('B',"…야, 너 말 되게 잘한다.","조용히 웃음"),
+  s('A',"…뭐, 그런가.","쑥스럽게"),
+  s('B',"응. 그런가."),
+  n("저쪽이 숨을 한 번 크게 쉰다. 나도 쉰다."),
+  s('B',"그럼 나도 말할게. 오늘 네 목소리 들어서 진짜 좋았어. 내가 안 걸은 길의 네가 잘 지내고 있다는 거. 그것만으로도 나, 내일 눈 뜨면 좀 다를 것 같아.","천천히"),
+  s('A',"…나도."),
+  s('B',"그쪽 삶, 부럽다고 생각했는데 — 지금은 그냥, 네가 잘 지냈으면 좋겠어.","부드럽게"),
+  s('A',"…응. 나도. 너 잘 지내.","같은 톤으로"),
+  n("[수화기가 살짝 지직거린다]"),
+  s('B',"야, 진짜 끊길 것 같아. 마지막 약속 하나씩 할까.","짧게 웃음"),
+  s('A',"…어떤?"),
+  s('B',"작은 거. 내일 아침에, 커피 한 잔 맛있게 내리기. 이런 거."),
+  s('A',"…그게 약속이야?","웃음"),
+  s('B',"응. 작은 약속이 제일 잘 지켜지거든."),
+  s('A',"…그럼, 나도. 내일 아침 커피 맛있게.","말끝 흐림"),
+  s('B',"나도. 창문 한 번 더 열기."),
+  s('A',"창문 한 번 더 열기."),
+  n("[수화기 너머, 짧게 끊김] [수화기가 살짝 지직거린다]"),
+  s('B',"야… 나 끊길 것 같아.","목소리가 조금 멀어지며"),
+  s('A',"…너, 잘 지내.","급하게"),
+  s('B',"…너도. 진짜로.","희미하게"),
+  n("그리고 — 뚜—. 뚜—. 뚜—.", 'emphasis'),
+  n("발신음. 수화기 안이 익숙한 평범한 발신음으로 가득 찬다."),
+  n("나는 잠시 수화기를 귀에 댄 채 서 있는다. 발신음만 듣고 있는다. 왠지 바로 내려놓고 싶지가 않다."),
+  n("발코니 너머. 강 건너 13층의 불빛. 여전히 켜져 있다."),
+  n("창문 너머에서 지하철이 한 량 더 지나간다. 마지막 지하철일지도 모르겠다."),
+
+  CD("CH_final", (st)=>{
+    const opts = [];
+    opts.push({
+      text:"부엌으로 가서 내일 아침 커피를 미리 갈아둔다.",
+      goto:"S7_dawn_A",
+      flags:{final_action:'coffee'}
+    });
+    if((st.flags.compare_mode==='mirror' || st.flags.compare_mode==='content') && reachedTwist2(st)){
+      opts.push({
+        text:"\"우린 둘 다 틀리지 않았어\" — 소파에 앉아 노트를 펴든다.",
+        goto:"S7_dawn_B",
+        flags:{final_action:'sit_down'}
+      });
+    }
+    if(st.flags.yeoreum_reply){
+      opts.push({
+        text:"여름에게 문자를 먼저 보낸다. \"내일 점심 어디야? 내가 살게.\"",
+        goto:"S7_dawn_C",
+        flags:{final_action:'text_yeoreum'}
+      });
+    }
+    if(st.flags.seen_clue_6){
+      opts.push({
+        text:"발코니에 한 번 더 나가 건너편 13층의 불빛을 오래 본다.",
+        goto:"S7_dawn_D",
+        flags:{final_action:'balcony'}
+      });
+    }
+    if(st.flags.called_who_first==='confessed' && st.flags.crack_noticed && st.flags.shared_deep){
+      opts.push({
+        text:"전화선을 다시 벽 단자에 꽂아둔다. \"…언젠가 또 모르니까.\"",
+        goto:"S7_dawn_H",
+        flags:{final_action:'replug'},
+        special:true
+      });
+    }
+    return opts;
+  })
+],
+
+/* ------------- S7_A : 내일 아침 커피 ------------- */
+S7_dawn_A: [
+  TAG("내일 아침 커피"),
+  n("수화기를 제자리에 내려놓는다. 딸깍."),
+  n("발신음이 잠깐 더 울리다가 조용해진다."),
+  n("부엌으로 간다. 찬장을 연다. 원두 봉지. 3주 전에 사놓고 반만 쓴 거. 뚜껑을 연다. 한 번 크게 향을 맡는다."),
+  n("그라인더에 콩을 넣고 돌린다. 드르륵— 드르륵—. 이 소리가 오늘따라 좀 다정하게 들린다."),
+  n("컵을 꺼낸다. 두 개 꺼냈다가, 한 개 다시 넣는다. 나도 모르게 웃는다."),
+  s('A',"…야, 습관이네.","혼잣말, 짧게 웃음"),
+  n("갈아둔 원두를 봉지에 담아 싱크대 옆에 세워둔다. 내일 아침을 위해서."),
+  n("스탠드 조명을 한 칸 낮춘다. 조명이 더 따뜻해진다."),
+  n("창밖은 감청색. 내일 아침은 아마 맑을 거다."),
+  s('A',"…내일 아침 커피, 한 잔 맛있게 마시자.","혼잣말, 말끝 흐림"),
+  n("약속은 이걸로 충분하다.", 'emphasis'),
+  { t:'end', id:'A' }
+],
+
+/* ------------- S7_B : 둘 다 틀리지 않았어 ------------- */
+S7_dawn_B: [
+  TAG("둘 다 틀리지 않았어"),
+  n("수화기를 제자리에 내려놓는다. 딸깍."),
+  n("소파에 천천히 앉는다. 테이블 위에 식은 차 한 잔. 아까 끓인 그거다."),
+  n("\"우린 둘 다 우리야.\" 저쪽이 마지막쯤에 했던 말이 귓가에 남아 있다."),
+  n("책장에서 오래된 노트 하나를 꺼낸다. 대학 때부터 쓰던 거다. 거의 비어 있다."),
+  n("펜을 든다. 첫 장에 한 줄을 적는다."),
+  n("\"내가 고른 이 길도, 내가 안 고른 저 길도, 둘 다 나였다.\"", 'emphasis'),
+  n("노트를 덮는다. 다시 책장에 넣는다. 굳이 다시 펴보진 않을 거다. 근데 적었다는 사실만으로 뭔가 한 칸 정리된 기분이다."),
+  n("거실 조명을 한 칸 낮춘다. 창밖으로 지하철이 한 량 더 지나간다."),
+  s('A',"…그래, 우린 둘 다 틀리지 않았어.","혼잣말, 말끝 흐림"),
+  n("저쪽도 지금쯤, 바닷가 어딘가에서 같은 말을 하고 있을 거다. 확실히는 모르겠지만, 아마도."),
+  { t:'end', id:'B' }
+],
+
+/* ------------- S7_C : 수화기를 내려놓는 법 ------------- */
+S7_dawn_C: [
+  TAG("수화기를 내려놓는 법"),
+  n("수화기를 천천히 내려놓는다. 딸깍."),
+  n("발신음이 조금 길게 남는 것 같다. 기분 탓일 거다."),
+  n("핸드폰을 집는다. 여름이의 카톡창. 아까 나눈 대화가 그대로 있다. 내일 점심."),
+  n("한 줄 더 보낸다."),
+  kakao("[나]  야 내일 내가 살게. 진짜로ㅋㅋ", true),
+  n("잠시 뒤 답장."),
+  kakao("[여름]  오 웬일이얔ㅋㅋㅋㅋ 웅 고마워ㅠㅠ 내일 봐"),
+  n("핸드폰을 엎어둔다. 거실 불을 끄러 간다. 스위치를 내리기 직전, 유선전화기를 한 번 본다. 선은 여전히 빠져 있다. 오늘 밤의 일이 전부 꿈이었을 수도 있겠다 싶다."),
+  n("근데 꿈이었어도 괜찮다.", 'emphasis'),
+  s('A',"…여기 있는 사람한테, 내일 먼저 말을 걸어야지.","혼잣말, 말끝 흐림"),
+  n("불이 꺼진다. 창밖의 감청색이 깊어진다."),
+  { t:'end', id:'C' }
+],
+
+/* ------------- S7_D : 발코니의 불빛 ------------- */
+S7_dawn_D: [
+  TAG("발코니의 불빛"),
+  n("수화기를 제자리에 내려놓는다. 딸깍."),
+  n("다시 발코니로 나간다. 밤공기가 아까보다 조금 차갑다. 맨발에 닿는 베란다 바닥이 서늘하다."),
+  n("강 건너편 13층. 불빛이 여전히 켜져 있다. 저 집 사람은 내일 아침 일찍 일어나야 할 텐데, 왜 안 자고 있을까."),
+  n("나도 안 자고 있으니까, 뭐. 서로서로."),
+  n("한참을 본다. 바람이 머리카락을 한 번 흩트리고 지나간다. 지하철이 한 량 더."),
+  n("저 13층의 사람은 평행세계의 나일지도 모르고, 아닐지도 모른다. 아마도 아닐 거다. 그냥 이쪽 세계의, 오늘 밤을 혼자 건너는 또 다른 누군가일 거다."),
+  n("손을 한 번 살짝 들어본다. 그쪽은 당연히 모른다. 근데."),
+  s('A',"…뭐 어때.","혼잣말, 짧게 웃음"),
+  n("나는 웃는다. 세상이 조금 더 넓어진 기분. 혼자 있는 사람이 나만 있는 게 아니라는 감각."),
+  s('A',"…저기도, 누군가 오늘 밤을 건너고 있구나.","혼잣말, 말끝 흐림"),
+  n("베란다 문을 닫는다. 스탠드 조명이 조용히 내 방을 지키고 있다."),
+  { t:'end', id:'D' }
+],
+
+/* ------------- S7_H : 다음 벨이 울릴 때 (히든) ------------- */
+S7_dawn_H: [
+  TAG("다음 벨이 울릴 때"),
+  n("수화기를 제자리에 내려놓는다. 딸깍."),
+  n("그런데."),
+  n("전화기를 잠깐 바라본다. 오래된 플라스틱 몸체. 먼지가 쌓인 곳과 안 쌓인 곳. 수화기 자국."),
+  n("전화기 뒷면으로 돌아가 본다. 벽 단자에서 빠져 있던 그 선. 손으로 집어든다."),
+  n("한 번 숨을 들이쉰다."),
+  n("꽂는다."),
+  bell("딸깍."),
+  n("전화선이 단자에 물린다. 이 집에 온 이후 처음으로.", 'emphasis'),
+  n("손을 전화기 위에 살짝 얹어본다. 기다린다. 3초. 5초. 10초."),
+  n("울리지 않는다. 당연히 울리지 않는다. 오늘 밤은 한 번뿐이었으니까."),
+  n("나는 웃는다. 살짝 바보 같은 표정일 거다."),
+  s('A',"…뭐, 오늘 안 와도 되지.","혼잣말, 말끝 흐림"),
+  n("수화기를 한 번 들어본다. 귀에 갖다 댄다. 익숙한 발신음이 작게 흐른다. 뚜—. 뚜—. 뚜—."),
+  n("당연히, 저쪽은 없다. 이건 그냥 이쪽의 발신음일 뿐이다. 근데 이상하게 든든하다."),
+  n("수화기를 내려놓는다. 딸깍."),
+  s('A',"…다음에는, 내가 걸어볼게.","혼잣말, 부드럽게"),
+  n("식탁 끝의 유선전화기. 벽 단자에 꽂혀 있는 선. 내 그림자가 벽에 길게."),
+  n("그리고 창밖."),
+  n("강 건너 13층. 그 불빛이 — 아주 잠깐 — 한 번 깜빡인다. 우연처럼.", 'emphasis'),
+  n("나는 이미 부엌으로 가고 있어서 그걸 못 본다. 근데 나중에, 먼 나중에, 어느 밤에, 문득 \"그때 그 불빛이 깜빡였던 것 같은데\" 하고 떠올릴지도 모른다."),
+  n("아니, 떠올리지 않을지도 모른다. 그래도 괜찮다."),
+  n("전화는, 언제든 다시 울릴 수 있다. 아니면 이번엔 내가 걸 수도 있다. 둘 다 가능하다."),
+  { t:'end', id:'H' }
+],
+
+/* ------------- S7_mini : 그 밤의 벨소리 ------------- */
+S7_mini_bellsound: [
+  TAG("그 밤의 벨소리"),
+  n("소파에 다시 앉는다. 핸드폰을 본다."),
+  kakao("[여름]  자? ㅋㅋ"),
+  n("잠시 본다. 답장을 쓴다. 지운다. 다시 쓴다."),
+  kakao("[나]  안 자. 내일 점심 콜", true),
+  kakao("[여름]  오 웬일ㅋㅋㅋㅋ 콜 콜"),
+  n("핸드폰을 엎어둔다. 식탁 끝의 유선전화기를 한 번 본다. 선은 여전히 빠져 있다. 아까 울렸던 벨소리는 — 환청이었을까. 아니면 옆집 뭐였을까. 모르겠다."),
+  n("거실 불을 끈다. 창밖의 감청색이 깊어진다."),
+  s('A',"…그 밤에 울렸던 그 벨소리는 뭐였을까.","혼잣말, 말끝 흐림"),
+  s('A',"…가끔, 아직도 생각한다.","한 박자 쉬고"),
+  { t:'end', id:'MINI' }
+]
+};
+
+/* ---------- Boot ---------- */
+showTitle();
+</script>
+</body>
+</html>

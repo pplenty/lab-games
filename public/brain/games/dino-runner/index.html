@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>점프 러너 | 5분 퍼즐</title>
+<meta property="og:title" content="점프 러너">
+<meta property="og:description" content="장애물을 뛰어넘어 멀리까지 달려보세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#8da35a;--accent-dark:#5f7436;--accent-soft:#c6d696; }
+  .game-area{ position:relative;height:200px;background:linear-gradient(to bottom,#f4f7da 0%,#e4ecc2 100%);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);margin-bottom:12px; }
+  .ground{ position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--accent-dark); }
+  .dino{ position:absolute;bottom:3px;left:40px;font-size:32px;line-height:1;transform-origin:bottom;user-select:none; }
+  .obstacle{ position:absolute;bottom:3px;font-size:28px;line-height:1;user-select:none; }
+  .score-row{ display:flex;justify-content:space-between;margin-bottom:8px;font-size:14px;color:var(--ink-dim); }
+  .score-row b{ color:var(--accent-dark); }
+  .hint{ text-align:center;color:var(--ink-dim);font-size:13px;margin-top:6px; }
+  .tap-zone{ text-align:center;padding:12px;background:var(--accent-soft);border-radius:10px;margin-top:10px;cursor:pointer;font-weight:700;color:var(--accent-dark);user-select:none; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const KEY = 'dino_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🦖</div>
+    <h1 class="hero-title">점프 <span style="color:var(--accent);">러너</span></h1>
+    <div class="hero-sub">스페이스·↑·탭으로 점프!<br>장애물을 피해 멀리까지.</div>
+    ${stats.bestScore>0?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}m</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">달 리 기 시 작</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = {
+    dinoY: 0,          // height above ground
+    dinoVy: 0,
+    gravity: -0.8,
+    jumpV: 13,
+    obstacles: [],
+    score: 0,
+    speed: 4,
+    spawnTimer: 0,
+    gameOver: false,
+    running: true
+  };
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">🦖 <span id="sc">0</span>m</div><div class="stat">최고 <span id="bst">${loadStats(KEY,{bestScore:0}).bestScore||0}</span>m</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="game-area" id="arena">
+      <div class="ground"></div>
+      <div class="dino" id="dino">🦖</div>
+    </div>
+    <div class="tap-zone" id="tap">JUMP  (Space · ↑ · 여기 탭)</div>
+    <div class="hint">선인장과 새를 피하세요!</div>
+  `;
+  app.appendChild(card);
+
+  const dinoEl = document.getElementById('dino');
+  const arena = document.getElementById('arena');
+
+  function jump(){
+    if(state.gameOver) return;
+    if(state.dinoY <= 0){ state.dinoVy = state.jumpV; }
+  }
+  document.addEventListener('keydown', onKey);
+  function onKey(e){ if(e.code==='Space' || e.code==='ArrowUp'){ e.preventDefault(); jump(); } }
+  document.getElementById('tap').addEventListener('click', jump);
+  document.getElementById('tap').addEventListener('touchstart', (e)=>{ e.preventDefault(); jump(); });
+
+  function spawn(){
+    const isCactus = Math.random() < 0.7;
+    const el = $el('div','obstacle');
+    el.textContent = isCactus ? '🌵' : '🦅';
+    el.style.right = '-40px';
+    if(!isCactus) el.style.bottom = (45 + Math.random()*30) + 'px';
+    arena.appendChild(el);
+    state.obstacles.push({ el, x:0, isCactus, yOffset: isCactus ? 0 : (45 + Math.random()*30) });
+  }
+
+  let raf = null;
+  function loop(){
+    if(!state.running) return;
+    if(!state.gameOver){
+      // Dino physics
+      state.dinoY += state.dinoVy;
+      state.dinoVy += state.gravity;
+      if(state.dinoY < 0){ state.dinoY = 0; state.dinoVy = 0; }
+      dinoEl.style.bottom = (3 + state.dinoY) + 'px';
+
+      // Move obstacles
+      state.obstacles.forEach(o => {
+        o.x += state.speed;
+        o.el.style.transform = `translateX(-${o.x}px)`;
+      });
+      state.obstacles = state.obstacles.filter(o => {
+        const rect = o.el.getBoundingClientRect();
+        const arRect = arena.getBoundingClientRect();
+        if(rect.right < arRect.left){ o.el.remove(); return false; }
+        return true;
+      });
+
+      // Collision check
+      const dinoRect = dinoEl.getBoundingClientRect();
+      const arRect = arena.getBoundingClientRect();
+      const dinoLeft = 40 + (arRect.left);
+      const dinoRight = dinoLeft + 32;
+      const dinoBottom = 3 + state.dinoY;
+      const dinoTop = dinoBottom + 32;
+      for(const o of state.obstacles){
+        const obR = o.el.getBoundingClientRect();
+        const oLeft = obR.left - arRect.left;
+        const oRight = obR.right - arRect.left;
+        const oBottom = arRect.height - (obR.bottom - arRect.top);
+        const oTop = arRect.height - (obR.top - arRect.top);
+        if(oRight > 40 && oLeft < 72){
+          if(dinoBottom < oTop && dinoTop > oBottom){
+            state.gameOver = true;
+            break;
+          }
+        }
+      }
+
+      // Spawn
+      state.spawnTimer++;
+      if(state.spawnTimer > Math.max(40, 100 - Math.floor(state.score/20))){
+        state.spawnTimer = 0;
+        spawn();
+      }
+
+      // Score
+      state.score += 0.25;
+      document.getElementById('sc').textContent = Math.floor(state.score);
+
+      // Speed up
+      if(Math.floor(state.score) % 100 === 0 && state.score > 0){
+        state.speed = Math.min(10, 4 + Math.floor(state.score / 100) * 0.6);
+      }
+    } else {
+      finish();
+      return;
+    }
+    raf = requestAnimationFrame(loop);
+  }
+
+  function finish(){
+    state.running = false;
+    cancelAnimationFrame(raf);
+    document.removeEventListener('keydown', onKey);
+    const final = Math.floor(state.score);
+    const stats = recordBestScore(KEY, final, {});
+    const isBest = stats.bestScore === final && final > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${final>=500?'🏆':final>=200?'🎉':'👏'}</div>
+      <div class="result-title">게임 오버</div>
+      <div class="result-big">${final}m</div>
+      ${isBest?'<div class="ribbon">🌟 최고 기록</div>':''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`점프 러너\n🦖 ${final}m${isBest?' 🌟':''}`, e.target);
+  }
+
+  raf = requestAnimationFrame(loop);
+}
+showTitle();
+window.__GAME__ = { KEY };
+</script>
+</body>
+</html>

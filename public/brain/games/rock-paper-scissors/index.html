@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>가위바위보 AI | 5분 퍼즐</title>
+<meta property="og:title" content="가위바위보 AI">
+<meta property="og:description" content="패턴을 학습하는 AI와 가위바위보 대결.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#d85f7c;--accent-dark:#a83d5e;--accent-soft:#f0b6c7; }
+  .stage{
+    display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:center;
+    padding:26px 18px;background:var(--bg-2);border-radius:16px;margin-bottom:14px;
+  }
+  .side{ text-align:center;font-size:72px;line-height:1; }
+  .side .label{ font-size:13px;color:var(--ink-dim);letter-spacing:.15em;margin-bottom:8px; }
+  .score-col{ text-align:center;font-size:12px;color:var(--ink-dim); }
+  .vs{ font-size:24px;color:var(--ink-faint); }
+  .scores{ display:flex;gap:18px;justify-content:center;font-variant-numeric:tabular-nums; }
+  .scores .s{ font-size:28px;font-weight:800;color:var(--accent-dark); }
+  .rps-buttons{ display:grid;grid-template-columns:repeat(3,1fr);gap:10px; }
+  .rps-btn{
+    background:white;border:2px solid var(--ink-faint);border-radius:12px;
+    padding:18px;font:inherit;font-size:36px;cursor:pointer;transition:all .15s;
+  }
+  .rps-btn:hover:not(:disabled){ border-color:var(--accent);background:var(--accent-soft); }
+  .history-bar{ display:flex;gap:3px;justify-content:center;margin-bottom:10px;flex-wrap:wrap; }
+  .h-dot{ width:18px;height:6px;border-radius:3px;background:var(--ink-faint); }
+  .h-dot.W{ background:var(--green); }
+  .h-dot.L{ background:#d06060; }
+  .h-dot.D{ background:var(--yellow); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, saveStats, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const MOVES = ['rock','paper','scissors'];
+const EMOJI = { rock:'✊', paper:'✋', scissors:'✌️' };
+const LABEL = { rock:'바위', paper:'보', scissors:'가위' };
+const BEATS = { rock:'scissors', scissors:'paper', paper:'rock' };
+const TOTAL = 15;
+const KEY = 'rps_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { games:0, wins:0, bestStreak:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">✊✋✌️</div>
+    <h1 class="hero-title">가위바위보 <span style="color:var(--accent);">AI</span></h1>
+    <div class="hero-sub">컴퓨터는 당신의 최근 패턴을 학습합니다.<br>${TOTAL}판 중 더 많이 이기세요.</div>
+    <div class="rule-card">
+      AI는 처음엔 무작위로 냅니다.<br>
+      몇 판이 지나면 당신이 자주 내는 패턴·직전 턴 뒤의 버릇을 간파해 <b>한 수 앞</b>을 읽어냅니다.<br>
+      ${stats.games > 0 ? `<div class="best">전적 ${stats.wins}W / ${stats.games}게임, 최다 연승 ${stats.bestStreak}</div>` : ''}
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">대 결 시 작</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = {
+    history: [],        // list of player moves
+    rounds: [],         // list of { player, ai, outcome }
+    pCounts: { rock:0, paper:0, scissors:0 },
+    // Markov chain: prevMove → next move counts
+    markov: {},
+    streak: 0,
+    bestStreak: 0
+  };
+
+  function aiMove(){
+    // Warm-up: first 3 moves random
+    if(state.history.length < 3) return MOVES[Math.floor(Math.random()*3)];
+    // 70% predict from markov chain based on last move, 30% counter their mode
+    const last = state.history[state.history.length-1];
+    const next = state.markov[last];
+    if(next && Math.random() < 0.7){
+      const pred = predictFromDist(next);
+      return BEATS[ getCounterOf(pred) ] ? getCounterOf(pred) : MOVES[Math.floor(Math.random()*3)];
+    }
+    // counter their most frequent move
+    const mode = Object.entries(state.pCounts).sort((a,b)=>b[1]-a[1])[0][0];
+    return getCounterOf(mode);
+  }
+  function getCounterOf(move){
+    // what move beats `move`: e.g. rock is beaten by paper. So we pick paper.
+    if(move === 'rock') return 'paper';
+    if(move === 'paper') return 'scissors';
+    return 'rock';
+  }
+  function predictFromDist(dist){
+    const total = dist.rock + dist.paper + dist.scissors;
+    if(total === 0) return MOVES[Math.floor(Math.random()*3)];
+    let r = Math.random() * total;
+    for(const m of MOVES){ r -= dist[m]; if(r <= 0) return m; }
+    return MOVES[0];
+  }
+
+  function updateMarkov(){
+    // Count transitions from history
+    state.markov = {};
+    for(let i=0;i<state.history.length-1;i++){
+      const a = state.history[i], b = state.history[i+1];
+      if(!state.markov[a]) state.markov[a] = { rock:0, paper:0, scissors:0 };
+      state.markov[a][b]++;
+    }
+  }
+
+  function judge(player, ai){
+    if(player === ai) return 'D';
+    if(BEATS[player] === ai) return 'W';
+    return 'L';
+  }
+
+  function render(lastRound){
+    clear(app);
+    const top = $el('div','topbar');
+    const wins = state.rounds.filter(r=>r.outcome==='W').length;
+    const losses = state.rounds.filter(r=>r.outcome==='L').length;
+    const draws = state.rounds.filter(r=>r.outcome==='D').length;
+    top.innerHTML = `<div class="stat">라운드 ${state.rounds.length}/${TOTAL}</div><div class="stat">🔥 연승 ${state.streak}</div>`;
+    app.appendChild(top);
+
+    const hbar = $el('div','history-bar');
+    hbar.innerHTML = state.rounds.map(r => `<div class="h-dot ${r.outcome}"></div>`).join('') +
+      Array.from({length: Math.max(0, TOTAL - state.rounds.length)}, ()=>'<div class="h-dot"></div>').join('');
+    app.appendChild(hbar);
+
+    const card = $el('div','card');
+    const lastInfo = lastRound
+      ? `<div class="score-col">${lastRound.outcome === 'W' ? '✓ 이겼어요' : lastRound.outcome === 'L' ? '✗ 졌어요' : '= 비김'}</div>`
+      : `<div class="score-col">라운드 ${state.rounds.length+1}</div>`;
+    card.innerHTML = `
+      <div class="stage">
+        <div class="side">
+          <div class="label">YOU</div>
+          ${lastRound ? EMOJI[lastRound.player] : '❓'}
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+          <div class="vs">VS</div>
+          ${lastInfo}
+          <div class="scores"><div><div class="s">${wins}</div><div style="font-size:11px;color:var(--ink-dim);">WIN</div></div>
+          <div><div class="s">${losses}</div><div style="font-size:11px;color:var(--ink-dim);">LOSE</div></div>
+          <div><div class="s">${draws}</div><div style="font-size:11px;color:var(--ink-dim);">DRAW</div></div></div>
+        </div>
+        <div class="side">
+          <div class="label">AI</div>
+          ${lastRound ? EMOJI[lastRound.ai] : '❓'}
+        </div>
+      </div>
+      <div class="rps-buttons">
+        ${MOVES.map(m => `<button class="rps-btn" data-m="${m}">${EMOJI[m]}<div style="font-size:14px;color:var(--ink-dim);">${LABEL[m]}</div></button>`).join('')}
+      </div>
+    `;
+    app.appendChild(card);
+
+    card.querySelectorAll('.rps-btn').forEach(b => {
+      b.onclick = ()=>play(b.dataset.m);
+    });
+  }
+
+  function play(player){
+    updateMarkov();
+    const ai = aiMove();
+    const outcome = judge(player, ai);
+    state.history.push(player);
+    state.pCounts[player]++;
+    state.rounds.push({ player, ai, outcome });
+    if(outcome === 'W'){ state.streak++; if(state.streak > state.bestStreak) state.bestStreak = state.streak; }
+    else if(outcome === 'L'){ state.streak = 0; }
+
+    if(state.rounds.length >= TOTAL){
+      render({ player, ai, outcome });
+      setTimeout(finish, 900);
+    } else {
+      render({ player, ai, outcome });
+    }
+  }
+
+  function finish(){
+    const wins = state.rounds.filter(r=>r.outcome==='W').length;
+    const losses = state.rounds.filter(r=>r.outcome==='L').length;
+    const draws = state.rounds.filter(r=>r.outcome==='D').length;
+    const stats = loadStats(KEY, { games:0, wins:0, bestStreak:0 });
+    stats.games++;
+    stats.wins += wins;
+    if(state.bestStreak > stats.bestStreak) stats.bestStreak = state.bestStreak;
+    saveStats(KEY, stats);
+    const verdict = wins > losses ? '승리' : wins < losses ? '패배' : '무승부';
+
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = verdict === '승리' ? '🏆' : verdict === '패배' ? '😢' : '🤝';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">${verdict}</div>
+      <div class="result-big">${wins} · ${losses} · ${draws}</div>
+      <div class="result-sub">승 ${wins} · 패 ${losses} · 무 ${draws} / 최다 연승 ${state.bestStreak}</div>
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>
+      shareToClipboard(`가위바위보 AI\n${verdict} · ${wins}W ${losses}L ${draws}D (연승 ${state.bestStreak})`, e.target);
+  }
+
+  render(null);
+}
+
+showTitle();
+window.__GAME__ = { MOVES, BEATS, EMOJI, TOTAL, KEY,
+  judge: (p,a) => p===a ? 'D' : BEATS[p]===a ? 'W' : 'L'
+};
+</script>
+</body>
+</html>

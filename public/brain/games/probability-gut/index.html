@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>확률 직감 | 5분 퍼즐</title>
+<meta property="og:title" content="확률 직감">
+<meta property="og:description" content="두 상황 중 어느 쪽이 확률이 더 높을까요?">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#6ca0c0;--accent-dark:#467da0;--accent-soft:#b8d4e6; }
+  .choices{ display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px; }
+  .choice{ background:var(--card);border:2px solid var(--ink-faint);border-radius:14px;padding:18px 14px;cursor:pointer;transition:all .15s; }
+  .choice:hover{ border-color:var(--accent);background:var(--accent-soft); }
+  .choice .label{ font-size:12px;color:var(--ink-dim);letter-spacing:.1em;margin-bottom:6px; }
+  .choice .desc{ font-size:15px;font-weight:700;line-height:1.5; }
+  .choice.correct{ background:var(--green);color:white;border-color:var(--green-dark); }
+  .choice.wrong{ background:var(--red);color:white;border-color:#a43232; }
+  .q-title{ text-align:center;color:var(--accent-dark);font-weight:700;font-size:16px;margin-bottom:12px; }
+  .reveal{ text-align:center;padding:12px;background:var(--bg-2);border-radius:10px;margin-top:10px;font-size:14px;color:var(--ink-dim); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, shuffle, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+// Classic probability intuition puzzles — pair with correct answer
+const PUZZLES = [
+  {
+    q:'어느 쪽이 확률이 더 높은가?',
+    A:'주사위 1번 던져 6이 나올 확률',
+    B:'주사위 2번 던져 6이 한 번이라도 나올 확률',
+    answer:'B',
+    explain:'A: 1/6 ≈ 16.7%, B: 1 − (5/6)² ≈ 30.5%'
+  },
+  {
+    q:'어느 쪽 복권이 더 잘 당첨될까?',
+    A:'1,000개 중 1개 당첨',
+    B:'10,000개 중 9개 당첨',
+    answer:'B',
+    explain:'A: 0.1%, B: 0.09%는 비슷하지만… 실제 B = 9/10,000 = 0.09% < A = 0.1%',
+    override:'A'
+  },
+  {
+    q:'동전 10번 던졌을 때 더 가능성 있는 결과는?',
+    A:'앞면 5번, 뒷면 5번',
+    B:'앞면 7번, 뒷면 3번',
+    answer:'A',
+    explain:'5-5의 경우는 252/1024 ≈ 24.6%, 7-3은 120/1024 ≈ 11.7%'
+  },
+  {
+    q:'한 반에 23명 중 생일이 같은 두 명이 있을 확률은?',
+    A:'약 5%',
+    B:'약 50%',
+    answer:'B',
+    explain:'유명한 "생일 역설". 23명이면 이미 50%를 넘습니다.'
+  },
+  {
+    q:'트럼프 카드(52장) 한 장 뽑기, 어느 쪽?',
+    A:'에이스가 나올 확률',
+    B:'빨간 킹이 나올 확률',
+    answer:'A',
+    explain:'A: 4/52 ≈ 7.7%, B: 2/52 ≈ 3.8%'
+  },
+  {
+    q:'로또 1등과 번개 맞을 확률 중 더 낮은 것은?',
+    A:'한 해 안에 번개 맞을 확률 (약 1/100만)',
+    B:'로또 1등 당첨 확률 (약 1/814만)',
+    answer:'B',
+    explain:'로또 1등이 약 8배 더 낮습니다.'
+  },
+  {
+    q:'주사위 두 개의 합이 7이 나올 확률 vs 6이 나올 확률',
+    A:'합이 7',
+    B:'합이 6',
+    answer:'A',
+    explain:'7: 6/36 = 16.7%, 6: 5/36 ≈ 13.9%. 7이 가장 흔합니다.'
+  },
+  {
+    q:'회의실에 4명 있을 때, 두 명이 같은 달 생일일 확률은?',
+    A:'약 20%',
+    B:'약 43%',
+    answer:'B',
+    explain:'1 − (12·11·10·9)/12⁴ ≈ 42.7%. 직감보다 높습니다.'
+  }
+];
+// Fix puzzle 2 which has override
+PUZZLES[1].answer = PUZZLES[1].override;
+
+const TOTAL = 6;
+const KEY = 'prob_gut_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🎲</div>
+    <h1 class="hero-title">확률 <span style="color:var(--accent);">직감</span></h1>
+    <div class="hero-sub">두 상황 중 확률이 더 높은 쪽을<br>직감으로 골라보세요. ${TOTAL}문제.</div>
+    ${stats.bestScore>0?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const qs = shuffle(PUZZLES).slice(0, TOTAL);
+  const state = { qs, i:0, correct:0 };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const q = state.qs[state.i];
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="q-title">${Brain.escapeHtml(q.q)}</div>
+      <div class="choices">
+        <div class="choice" data-v="A"><div class="label">A</div><div class="desc">${Brain.escapeHtml(q.A)}</div></div>
+        <div class="choice" data-v="B"><div class="label">B</div><div class="desc">${Brain.escapeHtml(q.B)}</div></div>
+      </div>
+      <div class="reveal" id="rv" style="display:none;"></div>
+    `;
+    app.appendChild(card);
+    card.querySelectorAll('.choice').forEach(c=>{
+      c.onclick = ()=>{
+        card.querySelectorAll('.choice').forEach(x=>x.onclick=null);
+        const rv = document.getElementById('rv');
+        rv.style.display = 'block';
+        if(c.dataset.v === q.answer){ c.classList.add('correct'); state.correct++; rv.textContent='✓ ' + q.explain; rv.style.color = 'var(--green-dark)'; }
+        else { c.classList.add('wrong'); card.querySelector('.choice[data-v="'+q.answer+'"]').classList.add('correct'); rv.textContent = q.explain; rv.style.color = 'var(--ink)'; }
+        setTimeout(()=>{ state.i++; next(); }, 2000);
+      };
+    });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, {});
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=4?'🎉':'👏'}</div>
+      <div class="result-title">확률 직감 종료</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick=startGame;
+    document.getElementById('h').onclick=showTitle;
+    document.getElementById('s').onclick=(e)=>shareToClipboard(`확률 직감\n🎲 ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { PUZZLES, TOTAL, KEY };
+</script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>지도 위치 기억 | 5분 퍼즐</title>
+<meta property="og:title" content="지도 위치 기억">
+<meta property="og:description" content="잠깐 본 위치들을 기억해 재현하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#3e8b87;--accent-dark:#2a6664;--accent-soft:#b8d8d4; }
+  .map-grid{ display:grid;gap:4px;margin:0 auto 12px;padding:8px;background:var(--accent-dark);border-radius:8px; }
+  .mcell{ aspect-ratio:1;background:#f4ead5;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;font-size:20px;transition:all .12s; }
+  .mcell.lit{ background:var(--accent);color:white; }
+  .mcell.pick{ background:var(--accent-soft);box-shadow:inset 0 0 0 3px var(--accent); }
+  .mcell.good{ background:var(--green);color:white; }
+  .mcell.bad{ background:var(--red);color:white; }
+  .phase{ text-align:center;color:var(--ink-dim);font-size:14px;margin-bottom:10px;min-height:20px; }
+  .level-info{ text-align:center;color:var(--accent-dark);font-weight:700;font-size:18px;margin-bottom:8px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, saveStats, shuffle, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const KEY = 'map_location_stats';
+const app = document.getElementById('app');
+
+function levelConfig(l){
+  if(l <= 2) return { size:4, count:3 };
+  if(l <= 4) return { size:5, count:4 };
+  if(l <= 6) return { size:6, count:5 };
+  if(l <= 8) return { size:6, count:6 };
+  return { size:7, count:7 };
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestLevel:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">📍</div>
+    <h1 class="hero-title">지도 위치 <span style="color:var(--accent);">기억</span></h1>
+    <div class="hero-sub">잠깐 표시된 위치들을 기억했다가<br>같은 칸을 클릭하세요.</div>
+    ${stats.bestLevel>0?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">레벨 ${stats.bestLevel}</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = ()=>runLevel(1);
+}
+
+function runLevel(level){
+  const cfg = levelConfig(level);
+  const total = cfg.size * cfg.size;
+  const picked = shuffle(Array.from({length:total},(_,i)=>i)).slice(0, cfg.count);
+  const pickedSet = new Set(picked);
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">레벨 ${level}</div><div class="stat">${cfg.count}개 위치</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="level-info">${cfg.size}×${cfg.size} · ${cfg.count}개</div>
+    <div class="phase" id="phase">잘 보세요…</div>
+    <div class="map-grid" id="grid" style="grid-template-columns:repeat(${cfg.size},1fr);max-width:${cfg.size*50}px;"></div>
+  `;
+  app.appendChild(card);
+  const grid = document.getElementById('grid');
+  for(let i=0;i<total;i++){
+    const c = $el('div','mcell'); c.dataset.i=i; grid.appendChild(c);
+  }
+  // Show for a bit
+  picked.forEach(i => grid.children[i].classList.add('lit'));
+  const showMs = 900 + cfg.count*180;
+  setTimeout(()=>{
+    picked.forEach(i => grid.children[i].classList.remove('lit'));
+    document.getElementById('phase').textContent = '위치를 클릭하세요 ('+cfg.count+'개)';
+    const picks = new Set();
+    grid.querySelectorAll('.mcell').forEach(c => {
+      c.onclick = ()=>{
+        if(c.classList.contains('pick')||c.classList.contains('good')||c.classList.contains('bad')) return;
+        const i = +c.dataset.i;
+        if(pickedSet.has(i)){
+          c.classList.add('pick');
+          picks.add(i);
+          if(picks.size === cfg.count){
+            grid.querySelectorAll('.mcell').forEach(x=>x.onclick=null);
+            picked.forEach(k => grid.children[k].classList.add('good'));
+            document.getElementById('phase').textContent = '✓ 완벽!';
+            setTimeout(()=>runLevel(level+1), 900);
+          }
+        } else {
+          c.classList.add('bad');
+          grid.querySelectorAll('.mcell').forEach(x=>x.onclick=null);
+          picked.forEach(k => { if(!picks.has(k)) grid.children[k].classList.add('lit'); });
+          document.getElementById('phase').textContent = '아쉬워요…';
+          setTimeout(()=>finish(level-1), 1200);
+        }
+      };
+    });
+  }, showMs);
+}
+function finish(max){
+  const stats = loadStats(KEY, { played:0, bestLevel:0 });
+  stats.played++;
+  if(max > stats.bestLevel) stats.bestLevel = max;
+  saveStats(KEY, stats);
+  const isBest = stats.bestLevel === max;
+  clear(app);
+  const r = $el('div','result-card');
+  const emoji = max >= 8 ? '🏆' : max >= 5 ? '🎉' : max >= 3 ? '👏' : '🙂';
+  r.innerHTML = `
+    <div class="result-emoji">${emoji}</div>
+    <div class="result-title">레벨 ${max}</div>
+    ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+    <div class="btn-row">
+      <button class="btn" id="s">공유</button>
+      <button class="btn secondary" id="a">다시</button>
+      <button class="btn ghost" id="h">홈</button>
+    </div>
+  `;
+  app.appendChild(r);
+  document.getElementById('a').onclick = ()=>runLevel(1);
+  document.getElementById('h').onclick = showTitle;
+  document.getElementById('s').onclick = (e)=>shareToClipboard(`지도 위치 기억\n📍 레벨 ${max}${isBest?' 🌟':''}`, e.target);
+}
+showTitle();
+window.__GAME__ = { KEY, levelConfig };
+</script>
+</body>
+</html>

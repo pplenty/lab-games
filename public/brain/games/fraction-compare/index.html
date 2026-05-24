@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>분수 비교 | 5분 퍼즐</title>
+<meta property="og:title" content="분수 비교">
+<meta property="og:description" content="두 분수 중 어느 게 더 큰가요? 60초 스프린트.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#5a9bd2;--accent-dark:#3876a5;--accent-soft:#c1dbee; }
+  .match-stage{ display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;padding:24px 10px;background:var(--accent-soft);border-radius:14px;margin-bottom:16px; }
+  .frac{ text-align:center;cursor:pointer;padding:10px;border-radius:10px;background:white;border:2px solid transparent;transition:all .12s; }
+  .frac:hover{ border-color:var(--accent);transform:scale(1.05); }
+  .frac .num{ font-size:36px;font-weight:800;color:var(--accent-dark);line-height:1; }
+  .frac .bar{ height:3px;background:var(--accent-dark);margin:4px 0; }
+  .frac .den{ font-size:36px;font-weight:800;color:var(--accent-dark);line-height:1; }
+  .vs{ font-size:24px;color:var(--ink-dim);font-weight:700; }
+  .eq-btn{ display:block;margin:10px auto;background:var(--bg-2);color:var(--ink);border:2px solid var(--ink-faint);border-radius:8px;padding:8px 20px;font:inherit;font-weight:700;cursor:pointer; }
+  .eq-btn:hover{ background:var(--accent-soft); }
+  .timer-bar{ height:8px;background:var(--card);border-radius:4px;overflow:hidden;margin-bottom:12px;box-shadow:var(--shadow); }
+  .timer-fill{ height:100%;background:linear-gradient(to right,var(--accent),var(--accent-dark)); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, rand } = Brain;
+injectBackLink('../../');
+const DURATION = 60000;
+const KEY = 'frac_compare_stats';
+const app = document.getElementById('app');
+
+function genPair(){
+  const a = 1 + Math.floor(Math.random()*9);
+  const b = 2 + Math.floor(Math.random()*12);
+  let c = 1 + Math.floor(Math.random()*9);
+  let d = 2 + Math.floor(Math.random()*12);
+  // avoid trivial equal
+  while(a*d === b*c){
+    c = 1 + Math.floor(Math.random()*9);
+    d = 2 + Math.floor(Math.random()*12);
+  }
+  return { a, b, c, d };
+}
+function compareFrac(a,b,c,d){
+  // a/b vs c/d → multiply: a*d vs c*b
+  if(a*d > c*b) return 1;
+  if(a*d < c*b) return -1;
+  return 0;
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">⅔</div>
+    <h1 class="hero-title">분수 <span style="color:var(--accent);">비교</span></h1>
+    <div class="hero-sub">60초 동안 어느 쪽이 더 큰지<br>최대한 많이 맞혀보세요.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}점</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const startedAt = performance.now();
+  const state = { score:0, correct:0, wrong:0, pair:genPair() };
+  let timer = null;
+
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">🎯 <span id="score">0</span></div><div class="stat" id="time">60.0s</div>`;
+  app.appendChild(top);
+  const bar = $el('div','timer-bar');
+  bar.innerHTML = `<div class="timer-fill" id="fill" style="width:100%"></div>`;
+  app.appendChild(bar);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="match-stage" id="stage"></div>
+    <button class="eq-btn" id="eq">두 분수가 같다</button>
+    <div class="feedback" id="fb"></div>
+  `;
+  app.appendChild(card);
+  render();
+
+  function render(){
+    const p = state.pair;
+    document.getElementById('stage').innerHTML = `
+      <div class="frac" data-pick="L">
+        <div class="num">${p.a}</div><div class="bar"></div><div class="den">${p.b}</div>
+      </div>
+      <div class="vs">?</div>
+      <div class="frac" data-pick="R">
+        <div class="num">${p.c}</div><div class="bar"></div><div class="den">${p.d}</div>
+      </div>
+    `;
+    document.querySelectorAll('.frac').forEach(f => {
+      f.onclick = ()=>answer(f.dataset.pick);
+    });
+  }
+  function answer(pick){
+    const r = compareFrac(state.pair.a, state.pair.b, state.pair.c, state.pair.d);
+    const expected = r > 0 ? 'L' : r < 0 ? 'R' : 'E';
+    const fb = document.getElementById('fb');
+    if(pick === expected){
+      state.score++;
+      state.correct++;
+      fb.className='feedback right'; fb.textContent='✓';
+    } else {
+      state.score = Math.max(0, state.score - 1);
+      state.wrong++;
+      fb.className='feedback wrong';
+      fb.textContent = '정답: ' + (expected === 'L' ? '왼쪽' : expected === 'R' ? '오른쪽' : '같음');
+    }
+    document.getElementById('score').textContent = state.score;
+    state.pair = genPair();
+    render();
+  }
+  document.getElementById('eq').onclick = ()=>answer('E');
+  function tick(){
+    const el = performance.now() - startedAt;
+    const rem = Math.max(0, DURATION - el);
+    document.getElementById('time').textContent = (rem/1000).toFixed(1)+'s';
+    document.getElementById('fill').style.width = (rem/DURATION*100)+'%';
+    if(rem <= 0){ clearInterval(timer); finish(); }
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.score, {});
+    const isBest = stats.bestScore === state.score && state.score > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.score>=30?'🏆':state.score>=18?'🎉':'👏'}</div>
+      <div class="result-title">분수 비교 종료</div>
+      <div class="result-big">${state.score}점</div>
+      <div class="result-sub">정답 ${state.correct} · 오답 ${state.wrong}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`분수 비교\n⅔ ${state.score}점${isBest?' 🌟':''}`, e.target);
+  }
+  timer = setInterval(tick, 80);
+}
+showTitle();
+window.__GAME__ = { DURATION, KEY, genPair, compareFrac };
+</script>
+</body>
+</html>

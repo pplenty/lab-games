@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>주사위 합산 | 5분 퍼즐</title>
+<meta property="og:title" content="주사위 합산">
+<meta property="og:description" content="주사위들을 한 번에 보고 총합을 빠르게 맞히세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#b8482e;--accent-dark:#8a3420;--accent-soft:#e6b19c; }
+  .dice-stage{ min-height:160px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center;align-items:center;padding:20px;background:var(--accent-soft);border-radius:14px;margin-bottom:14px; }
+  .die{ font-size:58px;line-height:1;user-select:none; }
+  .input-row{ background:var(--card);border-radius:10px;padding:12px;box-shadow:var(--shadow);display:flex;gap:8px; }
+  .input-row input{ flex:1;padding:12px;border:2px solid var(--ink-faint);border-radius:8px;font:inherit;font-size:26px;font-weight:700;text-align:center;background:var(--bg); }
+  .input-row button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, mulberry32, randomSeed, rand } = Brain;
+injectBackLink('../../');
+
+const DICE = ['⚀','⚁','⚂','⚃','⚄','⚅'];
+const TOTAL = 5;
+const KEY = 'dice_sum_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🎲</div>
+    <h1 class="hero-title">주사위 <span style="color:var(--accent);">합산</span></h1>
+    <div class="hero-sub">주사위들을 한 번에 보고<br>총합을 빠르게 입력하세요. ${TOTAL}라운드.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const state = { i:0, correct:0, rng };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const count = 4 + Math.floor(state.rng() * 5); // 4-8 dice
+    const rolls = [];
+    for(let i=0;i<count;i++) rolls.push(1 + Math.floor(state.rng()*6));
+    const sum = rolls.reduce((a,b)=>a+b,0);
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="dice-stage">
+        ${rolls.map(r => `<div class="die">${DICE[r-1]}</div>`).join('')}
+      </div>
+      <div class="input-row">
+        <input type="number" id="ans" placeholder="합계" autocomplete="off" autofocus>
+        <button id="sub">→</button>
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    const input = document.getElementById('ans');
+    const fb = document.getElementById('fb');
+    input.focus();
+    function check(){
+      const v = parseInt(input.value, 10);
+      if(isNaN(v)) return;
+      if(v === sum){ fb.className='feedback right'; fb.textContent='✓ '+sum; state.correct++; }
+      else { fb.className='feedback wrong'; fb.textContent='정답은 '+sum; }
+      setTimeout(()=>{ state.i++; next(); }, 900);
+    }
+    document.getElementById('sub').onclick = check;
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=3?'🎉':'👏'}</div>
+      <div class="result-title">주사위 합산 끝</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`주사위 합산\n🎲 ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { DICE, TOTAL, KEY };
+</script>
+</body>
+</html>

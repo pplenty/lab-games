@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>퍼센트 러시 | 5분 퍼즐</title>
+<meta property="og:title" content="퍼센트 러시">
+<meta property="og:description" content="60초 퍼센트 계산 스프린트.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#c87a3a;--accent-dark:#9a5824;--accent-soft:#e8c6a3; }
+  .q-display{ text-align:center;padding:34px 16px;background:var(--accent-soft);border-radius:14px;margin-bottom:12px; }
+  .q-big{ font-size:42px;font-weight:800;color:var(--accent-dark);font-variant-numeric:tabular-nums; }
+  .input-row{ background:var(--card);border-radius:10px;padding:12px;box-shadow:var(--shadow);display:flex;gap:8px; }
+  .input-row input{ flex:1;padding:12px;border:2px solid var(--ink-faint);border-radius:8px;font:inherit;font-size:26px;font-weight:700;text-align:center;background:var(--bg); }
+  .input-row button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+  .timer-bar{ height:8px;background:var(--card);border-radius:4px;overflow:hidden;margin-bottom:12px; }
+  .timer-fill{ height:100%;background:linear-gradient(to right,var(--accent),var(--accent-dark)); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const DURATION = 60000;
+const KEY = 'pct_rush_stats';
+const app = document.getElementById('app');
+
+function genQ(){
+  // ensure integer answer
+  const pcts = [10, 20, 25, 50, 75, 5, 40, 60, 80];
+  const pct = pcts[Math.floor(Math.random()*pcts.length)];
+  const base = (2 + Math.floor(Math.random()*20)) * 100 / pct * pct; // multiple to ensure integer
+  // Simpler: generate bases that are multiples of 100/gcd(pct,100)
+  const multiplier = [10, 20, 25, 50].includes(pct) ? 20 : 5;
+  const n = (2 + Math.floor(Math.random()*20)) * multiplier;
+  return { base: n, pct, answer: Math.round(n * pct / 100) };
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">%</div>
+    <h1 class="hero-title">퍼센트 <span style="color:var(--accent);">러시</span></h1>
+    <div class="hero-sub">60초 안에 퍼센트 계산을<br>최대한 많이 맞혀보세요.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}점</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const startedAt = performance.now();
+  const state = { score:0, correct:0, wrong:0, q:genQ() };
+  let timer = null;
+
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">🎯 <span id="score">0</span></div><div class="stat" id="time">60.0s</div>`;
+  app.appendChild(top);
+  const bar = $el('div','timer-bar');
+  bar.innerHTML = `<div class="timer-fill" id="fill" style="width:100%"></div>`;
+  app.appendChild(bar);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="q-display"><div class="q-big" id="q"></div></div>
+    <div class="input-row">
+      <input type="number" id="ans" placeholder="정답" autocomplete="off" autofocus>
+      <button id="sub">→</button>
+    </div>
+    <div class="feedback" id="fb"></div>
+  `;
+  app.appendChild(card);
+
+  function render(){
+    document.getElementById('q').textContent = `${state.q.base}의 ${state.q.pct}% = ?`;
+    document.getElementById('ans').value = '';
+    document.getElementById('ans').focus();
+  }
+  render();
+  function check(){
+    const v = parseInt(document.getElementById('ans').value, 10);
+    if(isNaN(v)) return;
+    const fb = document.getElementById('fb');
+    if(v === state.q.answer){
+      state.score++; state.correct++;
+      fb.className='feedback right'; fb.textContent='✓';
+    } else {
+      state.score = Math.max(0, state.score-1); state.wrong++;
+      fb.className='feedback wrong'; fb.textContent='정답은 '+state.q.answer;
+    }
+    document.getElementById('score').textContent = state.score;
+    state.q = genQ();
+    render();
+  }
+  document.getElementById('sub').onclick = check;
+  document.getElementById('ans').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+
+  function tick(){
+    const el = performance.now() - startedAt;
+    const rem = Math.max(0, DURATION - el);
+    document.getElementById('time').textContent = (rem/1000).toFixed(1)+'s';
+    document.getElementById('fill').style.width = (rem/DURATION*100)+'%';
+    if(rem <= 0){ clearInterval(timer); finish(); }
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.score, {});
+    const isBest = stats.bestScore === state.score && state.score > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.score>=20?'🏆':state.score>=12?'🎉':'👏'}</div>
+      <div class="result-title">60초 종료</div>
+      <div class="result-big">${state.score}점</div>
+      <div class="result-sub">정답 ${state.correct} · 오답 ${state.wrong}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`퍼센트 러시\n% ${state.score}점${isBest?' 🌟':''}`, e.target);
+  }
+  timer = setInterval(tick, 80);
+}
+showTitle();
+window.__GAME__ = { DURATION, KEY, genQ };
+</script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>회전 매칭 | 5분 퍼즐</title>
+<meta property="og:title" content="회전 매칭">
+<meta property="og:description" content="회전된 도형 중 원본과 같은 것을 찾으세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#8a5ca0;--accent-dark:#603d76;--accent-soft:#d1b7df; }
+  .q-area{ text-align:center;padding:24px;background:var(--accent-soft);border-radius:14px;margin-bottom:14px; }
+  .shape-big{ font-size:72px;line-height:1; }
+  .hint{ color:var(--ink-dim);font-size:13px;margin-top:6px; }
+  .opts{ display:grid;grid-template-columns:repeat(4,1fr);gap:8px; }
+  .opt-shape{ aspect-ratio:1;background:white;border:2px solid var(--ink-faint);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:42px;cursor:pointer;transition:all .1s;line-height:1; }
+  .opt-shape:hover:not(:disabled){ border-color:var(--accent);background:var(--accent-soft); }
+  .opt-shape.correct{ background:var(--green);color:white; }
+  .opt-shape.wrong{ background:var(--red);color:white; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, shuffle, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+// Asymmetric shapes that look different when mirrored but same when rotated
+const SHAPES = ['🔺','🔷','🔶','🟥','🟦','🟧','🟨','🟩','🔸','🔹','🔳','🔲','◼️','◻️','⬡'];
+// Use letters for clearer rotation-vs-mirror distinction
+const LETTERS = ['F','G','J','P','Q','R','L','N','Z','S'];
+const ROTATIONS = [0, 90, 180, 270];
+const TOTAL = 6;
+const KEY = 'rotation_match_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔄</div>
+    <h1 class="hero-title">회전 <span style="color:var(--accent);">매칭</span></h1>
+    <div class="hero-sub">회전만으로 같아지는 도형을<br>4개 중에서 골라보세요. ${TOTAL}문제.</div>
+    ${stats.bestScore>0?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const letters = shuffle(LETTERS).slice(0, TOTAL);
+  const state = { letters, i:0, correct:0 };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const target = state.letters[state.i];
+    // correct: same letter, rotated (not 0 to not be trivial)
+    const correctRot = ROTATIONS[1 + Math.floor(Math.random()*3)];
+    const otherLetters = shuffle(LETTERS.filter(l => l !== target)).slice(0, 2);
+    const opts = shuffle([
+      { letter: target, transform: `rotate(${correctRot}deg)`, isAns:true },
+      { letter: target, transform: `scaleX(-1)`, isAns:false }, // mirror not rotation
+      { letter: otherLetters[0], transform: `rotate(${ROTATIONS[Math.floor(Math.random()*4)]}deg)`, isAns:false },
+      { letter: otherLetters[1], transform: `rotate(${ROTATIONS[Math.floor(Math.random()*4)]}deg)`, isAns:false }
+    ]);
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="q-area">
+        <div class="shape-big">${target}</div>
+        <div class="hint">이 모양과 <b>회전만으로</b> 같아지는 것은?</div>
+      </div>
+      <div class="opts">
+        ${opts.map((o,i)=>`<div class="opt-shape" data-i="${i}" style="transform:${o.transform};">${o.letter}</div>`).join('')}
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    card.querySelectorAll('.opt-shape').forEach(b=>{
+      b.onclick = ()=>{
+        card.querySelectorAll('.opt-shape').forEach(x=>x.onclick=null);
+        const idx = +b.dataset.i;
+        const fb = document.getElementById('fb');
+        if(opts[idx].isAns){ b.classList.add('correct'); fb.className='feedback right'; fb.textContent='✓'; state.correct++; }
+        else { b.classList.add('wrong'); [...card.querySelectorAll('.opt-shape')].find((x,i)=>opts[i].isAns).classList.add('correct'); fb.className='feedback wrong'; fb.textContent='거울 반전은 회전이 아니에요.'; }
+        setTimeout(()=>{ state.i++; next(); }, 1200);
+      };
+    });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, {});
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=4?'🎉':'👏'}</div>
+      <div class="result-title">회전 매칭 종료</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick=startGame;
+    document.getElementById('h').onclick=showTitle;
+    document.getElementById('s').onclick=(e)=>shareToClipboard(`회전 매칭\n🔄 ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { LETTERS, TOTAL, KEY };
+</script>
+</body>
+</html>

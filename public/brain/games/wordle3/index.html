@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>세 글자 맞추기 | 5분 퍼즐</title>
+<meta property="og:title" content="세 글자 맞추기">
+<meta property="og:description" content="하루 한 번, 세 글자 단어를 여섯 번 안에 맞혀보세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#6a9ac4; --accent-dark:#3e78a0; --accent-soft:#b6d0e3; }
+  .board{ display:flex; flex-direction:column; gap:8px; align-items:center; margin-bottom:20px; }
+  .row{ display:flex; gap:8px; }
+  .cell{
+    width:64px; height:64px; border:2px solid var(--ink-faint); border-radius:10px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:30px; font-weight:700; background:white; transition:all .3s;
+  }
+  .cell.filled{ border-color:var(--ink); animation:pop .15s; }
+  .cell.correct{ background:var(--green); border-color:var(--green-dark); color:white; animation:flip .5s; }
+  .cell.present{ background:var(--yellow); border-color:#b58a2a; color:white; animation:flip .5s; }
+  .cell.absent { background:#b0b8c0; border-color:#7a8390; color:white; animation:flip .5s; }
+  @keyframes flip{ 0%{transform:rotateX(0);} 50%{transform:rotateX(-90deg);} 100%{transform:rotateX(0);} }
+  .input-card{
+    background:var(--card); border-radius:var(--radius); padding:14px 16px;
+    box-shadow:var(--shadow); display:flex; gap:10px; margin-bottom:14px;
+  }
+  .input-card input{
+    flex:1; padding:12px 14px; border:2px solid var(--ink-faint); border-radius:8px;
+    font:inherit; font-size:22px; font-weight:600; text-align:center; letter-spacing:.3em;
+    background:var(--bg);
+  }
+  .input-card input:focus{ outline:none; border-color:var(--accent); background:white; }
+  .input-card button{
+    background:var(--accent); color:white; border:0; border-radius:8px;
+    padding:12px 18px; font:inherit; font-weight:700; font-size:14px; cursor:pointer;
+  }
+  .rule-example{ display:flex; gap:6px; margin:6px 0; align-items:center; }
+  .rule-example .mini{ width:34px; height:34px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-weight:700; color:white; font-size:16px; }
+  .rule-example .mini.g{ background:var(--green); }
+  .rule-example .mini.y{ background:var(--yellow); }
+  .rule-example .mini.x{ background:#b0b8c0; }
+  .rule-example .txt{ color:var(--ink-dim); font-size:13px; margin-left:6px; }
+  @media(max-width:480px){ .cell{ width:54px; height:54px; font-size:26px; } }
+</style>
+</head>
+<body>
+<main>
+<div id="app"></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { mulberry32, todaySeed, seededPick, $el, clear, escapeHtml,
+        loadStats, saveStats, shareToClipboard, injectBackLink, todayPretty } = Brain;
+
+injectBackLink('../../');
+
+const WORD_BANK = [
+  // 음식 (25)
+  '비빔밥','떡볶이','순두부','자장면','참기름','초콜릿','삼계탕','된장국',
+  '미역국','콩나물','계란찜','만두국','물냉면','해장국','쌀국수','순대국',
+  '김치전','육개장','추어탕','설렁탕','꽈배기','해물탕','떡갈비','오뎅탕','북어국',
+  // 과일/음료 (6)
+  '바나나','복숭아','오렌지','포도즙','감식초','식혜병',
+  // 장소 (20)
+  '박물관','도서관','미술관','공연장','경찰서','소방서','우체국','기차역',
+  '영화관','수영장','체육관','야구장','축구장','놀이터','대학교','운동장',
+  '유치원','파출소','편의점','백화점',
+  // 물건/가전 (22)
+  '전화기','선풍기','냉장고','세탁기','우체통','컴퓨터','리모컨','키보드',
+  '이어폰','충전기','스피커','연필통','지우개','휴지통','모니터','카메라',
+  '손전등','돋보기','계산기','청소기','에어컨','피아노',
+  // 동물 (17)
+  '호랑이','코끼리','다람쥐','부엉이','까마귀','고양이','강아지','원숭이',
+  '병아리','메뚜기','거북이','독수리','비둘기','잠자리','개구리','두루미','반딧불',
+  // 식물 (12)
+  '소나무','단풍잎','은행잎','진달래','개나리','민들레','나팔꽃','도라지',
+  '장미꽃','라일락','벚꽃잎','백합꽃',
+  // 자연/시간 (14)
+  '무지개','봄바람','여름밤','겨울밤','가을밤','새벽녘','저녁놀','아침놀',
+  '눈사람','북극성','해질녘','초승달','그믐달','보름달',
+  // 일상 (10)
+  '손수건','목도리','운동화','머리띠','귀걸이','장난감','일기장','만화책',
+  '동화책','연습장',
+  // 스포츠 (7)
+  '테니스','농구공','축구공','야구공','태권도','배구공','골프채',
+  // 교통 (7)
+  '지하철','자전거','자동차','신호등','가로등','교차로','전봇대'
+];
+const THREE = WORD_BANK.filter(w => [...w].length === 3);
+const MAX_ATTEMPTS = 6;
+const WORD_LEN = 3;
+
+function todayWord(){
+  const rng = mulberry32(todaySeed() ^ 0xabc5);
+  return THREE[Math.floor(rng() * THREE.length)];
+}
+function randomWord(){
+  return THREE[Math.floor(Math.random() * THREE.length)];
+}
+
+function scoreGuess(guess, answer){
+  const g = [...guess], a = [...answer];
+  const result = new Array(g.length).fill('absent');
+  const consumed = new Array(a.length).fill(false);
+  for (let i = 0; i < g.length; i++) if (g[i] === a[i]) { result[i] = 'correct'; consumed[i] = true; }
+  for (let i = 0; i < g.length; i++){
+    if (result[i] === 'correct') continue;
+    for (let j = 0; j < a.length; j++){
+      if (!consumed[j] && g[i] === a[j]){ result[i] = 'present'; consumed[j] = true; break; }
+    }
+  }
+  return result;
+}
+
+const STATS_KEY = 'wordle3_stats';
+const STATS_DEFAULTS = {
+  played:0, won:0,
+  // daily
+  dailyStreak:0, maxDailyStreak:0, lastDailyDate:null, dailyWonToday:false, dailyTodayDate:null,
+  // practice
+  practicePlayed:0, practiceWon:0,
+  // distribution (combined)
+  dist:[0,0,0,0,0,0]
+};
+function updateStats(mode, won, attemptIdx){
+  const s = loadStats(STATS_KEY, STATS_DEFAULTS);
+  if (!s.dist) s.dist = [0,0,0,0,0,0];
+  const today = Brain.todayDateString();
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0,10);
+  s.played++;
+  if (won){
+    s.won++;
+    s.dist[attemptIdx] = (s.dist[attemptIdx] || 0) + 1;
+  }
+  if (mode === 'daily'){
+    // Reset daily flag if date changed
+    if (s.dailyTodayDate !== today){ s.dailyTodayDate = today; s.dailyWonToday = false; }
+    if (won && !s.dailyWonToday){
+      s.dailyWonToday = true;
+      s.dailyStreak = (s.lastDailyDate === yesterday) ? s.dailyStreak + 1 : 1;
+      if (s.dailyStreak > (s.maxDailyStreak||0)) s.maxDailyStreak = s.dailyStreak;
+      s.lastDailyDate = today;
+    } else if (!won && s.lastDailyDate !== yesterday && s.lastDailyDate !== today){
+      s.dailyStreak = 0;
+    }
+  } else {
+    s.practicePlayed++;
+    if (won) s.practiceWon++;
+  }
+  saveStats(STATS_KEY, s);
+  return s;
+}
+function isDailyDoneToday(){
+  const s = loadStats(STATS_KEY, STATS_DEFAULTS);
+  return s.dailyTodayDate === Brain.todayDateString() && s.dailyWonToday;
+}
+
+const state = { answer:'', attempts:[], finished:false, won:false, mode:'practice' };
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(STATS_KEY, STATS_DEFAULTS);
+  const dailyDone = isDailyDoneToday();
+  const ts = $el('div'); ts.id = 'title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔤</div>
+    <h1 class="hero-title">세 글자 <span style="color:var(--accent);">맞추기</span></h1>
+    <div class="hero-sub">세 글자 한국어 단어를<br>여섯 번 안에 맞혀보세요.</div>
+
+    <div class="today-card" style="text-align:left;max-width:340px;margin:0 auto 16px;padding:16px 18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div>
+          <div class="today-label">오 늘 의  단 어</div>
+          <div class="today-date" style="font-size:15px;">${todayPretty()}</div>
+        </div>
+        ${stats.dailyStreak > 0 ? `<div class="streak" style="margin:0;">🔥 ${stats.dailyStreak}일</div>` : ''}
+      </div>
+      ${dailyDone
+        ? `<div style="color:var(--green-dark);font-size:13px;margin-bottom:10px;">✓ 오늘의 도전 성공!</div>`
+        : ''}
+      <button class="btn" id="btn-daily" style="width:100%;${dailyDone?'opacity:.6;':''}">
+        ${dailyDone ? '오늘의 단어 다시 보기' : '오늘의 단어 도전'}
+      </button>
+    </div>
+
+    <div class="today-card" style="text-align:left;max-width:340px;margin:0 auto 16px;padding:16px 18px;">
+      <div class="today-label" style="margin-bottom:6px;">랜 덤  연 습</div>
+      <div style="color:var(--ink-dim);font-size:13px;margin-bottom:10px;">
+        단어 ${THREE.length}개 풀에서 매번 새로 뽑습니다. 무한 플레이.
+      </div>
+      <button class="btn secondary" id="btn-practice" style="width:100%;">연습 시작</button>
+      ${stats.practicePlayed > 0 ? `<div style="color:var(--ink-dim);font-size:12px;margin-top:8px;text-align:center;">연습 기록: ${stats.practiceWon}승 / ${stats.practicePlayed}회</div>` : ''}
+    </div>
+
+    <details style="max-width:340px;margin:0 auto;color:var(--ink-dim);font-size:13px;">
+      <summary style="cursor:pointer;padding:8px 0;">규칙 보기</summary>
+      <div class="rule-card" style="margin-top:4px;">
+        <div class="rule-example"><div class="mini g">사</div><div class="mini">과</div><div class="mini">랑</div><div class="txt">초록: 위치·글자 모두 정확</div></div>
+        <div class="rule-example"><div class="mini">바</div><div class="mini y">다</div><div class="mini">람</div><div class="txt">노랑: 글자는 있으나 다른 위치</div></div>
+        <div class="rule-example"><div class="mini">하</div><div class="mini">늘</div><div class="mini x">구</div><div class="txt">회색: 정답에 없는 글자</div></div>
+      </div>
+    </details>
+
+    <div class="credits" style="margin-top:24px;">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-daily').onclick = ()=>startGame('daily');
+  document.getElementById('btn-practice').onclick = ()=>startGame('practice');
+}
+
+function startGame(mode){
+  state.mode = mode || 'practice';
+  state.answer = state.mode === 'daily' ? todayWord() : randomWord();
+  state.attempts = [];
+  state.finished = false;
+  state.won = false;
+  render();
+}
+
+function render(){
+  clear(app);
+  const top = $el('div','topbar');
+  const modeLabel = state.mode === 'daily' ? '🗓 오늘의 단어' : '🎲 랜덤 연습';
+  top.innerHTML = `<div>${modeLabel}</div><div class="stat">${MAX_ATTEMPTS - state.attempts.length} 회 남음</div>`;
+  app.appendChild(top);
+
+  const board = $el('div','board');
+  for (let r = 0; r < MAX_ATTEMPTS; r++){
+    const row = $el('div','row');
+    for (let c = 0; c < WORD_LEN; c++){
+      const cell = $el('div','cell');
+      if (r < state.attempts.length){
+        const a = state.attempts[r];
+        cell.textContent = [...a.guess][c];
+        cell.classList.add('filled', a.result[c]);
+      }
+      row.appendChild(cell);
+    }
+    board.appendChild(row);
+  }
+  app.appendChild(board);
+
+  if (state.finished) renderResult();
+  else renderInput();
+}
+
+function renderInput(){
+  const inp = $el('div','input-card');
+  inp.innerHTML = `
+    <input type="text" id="guess" maxlength="3" autocomplete="off" placeholder="세 글자 입력" autofocus>
+    <button id="submit">제출</button>
+  `;
+  app.appendChild(inp);
+  const fb = $el('div','feedback'); fb.id = 'fb';
+  app.appendChild(fb);
+
+  const input = document.getElementById('guess');
+  const submit = document.getElementById('submit');
+  input.focus();
+
+  function trySubmit(){
+    const val = input.value.trim();
+    const chars = [...val];
+    if (chars.length !== WORD_LEN){ showShake(); setFeedback('세 글자를 입력해주세요.'); return; }
+    if (!chars.every(ch => /[\uac00-\ud7a3]/.test(ch))){ showShake(); setFeedback('한글 음절만 입력할 수 있어요.'); return; }
+    const result = scoreGuess(val, state.answer);
+    state.attempts.push({ guess: val, result });
+    const won = result.every(r => r === 'correct');
+    if (won){ state.finished = true; state.won = true; }
+    else if (state.attempts.length >= MAX_ATTEMPTS){ state.finished = true; }
+    render();
+  }
+  submit.onclick = trySubmit;
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); trySubmit(); } });
+}
+
+function showShake(){
+  const rows = app.querySelectorAll('.row');
+  const row = rows[state.attempts.length];
+  if (row) row.querySelectorAll('.cell').forEach(c => { c.classList.add('shake'); setTimeout(()=>c.classList.remove('shake'), 400); });
+}
+function setFeedback(msg){
+  const fb = document.getElementById('fb');
+  if (fb){ fb.textContent = msg; fb.className = 'feedback wrong'; }
+}
+
+function renderResult(){
+  const stats = updateStats(state.mode, state.won, state.won ? state.attempts.length - 1 : 0);
+  const card = $el('div','result-card');
+  const emoji = state.won ? ['🎉','👏','😊','🙂','😌','😅'][Math.min(state.attempts.length - 1, 5)] : '😢';
+  const share = makeShare();
+  const modeLabel = state.mode === 'daily' ? '오늘의 단어' : '랜덤 연습';
+  card.innerHTML = `
+    <div class="result-emoji">${emoji}</div>
+    <div class="result-title">${state.won ? '정답입니다!' : '아쉬워요…'}</div>
+    <div class="result-big">${escapeHtml(state.answer)}</div>
+    <div class="result-sub">${state.won ? `${state.attempts.length}번 만에 맞혔어요. (${modeLabel})` : `정답은 위 단어 (${modeLabel})`}</div>
+    <div style="background:var(--bg);padding:12px;border-radius:10px;font-family:'Menlo',monospace;font-size:13px;white-space:pre-wrap;text-align:left;margin:14px 0 8px;">${escapeHtml(share)}</div>
+    <div class="btn-row">
+      <button class="btn" id="btn-share">결과 공유</button>
+      ${state.mode === 'practice' ? `<button class="btn secondary" id="btn-again">새 단어로 다시</button>` : ''}
+      <button class="btn ghost" id="btn-home">홈으로</button>
+    </div>
+  `;
+  app.appendChild(card);
+
+  const hist = $el('div','card');
+  const winRate = stats.played > 0 ? Math.round(stats.won / stats.played * 100) : 0;
+  const practiceRate = stats.practicePlayed > 0 ? Math.round(stats.practiceWon / stats.practicePlayed * 100) : 0;
+  hist.innerHTML = `
+    <div class="history-list">
+      <div class="entry"><span>전체 플레이</span><span>${stats.played}</span></div>
+      <div class="entry"><span>전체 승률</span><span>${winRate}%</span></div>
+      <div class="entry"><span>오늘의 단어 연속</span><span>🔥 ${stats.dailyStreak||0}일</span></div>
+      <div class="entry"><span>최고 연속</span><span>${stats.maxDailyStreak||0}일</span></div>
+      <div class="entry"><span>연습 모드</span><span>${stats.practiceWon||0}승 / ${stats.practicePlayed||0}회 (${practiceRate}%)</span></div>
+    </div>
+  `;
+  app.appendChild(hist);
+
+  document.getElementById('btn-home').onclick = showTitle;
+  document.getElementById('btn-share').onclick = (e) => shareToClipboard(share, e.target);
+  const againBtn = document.getElementById('btn-again');
+  if (againBtn) againBtn.onclick = ()=>startGame('practice');
+}
+
+function makeShare(){
+  const date = Brain.todayDateString();
+  const n = state.won ? state.attempts.length : 'X';
+  const rows = state.attempts.map(a => a.result.map(r => r==='correct'?'🟩':r==='present'?'🟨':'⬜').join('')).join('\n');
+  const tag = state.mode === 'daily' ? date : '연습';
+  return `세 글자 맞추기 ${tag}\n${n}/${MAX_ATTEMPTS}\n\n${rows}`;
+}
+
+/* Boot */
+showTitle();
+
+/* Expose for tests */
+window.__GAME__ = { WORD_BANK, THREE, MAX_ATTEMPTS, WORD_LEN, scoreGuess, todayWord, randomWord };
+</script>
+</body>
+</html>

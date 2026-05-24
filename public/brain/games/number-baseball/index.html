@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>숫자 야구 | 5분 퍼즐</title>
+<meta property="og:title" content="숫자 야구">
+<meta property="og:description" content="세 자리 숫자를 추측해 스트라이크 아웃!">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#2b7b5d; --accent-dark:#195a43; --accent-soft:#a8d4c1; --strike:#c26b3a; --ball:#3a6bc2; }
+  .history{ display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-height:320px;overflow-y:auto; }
+  .entry{ display:flex;align-items:center;gap:12px;background:var(--bg-2);padding:10px 14px;border-radius:10px;font-family:"JetBrains Mono","Menlo",monospace; }
+  .entry .turn{ color:var(--ink-faint);font-size:12px;width:28px; }
+  .entry .guess{ font-size:22px;font-weight:800;letter-spacing:.12em;color:var(--ink);flex:1; }
+  .entry .result{ display:flex;gap:6px;font-size:13px;font-weight:700; }
+  .badge{ padding:3px 10px;border-radius:14px;color:white; }
+  .badge.S{ background:var(--strike); }
+  .badge.B{ background:var(--ball); }
+  .badge.O{ background:var(--ink-dim); }
+  .badge.H{ background:var(--accent); }
+  .input-area{ background:var(--card);border-radius:12px;padding:14px;box-shadow:var(--shadow);display:flex;gap:10px; }
+  .input-area input{
+    flex:1;padding:12px 14px;border:2px solid var(--ink-faint);border-radius:8px;
+    font:inherit;font-size:24px;font-weight:700;text-align:center;letter-spacing:.3em;
+    background:var(--bg);font-variant-numeric:tabular-nums;
+    -moz-appearance:textfield;
+  }
+  .input-area input::-webkit-outer-spin-button,
+  .input-area input::-webkit-inner-spin-button{ -webkit-appearance:none;margin:0; }
+  .input-area input:focus{ outline:none;border-color:var(--accent);background:white; }
+  .input-area button{
+    background:var(--accent);color:white;border:0;border-radius:8px;
+    padding:12px 18px;font:inherit;font-weight:700;cursor:pointer;
+  }
+  .keypad{ display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px; }
+  .key{
+    aspect-ratio:1.4;background:var(--bg-2);border:0;border-radius:8px;
+    font:inherit;font-size:20px;font-weight:700;cursor:pointer;transition:all .1s;
+  }
+  .key:hover:not(:disabled){ background:var(--accent-soft); }
+  .key:disabled{ opacity:.3;cursor:not-allowed; }
+  .key.clear{ background:#f0d8d8;color:var(--red); }
+  .legend{
+    display:flex;gap:12px;justify-content:center;font-size:12px;color:var(--ink-dim);margin-bottom:10px;
+  }
+  .legend .item{ display:flex;align-items:center;gap:5px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, shuffle, mulberry32, randomSeed, loadStats, recordBestScore,
+        injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const DIGITS = 3;      // 3-digit number
+const MAX_TURNS = 9;
+const KEY = 'numbaseball_stats';
+const app = document.getElementById('app');
+
+/* Generate a secret: DIGITS distinct digits, first digit non-zero */
+function makeSecret(rng){
+  const pool = shuffle([0,1,2,3,4,5,6,7,8,9], rng);
+  // ensure first digit isn't 0
+  const secret = pool.slice(0, DIGITS);
+  if(secret[0] === 0){
+    // swap with the next non-zero
+    for(let i = 1; i < secret.length; i++){
+      if(secret[i] !== 0){ [secret[0], secret[i]] = [secret[i], secret[0]]; break; }
+    }
+  }
+  return secret.join('');
+}
+
+/* Evaluate a guess: strikes = correct digit + correct position; balls = correct digit wrong position */
+function scoreGuess(guess, secret){
+  const g = [...guess], s = [...secret];
+  let strikes = 0, balls = 0;
+  for(let i=0;i<g.length;i++){
+    if(g[i] === s[i]) strikes++;
+    else if(s.includes(g[i])) balls++;
+  }
+  return { strikes, balls, out: strikes===0 && balls===0 };
+}
+
+/* Validate guess: 3 digits, all distinct */
+function validateGuess(str){
+  if(!/^[0-9]{3}$/.test(str)) return '세 자리 숫자를 입력해주세요.';
+  const ds = new Set([...str]);
+  if(ds.size !== DIGITS) return '서로 다른 숫자여야 합니다.';
+  return null;
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, won:0, bestTurns:null, recent:[] });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">⚾</div>
+    <h1 class="hero-title">숫자 <span style="color:var(--accent);">야구</span></h1>
+    <div class="hero-sub">컴퓨터가 고른 <b>서로 다른 세 자리 숫자</b>를<br>9번 안에 맞혀보세요.</div>
+    <div class="rule-card">
+      <h3>판정 규칙</h3>
+      <div class="legend" style="justify-content:flex-start;">
+        <div class="item"><span class="badge S">S</span> 숫자·위치 모두 정답</div>
+      </div>
+      <div class="legend" style="justify-content:flex-start;margin-top:4px;">
+        <div class="item"><span class="badge B">B</span> 숫자는 있으나 위치 다름</div>
+      </div>
+      <div class="legend" style="justify-content:flex-start;margin-top:4px;">
+        <div class="item"><span class="badge O">OUT</span> 전부 없는 숫자</div>
+      </div>
+      <div style="margin-top:8px;">3S면 정답. 예) 정답 728, 추측 278 → <b>1S 2B</b></div>
+      ${stats.bestTurns ? `<div class="best">🌟 최단 승리 ${stats.bestTurns}번</div>` : ''}
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const state = {
+    secret: makeSecret(rng),
+    attempts: [],
+    finished: false,
+    won: false
+  };
+
+  function render(){
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">이닝 ${state.attempts.length} / ${MAX_TURNS}</div><div class="stat" id="stat-remaining">남은 ${MAX_TURNS - state.attempts.length}</div>`;
+    app.appendChild(top);
+
+    const hist = $el('div','history');
+    state.attempts.forEach((a, i) => {
+      const badges = [];
+      if(a.result.out){ badges.push('<span class="badge O">OUT</span>'); }
+      else {
+        if(a.result.strikes > 0) badges.push(`<span class="badge S">${a.result.strikes}S</span>`);
+        if(a.result.balls > 0) badges.push(`<span class="badge B">${a.result.balls}B</span>`);
+        if(a.result.strikes === DIGITS) badges.push('<span class="badge H">홈런!</span>');
+      }
+      hist.innerHTML += `
+        <div class="entry">
+          <div class="turn">#${i+1}</div>
+          <div class="guess">${a.guess}</div>
+          <div class="result">${badges.join('')}</div>
+        </div>
+      `;
+    });
+    app.appendChild(hist);
+
+    if(state.finished){
+      renderResult();
+      return;
+    }
+    renderInput();
+  }
+
+  function renderInput(){
+    const wrap = $el('div','input-area');
+    wrap.innerHTML = `
+      <input type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="3" id="guess" placeholder="000" autocomplete="off" autofocus>
+      <button id="submit">제출</button>
+    `;
+    app.appendChild(wrap);
+    const fb = $el('div','feedback'); fb.id='fb';
+    app.appendChild(fb);
+    const kp = $el('div','keypad');
+    kp.innerHTML = `
+      ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="key" data-k="${n}">${n}</button>`).join('')}
+      <button class="key clear" data-k="clear">⌫</button>
+      <button class="key" data-k="0">0</button>
+      <button class="key" data-k="enter" style="background:var(--accent);color:white;grid-column:span 3;">Enter</button>
+    `;
+    app.appendChild(kp);
+
+    const input = document.getElementById('guess');
+    const submit = document.getElementById('submit');
+    input.focus();
+
+    function trySubmit(){
+      const val = input.value.trim();
+      const err = validateGuess(val);
+      if(err){
+        fb.className = 'feedback wrong';
+        fb.textContent = err;
+        return;
+      }
+      const result = scoreGuess(val, state.secret);
+      state.attempts.push({ guess: val, result });
+      if(result.strikes === DIGITS){
+        state.finished = true;
+        state.won = true;
+      } else if(state.attempts.length >= MAX_TURNS){
+        state.finished = true;
+      }
+      render();
+    }
+
+    submit.onclick = trySubmit;
+    input.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); trySubmit(); } });
+    kp.querySelectorAll('.key').forEach(b=>{
+      b.onclick = ()=>{
+        const k = b.dataset.k;
+        if(k === 'clear') input.value = input.value.slice(0,-1);
+        else if(k === 'enter') trySubmit();
+        else if(input.value.length < DIGITS) input.value += k;
+        input.focus();
+      };
+    });
+  }
+
+  function renderResult(){
+    const stats = loadStats(KEY, { played:0, won:0, bestTurns:null, recent:[] });
+    stats.played++;
+    if(state.won){
+      stats.won++;
+      if(stats.bestTurns == null || state.attempts.length < stats.bestTurns){
+        stats.bestTurns = state.attempts.length;
+      }
+    }
+    stats.recent.unshift({ won: state.won, turns: state.attempts.length, secret: state.secret });
+    if(stats.recent.length > 5) stats.recent = stats.recent.slice(0, 5);
+    Brain.saveStats(KEY, stats);
+    const isBest = state.won && stats.bestTurns === state.attempts.length;
+
+    const card = $el('div','result-card');
+    const emoji = state.won ? (state.attempts.length <= 4 ? '🏆' : state.attempts.length <= 6 ? '🎉' : '👏') : '😢';
+    const title = state.won ? `${state.attempts.length}이닝 만에 홈런!` : '9이닝 종료';
+    const share = makeShare(state, stats);
+    card.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">${title}</div>
+      <div class="result-big">${state.secret}</div>
+      <div class="result-sub">${state.won ? '깔끔한 승리입니다.' : '정답은 위 숫자였어요.'}</div>
+      ${isBest ? '<div class="ribbon">🌟 개인 최단 기록</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="btn-share">결과 공유</button>
+        <button class="btn secondary" id="btn-again">다시</button>
+        <button class="btn ghost" id="btn-home">홈</button>
+      </div>
+    `;
+    app.appendChild(card);
+    document.getElementById('btn-again').onclick = startGame;
+    document.getElementById('btn-home').onclick = showTitle;
+    document.getElementById('btn-share').onclick = (e) => shareToClipboard(share, e.target);
+  }
+
+  function makeShare(st, stats){
+    const d = Brain.todayDateString();
+    const rows = st.attempts.map(a => {
+      if(a.result.out) return '⚫';
+      return '🟧'.repeat(a.result.strikes) + '🟦'.repeat(a.result.balls) + '·'.repeat(DIGITS - a.result.strikes - a.result.balls);
+    }).join('\n');
+    return `숫자 야구 ${d}\n${st.won ? st.attempts.length + '/' + MAX_TURNS + ' ⚾' : 'X/' + MAX_TURNS}\n\n${rows}`;
+  }
+
+  render();
+}
+
+showTitle();
+window.__GAME__ = { DIGITS, MAX_TURNS, KEY, makeSecret, scoreGuess, validateGuess };
+</script>
+</body>
+</html>

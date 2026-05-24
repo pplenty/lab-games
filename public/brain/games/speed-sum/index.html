@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>속기 합 | 5분 퍼즐</title>
+<meta property="og:title" content="속기 합">
+<meta property="og:description" content="빠르게 지나가는 숫자들의 합을 암산하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#6a7cc8;--accent-dark:#475aa5;--accent-soft:#c2cbe5; }
+  .flash-area{ height:200px;background:var(--accent-soft);border-radius:14px;display:flex;align-items:center;justify-content:center;margin-bottom:14px; }
+  .flash-num{ font-size:84px;font-weight:800;color:var(--accent-dark);font-variant-numeric:tabular-nums;animation:flash .5s ease; }
+  @keyframes flash{ 0%{opacity:0;transform:scale(.8);}50%{opacity:1;transform:scale(1.05);}100%{opacity:1;transform:scale(1);} }
+  .input-row{ background:var(--card);border-radius:10px;padding:12px;box-shadow:var(--shadow);display:flex;gap:8px; }
+  .input-row input{ flex:1;padding:12px;border:2px solid var(--ink-faint);border-radius:8px;font:inherit;font-size:26px;font-weight:700;text-align:center;background:var(--bg); }
+  .input-row button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+  .hint{ text-align:center;color:var(--ink-dim);font-size:14px;margin-bottom:10px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const TOTAL = 5;
+const KEY = 'speed_sum_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">⚡</div>
+    <h1 class="hero-title">속기 <span style="color:var(--accent);">합</span></h1>
+    <div class="hero-sub">빠르게 나타나는 숫자들의 합을<br>암산으로 계산하세요. ${TOTAL}라운드.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = { i:0, correct:0 };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const count = 5 + Math.floor(Math.random() * 4); // 5-8 numbers
+    const maxVal = 10 + state.i * 5; // difficulty ramps
+    const nums = [];
+    let sum = 0;
+    for(let k=0;k<count;k++){ const v = 1 + Math.floor(Math.random()*maxVal); nums.push(v); sum += v; }
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="hint">${count}개 숫자를 기억해 합을 구하세요</div>
+      <div class="flash-area"><div class="flash-num" id="flash"></div></div>
+      <div id="phase" class="hint">준비…</div>
+    `;
+    app.appendChild(card);
+
+    // Flash numbers one by one
+    let k = 0;
+    const flashEl = document.getElementById('flash');
+    const phaseEl = document.getElementById('phase');
+    function nextNum(){
+      if(k >= nums.length){
+        flashEl.textContent = '?';
+        phaseEl.textContent = '합은?';
+        askAnswer();
+        return;
+      }
+      flashEl.textContent = nums[k];
+      flashEl.style.animation = 'none';
+      flashEl.offsetHeight;
+      flashEl.style.animation = 'flash .5s ease';
+      k++;
+      setTimeout(nextNum, 700);
+    }
+    setTimeout(nextNum, 500);
+
+    function askAnswer(){
+      flashEl.style.fontSize = '48px';
+      flashEl.textContent = '?';
+      const existingInput = card.querySelector('.input-row');
+      if(existingInput) existingInput.remove();
+      const row = $el('div','input-row');
+      row.innerHTML = `<input type="number" id="ans" placeholder="합" autocomplete="off" autofocus><button id="sub">→</button>`;
+      card.appendChild(row);
+      const fb = $el('div','feedback'); fb.id='fb'; card.appendChild(fb);
+      const input = document.getElementById('ans');
+      input.focus();
+      function check(){
+        const v = parseInt(input.value, 10);
+        if(isNaN(v)) return;
+        if(v === sum){ fb.className='feedback right'; fb.textContent='✓'; state.correct++; }
+        else { fb.className='feedback wrong'; fb.textContent='정답은 '+sum; }
+        setTimeout(()=>{ state.i++; next(); }, 1000);
+      }
+      document.getElementById('sub').onclick = check;
+      input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+    }
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=3?'🎉':'👏'}</div>
+      <div class="result-title">속기 합 종료</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`속기 합\n⚡ ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { TOTAL, KEY };
+</script>
+</body>
+</html>

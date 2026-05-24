@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>바운스 퍼트 | 5분 퍼즐</title>
+<meta name="description" content="벽 반사를 이용해 공을 홀에 넣는 Canvas 물리 조준 게임.">
+<meta property="og:title" content="바운스 퍼트">
+<meta property="og:description" content="벽 반사를 이용해 공을 홀에 넣기.">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/bounce-putt/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#2f9d72; --accent-dark:#1f7352; --accent-soft:#a8dbc8; }
+  main{ max-width: 640px; }
+  .hud-grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:8px;
+    margin-bottom:12px;
+  }
+  .hud-box{
+    background:var(--card);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    padding:8px 10px;
+    text-align:center;
+  }
+  .hud-label{
+    color:var(--ink-dim);
+    font-size:11px;
+    font-weight:800;
+  }
+  .hud-value{
+    color:var(--accent-dark);
+    font-size:19px;
+    font-weight:900;
+    font-variant-numeric:tabular-nums;
+  }
+  .game-stage{
+    background:var(--card);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:12px;
+    margin-bottom:14px;
+  }
+  .putt-canvas{
+    display:block;
+    width:100%;
+    aspect-ratio:4 / 5;
+    background:#113426;
+    border-radius:8px;
+    cursor:grab;
+    touch-action:none;
+  }
+  .putt-canvas.aiming{ cursor:grabbing; }
+  .hint-line{
+    color:var(--ink-dim);
+    font-size:13px;
+    line-height:1.6;
+    text-align:center;
+  }
+  .score-hero{
+    color:var(--accent-dark);
+    font-size:54px;
+    font-weight:900;
+    line-height:1;
+    margin:18px 0 8px;
+    text-align:center;
+  }
+  .result-stats{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:8px;
+    margin:16px 0;
+  }
+  .result-stats .hud-box{
+    border:1px solid #e6ddcf;
+    box-shadow:none;
+  }
+  @media(max-width:520px){
+    main{ padding-inline:14px; }
+    .hud-grid{ grid-template-columns:repeat(2,1fr); }
+    .result-stats{ grid-template-columns:1fr; }
+    .score-hero{ font-size:46px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const GAME_ID = 'bounce-putt';
+const STORAGE_KEY = GAME_ID + '_stats';
+const TAU = Math.PI * 2;
+const BALL_R = 9;
+const MAX_POWER = 680;
+const STOP_SPEED = 12;
+
+const LEVELS = [
+  {
+    name: '첫 퍼트',
+    par: 2,
+    start: [0.22, 0.84],
+    hole: [0.78, 0.18],
+    walls: [
+      [0.38, 0.35, 0.12, 0.44]
+    ],
+    sand: [],
+    water: []
+  },
+  {
+    name: '물가 우회',
+    par: 3,
+    start: [0.18, 0.18],
+    hole: [0.82, 0.82],
+    walls: [
+      [0.42, 0.12, 0.12, 0.42],
+      [0.42, 0.64, 0.12, 0.24]
+    ],
+    sand: [[0.67, 0.26, 0.18, 0.18]],
+    water: [[0.12, 0.52, 0.32, 0.12]]
+  },
+  {
+    name: '반사 코너',
+    par: 3,
+    start: [0.82, 0.16],
+    hole: [0.2, 0.78],
+    walls: [
+      [0.18, 0.34, 0.48, 0.1],
+      [0.5, 0.56, 0.32, 0.1]
+    ],
+    sand: [[0.68, 0.72, 0.2, 0.12]],
+    water: []
+  },
+  {
+    name: '좁은 문',
+    par: 4,
+    start: [0.18, 0.85],
+    hole: [0.82, 0.15],
+    walls: [
+      [0.23, 0.34, 0.52, 0.08],
+      [0.23, 0.58, 0.52, 0.08],
+      [0.46, 0.42, 0.08, 0.16]
+    ],
+    sand: [[0.14, 0.46, 0.2, 0.1]],
+    water: [[0.66, 0.45, 0.18, 0.12]]
+  },
+  {
+    name: 'S 라인',
+    par: 4,
+    start: [0.78, 0.84],
+    hole: [0.2, 0.18],
+    walls: [
+      [0.18, 0.28, 0.46, 0.08],
+      [0.36, 0.48, 0.46, 0.08],
+      [0.18, 0.68, 0.46, 0.08]
+    ],
+    sand: [[0.68, 0.12, 0.16, 0.16], [0.14, 0.46, 0.14, 0.14]],
+    water: []
+  },
+  {
+    name: '마지막 홀',
+    par: 5,
+    start: [0.16, 0.5],
+    hole: [0.84, 0.5],
+    walls: [
+      [0.3, 0.16, 0.08, 0.48],
+      [0.52, 0.36, 0.08, 0.48],
+      [0.7, 0.16, 0.08, 0.3]
+    ],
+    sand: [[0.39, 0.72, 0.24, 0.1]],
+    water: [[0.4, 0.16, 0.18, 0.14], [0.74, 0.64, 0.14, 0.16]]
+  }
+];
+
+let canvas = null;
+let ctx = null;
+let rafId = 0;
+let state = null;
+let view = { w: 360, h: 450, dpr: 1 };
+
+function clamp(n, lo, hi){
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function rand(lo, hi){
+  return lo + Math.random() * (hi - lo);
+}
+
+function dist(a, b, c, d){
+  return Math.hypot(a - c, b - d);
+}
+
+function scaledPoint(pair){
+  return { x: pair[0] * view.w, y: pair[1] * view.h };
+}
+
+function scaledRect(rect){
+  return {
+    x: rect[0] * view.w,
+    y: rect[1] * view.h,
+    w: rect[2] * view.w,
+    h: rect[3] * view.h
+  };
+}
+
+function setCanvasSize(){
+  if (!canvas || !ctx) return;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(300, Math.floor(rect.width));
+  const h = Math.max(360, Math.floor(rect.height || w * 1.25));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  view = { w, h, dpr };
+  if (state) placeBallAtCurrentStart();
+}
+
+function placeBallAtCurrentStart(){
+  const p = scaledPoint(state.level.start);
+  if (!state.ball) {
+    state.ball = { x: p.x, y: p.y, vx: 0, vy: 0, trail: [] };
+  } else if (state.ball.trail.length === 0 && Math.hypot(state.ball.vx, state.ball.vy) < STOP_SPEED) {
+    state.ball.x = p.x;
+    state.ball.y = p.y;
+  }
+}
+
+function resetState(){
+  state = {
+    running: true,
+    levelIndex: 0,
+    level: LEVELS[0],
+    ball: null,
+    strokes: 0,
+    totalStrokes: 0,
+    totalScore: 0,
+    cleared: 0,
+    levelCleared: false,
+    levelStartedAt: performance.now(),
+    aiming: false,
+    aimX: 0,
+    aimY: 0,
+    particles: [],
+    message: '공을 뒤로 당겨 조준',
+    sinkFlash: 0
+  };
+  placeBallAtCurrentStart();
+}
+
+function startLevel(index){
+  state.levelIndex = index;
+  state.level = LEVELS[index];
+  state.strokes = 0;
+  state.levelCleared = false;
+  state.levelStartedAt = performance.now();
+  state.message = '공을 뒤로 당겨 조준';
+  const p = scaledPoint(state.level.start);
+  state.ball = { x: p.x, y: p.y, vx: 0, vy: 0, trail: [] };
+  state.aiming = false;
+  state.particles = [];
+  updateHud();
+}
+
+function speed(){
+  return Math.hypot(state.ball.vx, state.ball.vy);
+}
+
+function canShoot(){
+  return state && state.running && speed() < STOP_SPEED;
+}
+
+function addParticles(x, y, color, count, power){
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * TAU;
+    const sp = rand(power * 0.25, power);
+    const life = rand(0.35, 0.8);
+    state.particles.push({
+      x,
+      y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      life,
+      maxLife: life,
+      size: rand(2, 5),
+      color
+    });
+  }
+}
+
+function resetBall(message){
+  const p = scaledPoint(state.level.start);
+  state.ball.x = p.x;
+  state.ball.y = p.y;
+  state.ball.vx = 0;
+  state.ball.vy = 0;
+  state.ball.trail = [];
+  state.message = message || '다시 시작 위치로';
+  addParticles(p.x, p.y, '#8adbbd', 16, 110);
+}
+
+function shoot(powerX, powerY){
+  const mag = Math.hypot(powerX, powerY);
+  if (mag < 24) return;
+  const scale = Math.min(MAX_POWER, mag * 4.2) / mag;
+  state.ball.vx = powerX * scale;
+  state.ball.vy = powerY * scale;
+  state.ball.trail = [];
+  state.strokes += 1;
+  state.totalStrokes += 1;
+  state.message = '굴러가는 중';
+  addParticles(state.ball.x, state.ball.y, '#ffffff', 10, 95);
+  updateHud();
+}
+
+function circleRectCollision(rect){
+  const b = state.ball;
+  const closestX = clamp(b.x, rect.x, rect.x + rect.w);
+  const closestY = clamp(b.y, rect.y, rect.y + rect.h);
+  const dx = b.x - closestX;
+  const dy = b.y - closestY;
+  const d = Math.hypot(dx, dy);
+  if (d >= BALL_R || d === 0) return false;
+
+  let nx = dx / d;
+  let ny = dy / d;
+  if (!isFinite(nx) || !isFinite(ny)) {
+    nx = Math.abs(b.vx) > Math.abs(b.vy) ? Math.sign(b.vx) : 0;
+    ny = nx === 0 ? Math.sign(b.vy) : 0;
+  }
+
+  const overlap = BALL_R - d + 0.5;
+  b.x += nx * overlap;
+  b.y += ny * overlap;
+  const dot = b.vx * nx + b.vy * ny;
+  if (dot < 0) {
+    b.vx -= 2 * dot * nx;
+    b.vy -= 2 * dot * ny;
+    b.vx *= 0.82;
+    b.vy *= 0.82;
+    addParticles(closestX, closestY, '#d5efe5', 8, 90);
+  }
+  return true;
+}
+
+function inRect(rect){
+  const b = state.ball;
+  return b.x > rect.x && b.x < rect.x + rect.w && b.y > rect.y && b.y < rect.y + rect.h;
+}
+
+function updatePhysics(dt){
+  const b = state.ball;
+  b.x += b.vx * dt;
+  b.y += b.vy * dt;
+
+  if (b.x < BALL_R) {
+    b.x = BALL_R;
+    b.vx = Math.abs(b.vx) * 0.84;
+    addParticles(b.x, b.y, '#d5efe5', 8, 80);
+  }
+  if (b.x > view.w - BALL_R) {
+    b.x = view.w - BALL_R;
+    b.vx = -Math.abs(b.vx) * 0.84;
+    addParticles(b.x, b.y, '#d5efe5', 8, 80);
+  }
+  if (b.y < BALL_R) {
+    b.y = BALL_R;
+    b.vy = Math.abs(b.vy) * 0.84;
+    addParticles(b.x, b.y, '#d5efe5', 8, 80);
+  }
+  if (b.y > view.h - BALL_R) {
+    b.y = view.h - BALL_R;
+    b.vy = -Math.abs(b.vy) * 0.84;
+    addParticles(b.x, b.y, '#d5efe5', 8, 80);
+  }
+
+  for (const raw of state.level.walls) {
+    circleRectCollision(scaledRect(raw));
+  }
+
+  let friction = 0.988;
+  for (const raw of state.level.sand) {
+    if (inRect(scaledRect(raw))) friction = 0.956;
+  }
+  b.vx *= Math.pow(friction, dt * 60);
+  b.vy *= Math.pow(friction, dt * 60);
+
+  if (speed() < STOP_SPEED) {
+    b.vx = 0;
+    b.vy = 0;
+    if (!state.aiming) state.message = '공을 뒤로 당겨 조준';
+  }
+
+  b.trail.push({ x: b.x, y: b.y });
+  if (b.trail.length > 22) b.trail.shift();
+
+  for (const raw of state.level.water) {
+    if (inRect(scaledRect(raw))) {
+      resetBall('물에 빠졌습니다');
+      if (navigator.vibrate) navigator.vibrate(35);
+      return;
+    }
+  }
+
+  const hole = scaledPoint(state.level.hole);
+  const holeDist = dist(b.x, b.y, hole.x, hole.y);
+  if (holeDist < 16 && speed() < 245) {
+    clearLevel();
+  }
+}
+
+function updateParticles(dt){
+  const next = [];
+  for (const p of state.particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.985;
+    p.vy = p.vy * 0.985 + 90 * dt;
+    p.life -= dt;
+    if (p.life > 0) next.push(p);
+  }
+  state.particles = next;
+}
+
+function clearLevel(){
+  if (state.levelCleared) return;
+  state.levelCleared = true;
+  const elapsedSec = Math.floor((performance.now() - state.levelStartedAt) / 1000);
+  const parBonus = Math.max(0, state.level.par + 1 - state.strokes) * 140;
+  const strokePenalty = Math.max(0, state.strokes - state.level.par) * 70;
+  const gained = Math.max(180, 920 + parBonus - strokePenalty - elapsedSec * 5);
+  state.totalScore += gained;
+  state.cleared += 1;
+  state.message = '+' + gained + '점';
+  state.ball.vx = 0;
+  state.ball.vy = 0;
+  state.sinkFlash = 1;
+  const hole = scaledPoint(state.level.hole);
+  addParticles(hole.x, hole.y, '#ffffff', 34, 170);
+  updateHud();
+
+  setTimeout(function(){
+    if (!state || !state.running) return;
+    if (state.levelIndex >= LEVELS.length - 1) finish();
+    else startLevel(state.levelIndex + 1);
+  }, 850);
+}
+
+function drawCourse(now){
+  const g = ctx.createLinearGradient(0, 0, 0, view.h);
+  g.addColorStop(0, '#1e724e');
+  g.addColorStop(0.55, '#15553d');
+  g.addColorStop(1, '#0d3529');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, view.w, view.h);
+
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1;
+  for (let x = -view.h; x < view.w; x += 28) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + view.h, view.h);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.strokeStyle = 'rgba(255,255,255,.3)';
+  ctx.lineWidth = 8;
+  ctx.strokeRect(4, 4, view.w - 8, view.h - 8);
+  ctx.strokeStyle = 'rgba(0,0,0,.28)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(11, 11, view.w - 22, view.h - 22);
+
+  for (const raw of state.level.sand) {
+    const r = scaledRect(raw);
+    ctx.fillStyle = '#d9bd70';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(r.x, r.y, r.w, r.h, 14);
+    else ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.22)';
+    for (let i = 0; i < 14; i++) {
+      ctx.fillRect(r.x + (i * 19) % r.w, r.y + (i * 31) % r.h, 2, 2);
+    }
+  }
+
+  for (const raw of state.level.water) {
+    const r = scaledRect(raw);
+    const wg = ctx.createLinearGradient(r.x, r.y, r.x + r.w, r.y + r.h);
+    wg.addColorStop(0, '#2fa6c8');
+    wg.addColorStop(1, '#134c9f');
+    ctx.fillStyle = wg;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(r.x, r.y, r.w, r.h, 12);
+    else ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.28)';
+    ctx.lineWidth = 2;
+    for (let y = r.y + 12; y < r.y + r.h; y += 14) {
+      ctx.beginPath();
+      ctx.moveTo(r.x + 8, y);
+      ctx.bezierCurveTo(r.x + r.w * 0.35, y - 8, r.x + r.w * 0.65, y + 8, r.x + r.w - 8, y);
+      ctx.stroke();
+    }
+  }
+
+  for (const raw of state.level.walls) {
+    const r = scaledRect(raw);
+    ctx.fillStyle = '#6d4e3a';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(r.x, r.y, r.w, r.h, 8);
+    else ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.25)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.1)';
+    ctx.fillRect(r.x + 4, r.y + 4, Math.max(0, r.w - 8), 5);
+  }
+}
+
+function drawHole(now){
+  const hole = scaledPoint(state.level.hole);
+  ctx.save();
+  ctx.shadowColor = '#000000';
+  ctx.shadowBlur = 14;
+  ctx.fillStyle = '#07100c';
+  ctx.beginPath();
+  ctx.arc(hole.x, hole.y, 18, 0, TAU);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#eef7f0';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(hole.x, hole.y, 20 + Math.sin(now / 240) * 1.2, 0, TAU);
+  ctx.stroke();
+
+  const flagX = hole.x + 19;
+  const flagY = hole.y - 48;
+  ctx.strokeStyle = '#eef7f0';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(flagX, hole.y - 2);
+  ctx.lineTo(flagX, flagY);
+  ctx.stroke();
+  ctx.fillStyle = '#ff5a72';
+  ctx.beginPath();
+  ctx.moveTo(flagX + 2, flagY);
+  ctx.lineTo(flagX + 30, flagY + 8);
+  ctx.lineTo(flagX + 2, flagY + 17);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawAim(){
+  if (!state.aiming) return;
+  const b = state.ball;
+  const dx = b.x - state.aimX;
+  const dy = b.y - state.aimY;
+  const mag = Math.min(150, Math.hypot(dx, dy));
+  if (mag < 8) return;
+  const angle = Math.atan2(dy, dx);
+  const endX = b.x + Math.cos(angle) * mag;
+  const endY = b.y + Math.sin(angle) * mag;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,.72)';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([10, 8]);
+  ctx.beginPath();
+  ctx.moveTo(b.x, b.y);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(endX + Math.cos(angle) * 10, endY + Math.sin(angle) * 10);
+  ctx.lineTo(endX + Math.cos(angle + 2.45) * 12, endY + Math.sin(angle + 2.45) * 12);
+  ctx.lineTo(endX + Math.cos(angle - 2.45) * 12, endY + Math.sin(angle - 2.45) * 12);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,255,255,.82)';
+  ctx.font = '800 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.round((mag / 150) * 100) + '%', b.x, b.y - 22);
+  ctx.restore();
+}
+
+function drawBall(){
+  const b = state.ball;
+  ctx.save();
+  for (let i = 0; i < b.trail.length; i++) {
+    const p = b.trail[i];
+    const alpha = i / b.trail.length;
+    ctx.fillStyle = 'rgba(255,255,255,' + (alpha * 0.18) + ')';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, BALL_R * (0.5 + alpha * 0.35), 0, TAU);
+    ctx.fill();
+  }
+
+  ctx.shadowColor = '#ffffff';
+  ctx.shadowBlur = 10;
+  const bg = ctx.createRadialGradient(b.x - 4, b.y - 5, 2, b.x, b.y, BALL_R + 4);
+  bg.addColorStop(0, '#ffffff');
+  bg.addColorStop(1, '#dceee8');
+  ctx.fillStyle = bg;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, BALL_R, 0, TAU);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(0,0,0,.2)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawParticles(){
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const p of state.particles) {
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (0.75 + alpha), 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawLabels(){
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,.78)';
+  ctx.font = '800 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(state.level.name + ' · Par ' + state.level.par, view.w / 2, 24);
+  ctx.fillStyle = 'rgba(255,255,255,.62)';
+  ctx.fillText(state.message, view.w / 2, view.h - 18);
+  ctx.restore();
+}
+
+function draw(now){
+  if (!ctx || !state) return;
+  drawCourse(now);
+  drawHole(now);
+  drawAim();
+  drawParticles();
+  drawBall();
+  drawLabels();
+}
+
+function updateHud(){
+  if (!state) return;
+  const levelEl = document.getElementById('hud-level');
+  if (!levelEl) return;
+  levelEl.textContent = (state.levelIndex + 1) + '/' + LEVELS.length;
+  document.getElementById('hud-strokes').textContent = state.strokes;
+  document.getElementById('hud-total').textContent = state.totalStrokes;
+  document.getElementById('hud-score').textContent = state.totalScore;
+}
+
+function update(now){
+  if (!state.lastAt) state.lastAt = now;
+  const dt = Math.min(0.03, (now - state.lastAt) / 1000);
+  state.lastAt = now;
+  if (state.running) updatePhysics(dt);
+  updateParticles(dt);
+  state.sinkFlash = Math.max(0, state.sinkFlash - dt * 2);
+}
+
+function loop(now){
+  if (!state || !state.running) return;
+  update(now);
+  draw(now);
+  rafId = requestAnimationFrame(loop);
+}
+
+function pointerPoint(event){
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top
+  };
+}
+
+function handleDown(event){
+  if (!canShoot()) return;
+  const p = pointerPoint(event);
+  if (dist(p.x, p.y, state.ball.x, state.ball.y) > 52) return;
+  event.preventDefault();
+  state.aiming = true;
+  state.aimX = p.x;
+  state.aimY = p.y;
+  canvas.classList.add('aiming');
+  canvas.setPointerCapture(event.pointerId);
+}
+
+function handleMove(event){
+  if (!state || !state.aiming) return;
+  event.preventDefault();
+  const p = pointerPoint(event);
+  state.aimX = p.x;
+  state.aimY = p.y;
+}
+
+function handleUp(event){
+  if (!state || !state.aiming) return;
+  event.preventDefault();
+  const p = pointerPoint(event);
+  state.aiming = false;
+  canvas.classList.remove('aiming');
+  shoot(state.ball.x - p.x, state.ball.y - p.y);
+}
+
+function renderHome(){
+  cancelAnimationFrame(rafId);
+  clear();
+  const stats = loadStats(STORAGE_KEY, { played: 0, bestScore: 0 });
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div id="title-screen">' +
+      '<div class="brand-icon">●</div>' +
+      '<h1 class="hero-title">바운스 퍼트</h1>' +
+      '<p class="hero-sub">벽 반사와 장애물을 계산해서 공을 홀에 넣는 Canvas 물리 게임.</p>' +
+      '<div class="today-card"><div class="today-label">BEST</div><div class="today-date">' + (stats.bestScore || 0) + '점</div></div>' +
+      '<div class="rule-card">' +
+        '<h3>규칙</h3>' +
+        '<p>공을 뒤로 당겼다가 놓으면 반대 방향으로 굴러갑니다. 벽은 반사되고, 모래는 느려지며, 물에 빠지면 시작 위치로 돌아갑니다.</p>' +
+      '</div>' +
+      '<div class="btn-row"><button class="btn" id="start-btn">시작</button></div>' +
+      '<div class="credits">5분 퍼즐 · 2026</div>' +
+    '</div>';
+  document.getElementById('start-btn').onclick = start;
+}
+
+function renderPlaying(){
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div class="hud-grid">' +
+      '<div class="hud-box"><div class="hud-label">HOLE</div><div class="hud-value" id="hud-level">1/' + LEVELS.length + '</div></div>' +
+      '<div class="hud-box"><div class="hud-label">STROKES</div><div class="hud-value" id="hud-strokes">0</div></div>' +
+      '<div class="hud-box"><div class="hud-label">TOTAL</div><div class="hud-value" id="hud-total">0</div></div>' +
+      '<div class="hud-box"><div class="hud-label">SCORE</div><div class="hud-value" id="hud-score">0</div></div>' +
+    '</div>' +
+    '<div class="game-stage"><canvas class="putt-canvas" id="putt-canvas" aria-label="바운스 퍼트 게임 화면"></canvas></div>' +
+    '<p class="hint-line">공 근처를 뒤로 드래그해서 방향과 힘을 정합니다.</p>' +
+    '<div class="btn-row"><button class="btn secondary" id="reset-hole">홀 초기화</button></div>';
+
+  canvas = document.getElementById('putt-canvas');
+  ctx = canvas.getContext('2d');
+  setCanvasSize();
+  canvas.addEventListener('pointerdown', handleDown);
+  canvas.addEventListener('pointermove', handleMove);
+  canvas.addEventListener('pointerup', handleUp);
+  canvas.addEventListener('pointercancel', handleUp);
+  document.getElementById('reset-hole').onclick = function(){
+    startLevel(state.levelIndex);
+  };
+}
+
+function start(){
+  renderPlaying();
+  resetState();
+  draw(performance.now());
+  rafId = requestAnimationFrame(loop);
+}
+
+function finish(){
+  if (!state || !state.running) return;
+  state.running = false;
+  cancelAnimationFrame(rafId);
+  const finalScore = state.totalScore;
+  const stats = recordBestScore(STORAGE_KEY, finalScore, {
+    holes: state.cleared,
+    strokes: state.totalStrokes,
+    date: Brain.todayDateString()
+  });
+
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<section class="card">' +
+      '<h1 class="title">바운스 퍼트 결과</h1>' +
+      '<div class="score-hero">' + finalScore + '</div>' +
+      '<p class="puzzle-desc" style="text-align:center;">최고 기록 ' + (stats.bestScore || finalScore) + '점</p>' +
+      '<div class="result-stats">' +
+        '<div class="hud-box"><div class="hud-label">CLEAR</div><div class="hud-value">' + state.cleared + '/' + LEVELS.length + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">STROKES</div><div class="hud-value">' + state.totalStrokes + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">BEST</div><div class="hud-value">' + (stats.bestScore || finalScore) + '</div></div>' +
+      '</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn" id="again-btn">다시</button>' +
+        '<button class="btn secondary" id="share-btn">공유</button>' +
+      '</div>' +
+    '</section>';
+
+  document.getElementById('again-btn').onclick = start;
+  document.getElementById('share-btn').onclick = function(event){
+    const text = '바운스 퍼트 ' + finalScore + '점 · ' + state.totalStrokes + '타\\nhttps://games.jdgrid.com/brain/games/bounce-putt/';
+    shareToClipboard(text, event.currentTarget);
+  };
+}
+
+window.addEventListener('resize', function(){
+  setCanvasSize();
+});
+
+renderHome();
+</script>
+</body>
+</html>

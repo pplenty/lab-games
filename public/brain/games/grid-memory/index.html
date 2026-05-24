@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>격자 기억 | 5분 퍼즐</title>
+<meta property="og:title" content="격자 기억">
+<meta property="og:description" content="깜빡인 칸의 위치를 그대로 재현하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#8866b8; --accent-dark:#624487; --accent-soft:#cfbce4; }
+  .grid{ display:grid;gap:6px;max-width:320px;margin:0 auto 14px; }
+  .cell{
+    aspect-ratio:1;background:var(--bg-2);border-radius:10px;cursor:pointer;
+    transition:all .15s;user-select:none;
+  }
+  .cell.lit{ background:var(--accent);box-shadow:inset 0 0 0 3px var(--accent-dark); }
+  .cell.user{ background:var(--accent-soft);box-shadow:inset 0 0 0 3px var(--accent); }
+  .cell.correct{ background:var(--green); }
+  .cell.wrong{ background:var(--red); }
+  .cell.locked{ cursor:not-allowed; }
+  .status{ text-align:center;color:var(--ink-dim);font-size:14px;margin-bottom:10px;min-height:20px; }
+  .level-info{ text-align:center;font-size:18px;font-weight:700;color:var(--accent-dark);margin-bottom:8px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, shuffle, loadStats, saveStats, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const KEY = 'grid_memory_stats';
+const app = document.getElementById('app');
+
+// Level → { size, count }
+function levelConfig(level){
+  if(level <= 2) return { size: 3, count: 3 };       // 3x3, 3 dots
+  if(level <= 4) return { size: 4, count: 4 };
+  if(level <= 6) return { size: 4, count: 5 };
+  if(level <= 8) return { size: 5, count: 6 };
+  return               { size: 5, count: 7 };
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestLevel:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">💭</div>
+    <h1 class="hero-title">격자 <span style="color:var(--accent);">기억</span></h1>
+    <div class="hero-sub">잠깐 깜빡인 칸을 기억했다가<br>그 위치들을 다시 눌러주세요.</div>
+    ${stats.bestLevel > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">레벨 ${stats.bestLevel}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = { level: 1 };
+  runLevel(state);
+}
+function runLevel(state){
+  const cfg = levelConfig(state.level);
+  const totalCells = cfg.size * cfg.size;
+  const chosen = shuffle(Array.from({length:totalCells},(_,i)=>i)).slice(0, cfg.count);
+  const chosenSet = new Set(chosen);
+  const userPicks = new Set();
+
+  clear(app);
+  const lv = $el('div','level-info');
+  lv.textContent = '레벨 ' + state.level + ' · ' + cfg.count + '개';
+  app.appendChild(lv);
+  const status = $el('div','status');
+  status.id = 'status';
+  status.textContent = '잘 보세요…';
+  app.appendChild(status);
+  const grid = $el('div','grid');
+  grid.style.gridTemplateColumns = 'repeat('+cfg.size+',1fr)';
+  grid.style.maxWidth = (cfg.size*64)+'px';
+  for(let i=0;i<totalCells;i++){
+    const c = $el('div','cell');
+    c.dataset.i = i;
+    grid.appendChild(c);
+  }
+  app.appendChild(grid);
+
+  // Show phase
+  setTimeout(()=>{
+    chosen.forEach(i => grid.children[i].classList.add('lit'));
+    const showMs = 900 + cfg.count * 200;
+    setTimeout(()=>{
+      chosen.forEach(i => grid.children[i].classList.remove('lit'));
+      status.textContent = '이제 그 위치들을 눌러보세요 (' + cfg.count + '개)';
+      enableInput();
+    }, showMs);
+  }, 400);
+
+  function enableInput(){
+    let done = 0;
+    grid.querySelectorAll('.cell').forEach(cell=>{
+      cell.onclick = ()=>{
+        if(cell.classList.contains('locked')) return;
+        cell.classList.add('locked');
+        const i = +cell.dataset.i;
+        if(chosenSet.has(i)){
+          cell.classList.add('user');
+          userPicks.add(i);
+          if(userPicks.size === cfg.count){
+            // Reveal results
+            grid.querySelectorAll('.cell').forEach(c => c.onclick = null);
+            grid.querySelectorAll('.cell').forEach((c,idx)=>{
+              if(chosenSet.has(idx) && userPicks.has(idx)) c.classList.add('correct');
+              else if(!chosenSet.has(idx) && c.classList.contains('locked')) c.classList.add('wrong');
+            });
+            status.textContent = '✓ 완벽!';
+            setTimeout(()=>{ state.level++; runLevel(state); }, 1100);
+          }
+        } else {
+          cell.classList.add('wrong');
+          grid.querySelectorAll('.cell').forEach(c => c.onclick = null);
+          // reveal misses
+          chosen.forEach(i => {
+            const c = grid.children[i];
+            if(!userPicks.has(i)) c.classList.add('lit');
+          });
+          status.textContent = '아쉬워요…';
+          setTimeout(()=>finish(state), 1400);
+        }
+      };
+    });
+  }
+}
+function finish(state){
+  const reached = state.level;
+  const stats = loadStats(KEY, { played:0, bestLevel:0 });
+  stats.played++;
+  if(reached > stats.bestLevel) stats.bestLevel = reached;
+  saveStats(KEY, stats);
+  const isBest = stats.bestLevel === reached;
+
+  clear(app);
+  const r = $el('div','result-card');
+  const emoji = reached >= 8 ? '🏆' : reached >= 5 ? '🎉' : reached >= 3 ? '👏' : '🙂';
+  r.innerHTML = `
+    <div class="result-emoji">${emoji}</div>
+    <div class="result-title">레벨 ${reached}</div>
+    <div class="result-sub">격자 기억 스프린트 종료</div>
+    ${isBest ? '<div class="ribbon">🌟 개인 최고 레벨</div>' : ''}
+    <div class="btn-row">
+      <button class="btn" id="btn-share">공유</button>
+      <button class="btn secondary" id="btn-again">다시</button>
+      <button class="btn ghost" id="btn-home">홈</button>
+    </div>
+  `;
+  app.appendChild(r);
+  document.getElementById('btn-again').onclick = startGame;
+  document.getElementById('btn-home').onclick = showTitle;
+  document.getElementById('btn-share').onclick = (e)=>
+    shareToClipboard(`격자 기억\n💭 레벨 ${reached}${isBest?'  🌟 최고':''}`, e.target);
+}
+
+showTitle();
+window.__GAME__ = { levelConfig, KEY };
+</script>
+</body>
+</html>

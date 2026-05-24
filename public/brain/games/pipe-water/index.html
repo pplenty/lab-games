@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>파이프 연결 | 5분 퍼즐</title>
+<meta property="og:title" content="파이프 연결">
+<meta property="og:description" content="파이프를 회전해 물이 흐를 경로를 완성하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#3e8ca6;--accent-dark:#276a82;--accent-soft:#bcdce8; }
+  .pipe-grid{ display:grid;gap:2px;background:#2a4a58;padding:4px;border-radius:8px;margin:0 auto 12px; }
+  .tile{
+    aspect-ratio:1;background:#eef5f9;border-radius:4px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:32px;line-height:1;
+    transition:transform .2s;color:var(--accent-dark);user-select:none;
+  }
+  .tile:hover{ background:var(--accent-soft); }
+  .tile.fixed{ background:#d4e4ec;cursor:not-allowed; }
+  .tile.source{ background:var(--accent);color:white; }
+  .tile.sink{ background:#e07d3e;color:white; }
+  .tile.filled{ background:var(--accent-soft); }
+  .hint{ text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:10px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestTime, injectBackLink, shareToClipboard, formatClock } = Brain;
+injectBackLink('../../');
+const KEY = 'pipe_water_stats';
+const app = document.getElementById('app');
+
+/* Tile types:
+   0: empty ·
+   1: horizontal ─     (connects L-R)
+   2: vertical │       (connects U-D)
+   3: corner NE  └     (connects U-R)  — rotations cycle through all 4 corners
+   Actually simpler: represent each tile by a bitmask of open sides (0:up,1:right,2:down,3:left)
+*/
+const TYPES = {
+  // bits: U R D L
+  'I': [ 0b0101, 0b1010 ], // horizontal, vertical (2 rotations)
+  'L': [ 0b0110, 0b1100, 0b1001, 0b0011 ], // corner: URDL four rotations
+};
+function openSides(mask){
+  return {
+    U: !!(mask & 0b1000),
+    R: !!(mask & 0b0100),
+    D: !!(mask & 0b0010),
+    L: !!(mask & 0b0001)
+  };
+}
+function glyph(mask){
+  const s = openSides(mask);
+  // pick glyphs
+  if(s.U && s.D && !s.L && !s.R) return '┃';
+  if(s.L && s.R && !s.U && !s.D) return '━';
+  if(s.U && s.R && !s.L && !s.D) return '┗';
+  if(s.R && s.D && !s.U && !s.L) return '┏';
+  if(s.D && s.L && !s.U && !s.R) return '┓';
+  if(s.U && s.L && !s.R && !s.D) return '┛';
+  return '·';
+}
+
+/* Predefined 4x4 puzzle with a known solution path from (0,0) to (3,3) */
+const GRID = [
+  ['S','L','I','.'],
+  ['.','.','L','.'],
+  ['.','L','I','L'],
+  ['.','.','.','E']
+];
+// Orientations: for each tile, a rotation index. Initial random, solved = known.
+// We'll define solved orientations for a fixed solution path (0,0)→(1,0)→(1,1)→(2,1)→(2,2)→(2,3)→(3,3).
+// Simpler: force puzzle to be a straight S-shaped known path and use fewer tile types.
+const PUZZLE = {
+  cols: 4, rows: 4,
+  // Each cell: null or { type:'I'|'L', solvedRot:index }
+  cells: [
+    [ { type:'L', solved: 0b0110 /*UR*/ }, { type:'I', solved: 0b0101 /*LR*/ }, { type:'L', solved: 0b0011 /*LD*/ }, null ],
+    [ { type:'I', solved: 0b1010 /*UD*/ }, null, null, { type:'I', solved: 0b1010 }, ],
+    [ { type:'L', solved: 0b1100 /*UR wait*/ }, null, null, { type:'I', solved: 0b1010 } ],
+    [ null, null, null, { type:'L', solved: 0b1001 /*UL*/ } ]
+  ],
+  start: [0,0], // row, col
+  end:   [3,3]
+};
+// Simpler: rewrite with straight path (0,0)→(0,1)→(0,2)→(0,3)→(1,3)→(2,3)→(3,3)
+const SIMPLE = {
+  cols:4, rows:4,
+  cells:[
+    [ {type:'I', solved:0b0101}, {type:'I', solved:0b0101}, {type:'I', solved:0b0101}, {type:'L', solved:0b0011} ],
+    [ null, null, null, {type:'I', solved:0b1010} ],
+    [ null, null, null, {type:'I', solved:0b1010} ],
+    [ null, null, null, {type:'L', solved:0b1100 /*UR — leads right, but we need it to be end. Let's just say end cell has U,L open*/} ]
+  ],
+  start:[0,0], startSide:'L', // water enters from left
+  end:[3,3], endSide:'U'
+};
+// Correct: top-left enters from left, goes right through row 0, then down column 3 to row 3.
+// Row 0: cells at col 0,1,2 are horizontal (LR), cell at col 3 is L-shape connecting L-D.
+// Column 3: rows 1,2 vertical (UD), row 3 is endpoint (U connects up to pipe, implicit sink).
+// The final cell (3,3) just needs U open.
+SIMPLE.cells[3][3] = { type:'L', solved:0b1000 /* just U */ };
+// Actually L-type has corner rotations; a "U only" cell isn't a real pipe. Use I vertical with endpoint indicator.
+SIMPLE.cells[3][3] = { type:'I', solved:0b1010 };
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestMs:null });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🚰</div>
+    <h1 class="hero-title">파이프 <span style="color:var(--accent);">연결</span></h1>
+    <div class="hero-sub">파이프를 회전시켜 파랑 → 주황까지<br>물이 흐를 경로를 완성하세요.</div>
+    ${stats.bestMs?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${formatClock(stats.bestMs)}</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function randomRotation(type){
+  const opts = TYPES[type];
+  return opts[Math.floor(Math.random()*opts.length)];
+}
+function nextRotation(type, current){
+  const opts = TYPES[type];
+  const idx = opts.indexOf(current);
+  return opts[(idx + 1) % opts.length];
+}
+
+function startGame(){
+  const P = SIMPLE;
+  const state = {
+    rotation: P.cells.map(row => row.map(c => c ? randomRotation(c.type) : null)),
+    startedAt: performance.now(),
+    timer: null, finished:false
+  };
+
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat" id="t">0:00</div><div class="stat">4×4</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `<div class="hint">타일을 클릭해 회전. 파랑 칸에서 주황 칸까지 연결되면 완성.</div>
+    <div class="pipe-grid" id="grid" style="grid-template-columns:repeat(${P.cols},1fr);max-width:${P.cols*56}px;"></div>
+    <div class="feedback" id="fb"></div>
+  `;
+  app.appendChild(card);
+  renderGrid();
+
+  function renderGrid(){
+    const grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    for(let r=0;r<P.rows;r++) for(let c=0;c<P.cols;c++){
+      const cell = P.cells[r][c];
+      const div = $el('div','tile');
+      if(!cell){ div.style.background = 'transparent'; grid.appendChild(div); continue; }
+      const mask = state.rotation[r][c];
+      div.textContent = glyph(mask);
+      if(r === P.start[0] && c === P.start[1]) div.classList.add('source');
+      else if(r === P.end[0] && c === P.end[1]) div.classList.add('sink');
+      div.onclick = ()=>{
+        state.rotation[r][c] = nextRotation(cell.type, state.rotation[r][c]);
+        renderGrid();
+        if(checkSolved()){ finish(); }
+      };
+      grid.appendChild(div);
+    }
+    // highlight filled cells along current path (BFS from source)
+    const reach = bfsReach();
+    const tiles = grid.querySelectorAll('.tile');
+    let i = 0;
+    for(let r=0;r<P.rows;r++) for(let c=0;c<P.cols;c++){
+      const cell = P.cells[r][c];
+      const div = tiles[i++];
+      if(!cell) continue;
+      if(reach.has(r+','+c) && !(r===P.start[0]&&c===P.start[1]) && !(r===P.end[0]&&c===P.end[1])){
+        div.classList.add('filled');
+      }
+    }
+  }
+  function bfsReach(){
+    // BFS from start, respecting open sides consistency between adjacent cells.
+    const reach = new Set();
+    const [sr,sc] = P.start;
+    const startCell = P.cells[sr][sc];
+    if(!startCell) return reach;
+    const queue = [[sr,sc]];
+    reach.add(sr+','+sc);
+    while(queue.length){
+      const [r,c] = queue.shift();
+      const mask = state.rotation[r][c];
+      const sides = openSides(mask);
+      // up
+      if(sides.U && r > 0 && P.cells[r-1][c]){
+        const nmask = state.rotation[r-1][c];
+        if(openSides(nmask).D && !reach.has((r-1)+','+c)){ reach.add((r-1)+','+c); queue.push([r-1,c]); }
+      }
+      if(sides.D && r < P.rows-1 && P.cells[r+1][c]){
+        const nmask = state.rotation[r+1][c];
+        if(openSides(nmask).U && !reach.has((r+1)+','+c)){ reach.add((r+1)+','+c); queue.push([r+1,c]); }
+      }
+      if(sides.L && c > 0 && P.cells[r][c-1]){
+        const nmask = state.rotation[r][c-1];
+        if(openSides(nmask).R && !reach.has(r+','+(c-1))){ reach.add(r+','+(c-1)); queue.push([r,c-1]); }
+      }
+      if(sides.R && c < P.cols-1 && P.cells[r][c+1]){
+        const nmask = state.rotation[r][c+1];
+        if(openSides(nmask).L && !reach.has(r+','+(c+1))){ reach.add(r+','+(c+1)); queue.push([r,c+1]); }
+      }
+    }
+    return reach;
+  }
+  function checkSolved(){
+    const reach = bfsReach();
+    return reach.has(P.end[0]+','+P.end[1]);
+  }
+  function tick(){
+    const el = performance.now() - state.startedAt;
+    document.getElementById('t').textContent = formatClock(el);
+  }
+  state.timer = setInterval(tick, 250);
+  function finish(){
+    state.finished = true;
+    clearInterval(state.timer);
+    const elapsed = performance.now() - state.startedAt;
+    const stats = recordBestTime(KEY, Math.round(elapsed), {});
+    const isBest = stats.bestMs === Math.round(elapsed);
+    setTimeout(()=>{
+      clear(app);
+      const r = $el('div','result-card');
+      r.innerHTML = `
+        <div class="result-emoji">${elapsed<30000?'🏆':elapsed<60000?'🎉':'👏'}</div>
+        <div class="result-title">물이 흐릅니다!</div>
+        <div class="result-big">${formatClock(elapsed)}</div>
+        ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+        <div class="btn-row">
+          <button class="btn" id="s">공유</button>
+          <button class="btn secondary" id="a">다시</button>
+          <button class="btn ghost" id="h">홈</button>
+        </div>
+      `;
+      app.appendChild(r);
+      document.getElementById('a').onclick = startGame;
+      document.getElementById('h').onclick = showTitle;
+      document.getElementById('s').onclick = (e)=>shareToClipboard(`파이프 연결\n🚰 ${formatClock(elapsed)}${isBest?' 🌟':''}`, e.target);
+    }, 700);
+  }
+}
+showTitle();
+window.__GAME__ = { KEY, SIMPLE, TYPES, openSides, nextRotation };
+</script>
+</body>
+</html>

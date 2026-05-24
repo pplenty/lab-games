@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>카드 순서 기억 | 5분 퍼즐</title>
+<meta property="og:title" content="카드 순서 기억">
+<meta property="og:description" content="순서대로 제시된 카드를 같은 순서로 재현하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#6b4e8a;--accent-dark:#4a3363;--accent-soft:#c9b4dd; }
+  .deck{ display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:14px;min-height:120px;padding:10px;background:var(--bg-2);border-radius:12px; }
+  .card{
+    width:64px;height:90px;border-radius:10px;background:white;border:2px solid var(--ink-faint);
+    display:flex;align-items:center;justify-content:center;font-size:36px;
+    user-select:none;transition:all .15s;cursor:pointer;
+  }
+  .card.highlight{ background:var(--accent);color:white;transform:scale(1.1);box-shadow:0 0 10px rgba(107,78,138,.6); }
+  .card.disabled{ cursor:not-allowed;opacity:.5; }
+  .seq-slots{ display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:14px;min-height:50px; }
+  .slot{
+    width:36px;height:48px;border:2px dashed var(--ink-faint);border-radius:6px;
+    display:flex;align-items:center;justify-content:center;font-size:22px;
+  }
+  .slot.filled{ border-style:solid;border-color:var(--accent);background:white; }
+  .slot.correct{ border-color:var(--green);background:#d8eecc; }
+  .slot.wrong{ border-color:var(--red);background:#fadadb; }
+  .level-info{ text-align:center;color:var(--accent-dark);font-weight:700;font-size:18px;margin-bottom:8px; }
+  .hint{ text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:10px;min-height:18px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, saveStats, shuffle, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const POOL = ['🍎','🍌','🍇','🍓','🍊','🍉','🥝','🥭','🫐','🍍','🥥','🍒'];
+const KEY = 'card_order_stats';
+const app = document.getElementById('app');
+
+function levelConfig(lv){
+  if(lv <= 2) return { cards:4, sequence:3 };
+  if(lv <= 4) return { cards:5, sequence:4 };
+  if(lv <= 6) return { cards:6, sequence:5 };
+  if(lv <= 8) return { cards:7, sequence:6 };
+  return { cards:8, sequence:7 };
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestLevel:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🃏</div>
+    <h1 class="hero-title">카드 순서 <span style="color:var(--accent);">기억</span></h1>
+    <div class="hero-sub">카드들이 순서대로 반짝입니다.<br>그 순서를 기억해 같은 순서로 눌러주세요.</div>
+    ${stats.bestLevel > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">레벨 ${stats.bestLevel}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = ()=>startLevel(1);
+}
+
+function startLevel(level){
+  const cfg = levelConfig(level);
+  const cards = shuffle(POOL).slice(0, cfg.cards);
+  // Sequence to show — indices into `cards`
+  const sequence = [];
+  for(let i=0;i<cfg.sequence;i++) sequence.push(Math.floor(Math.random()*cards.length));
+
+  const state = { level, cards, sequence, userInput: [], phase:'show' };
+
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">레벨 ${level}</div><div class="stat">순서 ${cfg.sequence}개</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="level-info">${cfg.cards}장 중 ${cfg.sequence}개 순서</div>
+    <div class="hint" id="hint">잘 보세요…</div>
+    <div class="deck" id="deck"></div>
+    <div class="seq-slots" id="slots"></div>
+  `;
+  app.appendChild(card);
+  renderDeck();
+  renderSlots();
+  setTimeout(playSequence, 600);
+
+  function renderDeck(){
+    const d = document.getElementById('deck');
+    d.innerHTML = cards.map((em, i) => `<div class="card${state.phase==='show'?' disabled':''}" data-i="${i}">${em}</div>`).join('');
+    if(state.phase === 'input'){
+      d.querySelectorAll('.card').forEach(c => {
+        c.onclick = ()=>onCardClick(+c.dataset.i);
+      });
+    }
+  }
+  function renderSlots(){
+    const s = document.getElementById('slots');
+    s.innerHTML = state.sequence.map((_, i) => {
+      const picked = state.userInput[i];
+      const cls = picked != null ? 'slot filled' : 'slot';
+      return `<div class="${cls}">${picked != null ? cards[picked] : ''}</div>`;
+    }).join('');
+  }
+  async function playSequence(){
+    const deck = document.getElementById('deck');
+    for(const idx of state.sequence){
+      const card = deck.children[idx];
+      card.classList.add('highlight');
+      await wait(460);
+      card.classList.remove('highlight');
+      await wait(180);
+    }
+    state.phase = 'input';
+    document.getElementById('hint').textContent = '같은 순서로 눌러주세요!';
+    renderDeck();
+  }
+  function wait(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+  function onCardClick(idx){
+    state.userInput.push(idx);
+    renderSlots();
+    const i = state.userInput.length - 1;
+    const slots = document.getElementById('slots').children;
+    if(idx === state.sequence[i]){
+      slots[i].classList.add('correct');
+      if(state.userInput.length === state.sequence.length){
+        document.getElementById('hint').textContent = '✓ 완벽!';
+        setTimeout(()=>startLevel(level + 1), 800);
+      }
+    } else {
+      slots[i].classList.add('wrong');
+      document.getElementById('hint').textContent = '아쉬워요…';
+      document.querySelectorAll('.card').forEach(c => c.onclick = null);
+      setTimeout(finish, 1100);
+    }
+  }
+  function finish(){
+    const stats = loadStats(KEY, { played:0, bestLevel:0 });
+    stats.played++;
+    if(level > stats.bestLevel) stats.bestLevel = level;
+    saveStats(KEY, stats);
+    const isBest = stats.bestLevel === level;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = level >= 8 ? '🏆' : level >= 5 ? '🎉' : level >= 3 ? '👏' : '🙂';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">레벨 ${level}</div>
+      <div class="result-sub">카드 ${cfg.cards}장 / 순서 ${cfg.sequence}개</div>
+      ${isBest ? '<div class="ribbon">🌟 최고 레벨</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = ()=>startLevel(1);
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`카드 순서 기억\n🃏 레벨 ${level}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { POOL, KEY, levelConfig };
+</script>
+</body>
+</html>

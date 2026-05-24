@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>빠른 색 찾기 | 5분 퍼즐</title>
+<meta property="og:title" content="빠른 색 찾기">
+<meta property="og:description" content="30초 동안 타겟 색만 빠르게 클릭하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#d64a4a;--accent-dark:#a43232;--accent-soft:#f0b7b7; }
+  .timer-bar{ height:8px;background:var(--card);border-radius:4px;overflow:hidden;margin-bottom:12px;box-shadow:var(--shadow); }
+  .timer-fill{ height:100%;background:linear-gradient(to right,var(--accent),var(--accent-dark)); }
+  .target-row{
+    display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:14px;
+    padding:12px;background:var(--card);border-radius:10px;box-shadow:var(--shadow);
+  }
+  .target-row .label{ color:var(--ink-dim);font-size:13px; }
+  .target-swatch{ width:32px;height:32px;border-radius:50%; }
+  .grid{ display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-width:420px;margin:0 auto; }
+  .tile{
+    aspect-ratio:1;border-radius:6px;cursor:pointer;transition:transform .1s;user-select:none;
+  }
+  .tile:hover{ transform:scale(1.08); }
+  .tile.correct{ animation:popg .3s; }
+  .tile.wrong{ animation:shake .3s; }
+  @keyframes popg{ 50%{transform:scale(1.5);opacity:.6;} 100%{transform:scale(0);opacity:0;} }
+  @media(max-width:480px){
+    .grid{ grid-template-columns:repeat(6,1fr); }
+  }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const PALETTE = [
+  { name:'빨강', hex:'#e05656' },
+  { name:'파랑', hex:'#4a7aa4' },
+  { name:'초록', hex:'#6ca02c' },
+  { name:'노랑', hex:'#daa520' },
+  { name:'보라', hex:'#a177bc' },
+  { name:'주황', hex:'#e07d3e' }
+];
+const DURATION = 30000;
+const GRID_SIZE = 64; // 8x8
+const KEY = 'colorrush_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🎯</div>
+    <h1 class="hero-title">빠른 <span style="color:var(--accent);">색 찾기</span></h1>
+    <div class="hero-sub">30초 동안 <b>지정된 색</b>만 클릭하세요.<br>다른 색 클릭은 −2점. 타겟은 바뀝니다.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}점</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const startedAt = performance.now();
+  const state = {
+    targetIdx: Math.floor(Math.random()*PALETTE.length),
+    grid: genGrid(),
+    score: 0,
+    correct: 0, wrong: 0, missed: 0,
+    timer: null
+  };
+
+  function genGrid(){
+    // Generate 64 tiles, some proportion matching target (3-5)
+    const tiles = [];
+    for(let i=0;i<GRID_SIZE;i++){
+      tiles.push(Math.floor(Math.random()*PALETTE.length));
+    }
+    // Ensure at least 3 targets exist
+    let targetCount = tiles.filter(t => t === state?.targetIdx).length;
+    return tiles;
+  }
+
+  clear(app);
+  const topbar = $el('div','topbar');
+  topbar.innerHTML = `<div class="stat">🎯 <span id="score">0</span></div><div class="stat" id="time">30.0s</div>`;
+  app.appendChild(topbar);
+  const bar = $el('div','timer-bar');
+  bar.innerHTML = `<div class="timer-fill" id="fill" style="width:100%"></div>`;
+  app.appendChild(bar);
+  const targetRow = $el('div','target-row');
+  app.appendChild(targetRow);
+  const grid = $el('div','grid');
+  grid.id = 'grid';
+  app.appendChild(grid);
+
+  function renderTarget(){
+    const c = PALETTE[state.targetIdx];
+    targetRow.innerHTML = `
+      <span class="label">찾을 색</span>
+      <div class="target-swatch" style="background:${c.hex};"></div>
+      <span style="font-weight:700;color:${c.hex};font-size:18px;">${c.name}</span>
+    `;
+  }
+  function renderGrid(){
+    const g = document.getElementById('grid');
+    g.innerHTML = '';
+    state.grid.forEach((colorIdx, i) => {
+      const t = $el('div','tile');
+      t.style.background = PALETTE[colorIdx].hex;
+      t.dataset.c = colorIdx;
+      t.dataset.i = i;
+      t.onclick = ()=>onClick(t, i, colorIdx);
+      g.appendChild(t);
+    });
+  }
+  function onClick(tile, idx, colorIdx){
+    if(colorIdx === state.targetIdx){
+      state.score += 5;
+      state.correct++;
+      tile.classList.add('correct');
+      setTimeout(()=>{
+        state.grid[idx] = Math.floor(Math.random()*PALETTE.length);
+        renderGrid();
+      }, 260);
+      // maybe change target every 5 correct
+      if(state.correct % 5 === 0){
+        const prev = state.targetIdx;
+        while(state.targetIdx === prev) state.targetIdx = Math.floor(Math.random()*PALETTE.length);
+        renderTarget();
+      }
+    } else {
+      state.score = Math.max(0, state.score - 2);
+      state.wrong++;
+      tile.classList.add('wrong');
+      setTimeout(()=>tile.classList.remove('wrong'), 280);
+    }
+    document.getElementById('score').textContent = state.score;
+  }
+  function tick(){
+    const elapsed = performance.now() - startedAt;
+    const remaining = Math.max(0, DURATION - elapsed);
+    document.getElementById('time').textContent = (remaining/1000).toFixed(1) + 's';
+    document.getElementById('fill').style.width = (remaining/DURATION*100) + '%';
+    if(remaining <= 0){ clearInterval(state.timer); finish(); }
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.score, { correct: state.correct, wrong: state.wrong });
+    const isBest = stats.bestScore === state.score && state.score > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = state.score >= 150 ? '🏆' : state.score >= 90 ? '🎉' : '👏';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">30초 종료</div>
+      <div class="result-big">${state.score}점</div>
+      <div class="result-sub">정답 ${state.correct} · 오답 ${state.wrong}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고 기록</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>
+      shareToClipboard(`빠른 색 찾기\n🎯 ${state.score}점 (정답 ${state.correct})${isBest?' 🌟':''}`, e.target);
+  }
+
+  renderTarget();
+  renderGrid();
+  state.timer = setInterval(tick, 80);
+}
+
+showTitle();
+window.__GAME__ = { PALETTE, DURATION, GRID_SIZE, KEY };
+</script>
+</body>
+</html>

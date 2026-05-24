@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Go / No-Go | 5분 퍼즐</title>
+<meta property="og:title" content="Go / No-Go">
+<meta property="og:description" content="파랑 신호에만 클릭, 빨강은 절대 금지!">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#3a7cc9;--accent-dark:#2a5fa0;--accent-soft:#b5cfeb; }
+  .signal-stage{ aspect-ratio:1;max-width:360px;margin:0 auto 12px;border-radius:50%;background:var(--bg-2);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .08s;user-select:none;font-size:32px;color:white;font-weight:800; }
+  .signal-stage.go{ background:var(--accent); }
+  .signal-stage.nogo{ background:#d14a4a; }
+  .signal-stage.idle{ background:#d0d0d0;color:var(--ink-dim);font-size:18px; }
+  .progress{ display:flex;gap:3px;justify-content:center;margin-top:8px; }
+  .p-dot{ width:16px;height:5px;border-radius:2px;background:var(--ink-faint); }
+  .p-dot.hit{ background:var(--green); }
+  .p-dot.miss{ background:#d14a4a; }
+  .p-dot.current{ background:var(--accent); }
+  .round{ text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:10px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const TRIALS = 12;
+const KEY = 'go_nogo_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🚦</div>
+    <h1 class="hero-title">Go / <span style="color:var(--accent);">No-Go</span></h1>
+    <div class="hero-sub"><b style="color:var(--accent);">파랑</b>이 뜨면 즉시 클릭<br><b style="color:#d14a4a;">빨강</b>이면 절대 클릭 금지!</div>
+    <div class="rule-card">파랑 놓침 = MISS<br>빨강 클릭 = 오반응 (큰 감점)<br>총 ${TRIALS}라운드.${stats.bestScore>0?`<div class="best">🌟 최고 ${stats.bestScore}점</div>`:''}</div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const trials = [];
+  for(let i=0;i<TRIALS;i++) trials.push(Math.random() < 0.7 ? 'go' : 'nogo');
+  const state = { trials, i:0, score:0, hits:[], phase:'idle', signalAt:0, responded:false };
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">${state.i+1}/${TRIALS}</div><div class="stat" id="sc">🎯 0</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="round" id="round">준비…</div>
+    <div class="signal-stage idle" id="stage">대기 중</div>
+    <div class="progress" id="prog">
+      ${Array.from({length:TRIALS},()=>'<div class="p-dot"></div>').join('')}
+    </div>
+  `;
+  app.appendChild(card);
+  const stage = document.getElementById('stage');
+  const dots = document.getElementById('prog').children;
+
+  stage.addEventListener('click', onClick);
+  stage.addEventListener('touchstart', (e)=>{ e.preventDefault(); onClick(); }, { passive: false });
+  document.addEventListener('keydown', onKey);
+  function onKey(e){ if(e.code==='Space' || e.code==='Enter'){ e.preventDefault(); onClick(); } }
+  function onClick(){
+    if(state.phase === 'showing'){
+      state.responded = true;
+      const trial = state.trials[state.i];
+      const rt = performance.now() - state.signalAt;
+      if(trial === 'go'){
+        const score = Math.max(0, Math.round(15 - rt/50));
+        state.score += score;
+        state.hits.push('hit');
+        dots[state.i].classList.add('hit');
+        document.getElementById('round').textContent = '✓ ' + Math.round(rt) + 'ms';
+      } else {
+        // clicked on no-go
+        state.score = Math.max(0, state.score - 10);
+        state.hits.push('miss');
+        dots[state.i].classList.add('miss');
+        document.getElementById('round').textContent = '✗ 빨강을 클릭했어요!';
+      }
+      document.getElementById('sc').textContent = '🎯 ' + state.score;
+      endTrial();
+    }
+  }
+  function runTrial(){
+    if(state.i >= TRIALS) return finish();
+    state.phase = 'idle';
+    state.responded = false;
+    stage.className = 'signal-stage idle';
+    stage.textContent = '대기…';
+    document.getElementById('round').textContent = '라운드 ' + (state.i+1);
+    dots[state.i].classList.add('current');
+    const delay = 600 + Math.random() * 1800;
+    setTimeout(()=>{
+      if(state.i >= TRIALS) return;
+      const trial = state.trials[state.i];
+      stage.className = 'signal-stage ' + trial;
+      stage.textContent = trial === 'go' ? 'GO!' : 'STOP';
+      state.signalAt = performance.now();
+      state.phase = 'showing';
+      // Give 1.5s window
+      setTimeout(()=>{
+        if(state.i >= TRIALS) return;
+        if(!state.responded){
+          const trial = state.trials[state.i];
+          if(trial === 'go'){
+            // missed go
+            state.hits.push('miss');
+            dots[state.i].classList.add('miss');
+            document.getElementById('round').textContent = '✗ 놓쳤어요!';
+          } else {
+            // correctly held back
+            state.score += 10;
+            state.hits.push('hit');
+            dots[state.i].classList.add('hit');
+            document.getElementById('round').textContent = '✓ 잘 참았어요';
+          }
+          document.getElementById('sc').textContent = '🎯 ' + state.score;
+          endTrial();
+        }
+      }, 1500);
+    }, delay);
+  }
+  function endTrial(){
+    dots[state.i].classList.remove('current');
+    state.i++;
+    setTimeout(runTrial, 600);
+  }
+  setTimeout(runTrial, 800);
+
+  function finish(){
+    stage.removeEventListener('click', onClick);
+    document.removeEventListener('keydown', onKey);
+    const stats = recordBestScore(KEY, state.score, {});
+    const isBest = stats.bestScore === state.score && state.score > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    const hits = state.hits.filter(h=>h==='hit').length;
+    r.innerHTML = `
+      <div class="result-emoji">${state.score>=120?'🏆':state.score>=80?'🎉':'👏'}</div>
+      <div class="result-title">종료</div>
+      <div class="result-big">${state.score}점</div>
+      <div class="result-sub">정반응 ${hits}/${TRIALS}</div>
+      ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`Go/No-Go\n🚦 ${state.score}점${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { TRIALS, KEY };
+</script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>블록 쌓기 | 5분 퍼즐</title>
+<meta property="og:title" content="블록 쌓기">
+<meta property="og:description" content="떨어지는 블록을 같은 색끼리 연결해 제거하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#507abf;--accent-dark:#34588f;--accent-soft:#b8c8e2; }
+  .play-area{ display:grid;grid-template-columns:repeat(5,1fr);gap:2px;max-width:260px;margin:0 auto 12px;padding:4px;background:var(--accent-dark);border-radius:6px; }
+  .cell{ aspect-ratio:1;background:var(--bg);border-radius:3px; }
+  .cell.r{ background:#e05656; }
+  .cell.b{ background:#4a7aa4; }
+  .cell.g{ background:#6ca02c; }
+  .cell.y{ background:#daa520; }
+  .controls{ display:grid;grid-template-columns:repeat(3,56px);gap:4px;justify-content:center;margin-top:10px; }
+  .controls button{ aspect-ratio:1;background:var(--accent-soft);border:0;border-radius:10px;font:inherit;font-size:22px;cursor:pointer; }
+  .controls button:hover{ background:var(--accent);color:white; }
+  .next-row{ text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:10px; }
+  .mini-cell{ display:inline-block;width:18px;height:18px;border-radius:3px;vertical-align:middle;margin:0 4px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const COLS = 5;
+const ROWS = 8;
+const COLORS = ['r','b','g','y'];
+const KEY = 'tetris_lite_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🧱</div>
+    <h1 class="hero-title">블록 <span style="color:var(--accent);">쌓기</span></h1>
+    <div class="hero-sub">떨어지는 색 블록을 좌우로 움직여<br>같은 색 3개가 가로·세로·대각으로 이어지면 제거.</div>
+    <div class="rule-card">← → 로 이동, ↓ 빨리 내리기.<br>블록 쌓이면 게임오버.${stats.bestScore>0?`<div class="best">🌟 최고 ${stats.bestScore}점</div>`:''}</div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function emptyBoard(){ return Array.from({length:ROWS},()=>Array(COLS).fill(null)); }
+function randColor(){ return COLORS[Math.floor(Math.random()*COLORS.length)]; }
+
+function startGame(){
+  const state = {
+    board: emptyBoard(),
+    cur: { row:0, col:Math.floor(COLS/2), color:randColor() },
+    next: randColor(),
+    score:0,
+    gameOver:false,
+    timer:null,
+    fallInterval: 700
+  };
+
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">🎯 <span id="score">0</span></div><div class="stat" id="next-stat">Next:</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="next-row">다음: <span class="mini-cell" id="next-color" style="background:#ccc;"></span></div>
+    <div class="play-area" id="board"></div>
+    <div class="controls">
+      <button data-a="left">←</button>
+      <button data-a="down">↓</button>
+      <button data-a="right">→</button>
+    </div>
+  `;
+  app.appendChild(card);
+
+  function render(){
+    const b = document.getElementById('board');
+    b.innerHTML = '';
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      const cell = $el('div','cell');
+      const v = (r === state.cur.row && c === state.cur.col && !state.gameOver) ? state.cur.color : state.board[r][c];
+      if(v) cell.classList.add(v);
+      b.appendChild(cell);
+    }
+    document.getElementById('next-color').style.background = colorHex(state.next);
+    document.getElementById('score').textContent = state.score;
+  }
+  function colorHex(c){ return {r:'#e05656',b:'#4a7aa4',g:'#6ca02c',y:'#daa520'}[c] || '#ccc'; }
+
+  function tryMove(dCol){
+    const nc = state.cur.col + dCol;
+    if(nc < 0 || nc >= COLS) return;
+    // check if target cell occupied
+    if(state.board[state.cur.row] && state.board[state.cur.row][nc]) return;
+    state.cur.col = nc;
+    render();
+  }
+  function step(){
+    if(state.gameOver) return;
+    const r = state.cur.row, c = state.cur.col;
+    const nextRow = r + 1;
+    // if reached bottom or next row occupied → place
+    if(nextRow >= ROWS || state.board[nextRow][c]){
+      state.board[r][c] = state.cur.color;
+      // check matches
+      const removed = checkMatches();
+      if(removed > 0){
+        state.score += removed * 10;
+        compact();
+      }
+      // spawn new
+      state.cur = { row:0, col:Math.floor(COLS/2), color:state.next };
+      state.next = randColor();
+      // game over if top occupied
+      if(state.board[0][state.cur.col]){
+        state.gameOver = true;
+        clearInterval(state.timer);
+        setTimeout(finish, 300);
+        return;
+      }
+    } else {
+      state.cur.row = nextRow;
+    }
+    render();
+  }
+  function checkMatches(){
+    // Find 3+ in a row (horizontal, vertical, diagonal)
+    const remove = new Set();
+    const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      const v = state.board[r][c]; if(!v) continue;
+      for(const [dr,dc] of dirs){
+        const line = [[r,c]];
+        let nr = r+dr, nc = c+dc;
+        while(nr>=0&&nr<ROWS&&nc>=0&&nc<COLS && state.board[nr][nc] === v){
+          line.push([nr,nc]); nr+=dr; nc+=dc;
+        }
+        if(line.length >= 3) line.forEach(([a,b])=>remove.add(a+','+b));
+      }
+    }
+    remove.forEach(key => {
+      const [r,c] = key.split(',').map(Number);
+      state.board[r][c] = null;
+    });
+    return remove.size;
+  }
+  function compact(){
+    // drop remaining cells down
+    for(let c=0;c<COLS;c++){
+      const col = [];
+      for(let r=ROWS-1;r>=0;r--) if(state.board[r][c]) col.push(state.board[r][c]);
+      for(let r=ROWS-1;r>=0;r--){
+        state.board[r][c] = col.shift() || null;
+      }
+    }
+    // cascade
+    const again = checkMatches();
+    if(again > 0){ state.score += again * 15; compact(); }
+  }
+
+  document.querySelectorAll('.controls button').forEach(b => {
+    b.onclick = ()=>{
+      const a = b.dataset.a;
+      if(a==='left') tryMove(-1);
+      else if(a==='right') tryMove(1);
+      else if(a==='down') step();
+    };
+  });
+  function onKey(e){
+    if(state.gameOver) return;
+    if(e.key==='ArrowLeft'){ e.preventDefault(); tryMove(-1); }
+    else if(e.key==='ArrowRight'){ e.preventDefault(); tryMove(1); }
+    else if(e.key==='ArrowDown'){ e.preventDefault(); step(); }
+  }
+  document.addEventListener('keydown', onKey);
+
+  function finish(){
+    document.removeEventListener('keydown', onKey);
+    const stats = recordBestScore(KEY, state.score, {});
+    const isBest = stats.bestScore === state.score && state.score > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.score>=200?'🏆':state.score>=100?'🎉':'👏'}</div>
+      <div class="result-title">게임 오버</div>
+      <div class="result-big">${state.score}점</div>
+      ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`블록 쌓기\n🧱 ${state.score}점${isBest?' 🌟':''}`, e.target);
+  }
+  render();
+  state.timer = setInterval(step, state.fallInterval);
+}
+showTitle();
+window.__GAME__ = { COLS, ROWS, COLORS, KEY, emptyBoard };
+</script>
+</body>
+</html>

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>타이밍 바 | 5분 퍼즐</title>
+<meta property="og:title" content="타이밍 바">
+<meta property="og:description" content="움직이는 인디케이터를 중앙 녹색 영역에 멈추세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#4aa58f;--accent-dark:#2e7d68;--accent-soft:#b4dcd0; }
+  .track{ position:relative;height:36px;background:var(--bg-2);border-radius:18px;overflow:hidden;box-shadow:var(--shadow);margin:24px 0; }
+  .zone{ position:absolute;top:0;bottom:0;left:42%;width:16%;background:rgba(74,165,143,.3);border-left:2px solid var(--accent);border-right:2px solid var(--accent); }
+  .zone.perfect{ left:48%;width:4%;background:rgba(74,165,143,.7); }
+  .indicator{ position:absolute;top:4px;bottom:4px;width:8px;background:var(--accent-dark);border-radius:4px;box-shadow:0 0 10px rgba(0,0,0,.3); }
+  .round-info{ text-align:center;color:var(--ink-dim);font-size:14px;margin-bottom:8px; }
+  .progress-dots{ display:flex;gap:4px;justify-content:center;margin-top:8px; }
+  .p-dot{ width:18px;height:5px;border-radius:2px;background:var(--ink-faint); }
+  .p-dot.perfect{ background:var(--accent); }
+  .p-dot.good{ background:var(--yellow); }
+  .p-dot.miss{ background:var(--red); }
+  .hit-info{ text-align:center;min-height:22px;font-weight:700; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const TOTAL = 10;
+const KEY = 'timing_bar_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🎯</div>
+    <h1 class="hero-title">타이밍 <span style="color:var(--accent);">바</span></h1>
+    <div class="hero-sub">왕복하는 인디케이터를<br>중앙 녹색 영역에서 멈추세요.</div>
+    <div class="rule-card">
+      중앙 얇은 띠 = <b>PERFECT</b> (+10점)<br>
+      녹색 영역 = <b>GOOD</b> (+5점)<br>
+      밖 = <b>MISS</b> (0점)<br>
+      총 ${TOTAL}번.
+      ${stats.bestScore > 0 ? `<div class="best">🌟 최고 ${stats.bestScore}점</div>` : ''}
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = { i:0, score:0, hits:[], animId:null, pos:0, dir:1, speed:1.4 };
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat" id="score">🎯 0</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="round-info">클릭/스페이스로 멈추세요</div>
+    <div class="track" id="track">
+      <div class="zone"></div>
+      <div class="zone perfect"></div>
+      <div class="indicator" id="ind" style="left:0%"></div>
+    </div>
+    <div class="hit-info" id="hit"></div>
+    <div class="progress-dots" id="dots">
+      ${Array.from({length:TOTAL},()=>'<div class="p-dot"></div>').join('')}
+    </div>
+  `;
+  app.appendChild(card);
+  const ind = document.getElementById('ind');
+  const hit = document.getElementById('hit');
+  const dots = document.getElementById('dots').children;
+
+  function loop(){
+    state.pos += state.dir * state.speed;
+    if(state.pos >= 100){ state.pos = 100; state.dir = -1; }
+    if(state.pos <= 0){ state.pos = 0; state.dir = 1; }
+    ind.style.left = `calc(${state.pos}% - 4px)`;
+    state.animId = requestAnimationFrame(loop);
+  }
+  state.animId = requestAnimationFrame(loop);
+
+  function stopHit(){
+    cancelAnimationFrame(state.animId);
+    // Score based on position
+    const p = state.pos;
+    let tier, label, color;
+    if(p >= 48 && p <= 52){ tier='perfect'; label='PERFECT +10'; state.score += 10; color='var(--accent-dark)'; }
+    else if(p >= 42 && p <= 58){ tier='good'; label='GOOD +5'; state.score += 5; color='var(--yellow)'; }
+    else { tier='miss'; label='MISS'; color='var(--red)'; }
+    state.hits.push(tier);
+    dots[state.i].classList.add(tier);
+    hit.textContent = label;
+    hit.style.color = color;
+    document.getElementById('score').textContent = '🎯 ' + state.score;
+    state.i++;
+    if(state.i >= TOTAL){
+      setTimeout(finish, 800);
+    } else {
+      setTimeout(()=>{
+        hit.textContent = '';
+        state.pos = 0;
+        state.dir = 1;
+        // increase speed slightly each round
+        state.speed = 1.4 + state.i * 0.15;
+        top.firstElementChild.textContent = (state.i+1)+'/'+TOTAL;
+        state.animId = requestAnimationFrame(loop);
+      }, 700);
+    }
+  }
+  let lastActionAt = 0;
+  document.addEventListener('click', onAction);
+  document.addEventListener('touchstart', onTouch, { passive: false });
+  document.addEventListener('keydown', onKey);
+  function onAction(e){
+    if(e.target.closest('button')) return;
+    if(state.i >= TOTAL) return;
+    const now = performance.now();
+    if(now - lastActionAt < 300) return;
+    lastActionAt = now;
+    stopHit();
+  }
+  function onTouch(e){
+    if(e.target.closest('button')) return;
+    if(state.i >= TOTAL) return;
+    e.preventDefault();
+    lastActionAt = performance.now();
+    stopHit();
+  }
+  function onKey(e){
+    if(e.code === 'Space' || e.code === 'Enter'){ e.preventDefault(); if(state.i < TOTAL) stopHit(); }
+  }
+
+  function finish(){
+    document.removeEventListener('click', onAction);
+    document.removeEventListener('touchstart', onTouch);
+    document.removeEventListener('keydown', onKey);
+    const stats = recordBestScore(KEY, state.score, { perfects: state.hits.filter(h=>h==='perfect').length });
+    const isBest = stats.bestScore === state.score && state.score > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    const perfects = state.hits.filter(h=>h==='perfect').length;
+    const goods = state.hits.filter(h=>h==='good').length;
+    const emoji = state.score >= 80 ? '🏆' : state.score >= 50 ? '🎉' : '👏';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">${TOTAL}번 종료</div>
+      <div class="result-big">${state.score}점</div>
+      <div class="result-sub">PERFECT ${perfects} · GOOD ${goods}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`타이밍 바\n🎯 ${state.score}점 (P${perfects}/G${goods})${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { TOTAL, KEY };
+</script>
+</body>
+</html>

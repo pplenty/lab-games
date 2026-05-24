@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>가짜 동전 찾기 | 5분 퍼즐</title>
+<meta property="og:title" content="가짜 동전 찾기">
+<meta property="og:description" content="무게가 다른 가짜 동전을 저울 두 번 안에 찾으세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#8b7855;--accent-dark:#5f5036;--accent-soft:#d8c9a8; }
+  .coins{ display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-bottom:12px; }
+  .coin{
+    aspect-ratio:1;background:#f0d97a;border-radius:50%;border:2px solid #b5a04e;
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;
+    cursor:pointer;color:#665a1b;transition:all .12s;user-select:none;
+  }
+  .coin:hover:not(.placed){ transform:scale(1.1); }
+  .coin.placedL{ background:#a7d2e6;border-color:#4a7aa4;color:#1f445e; }
+  .coin.placedR{ background:#e6a7a7;border-color:#a44040;color:#5e1f1f; }
+  .coin.picked{ background:var(--accent);color:white;border-color:var(--accent-dark);transform:scale(1.15); }
+  .coin.revealed{ background:#f08a3e;color:white;border-color:#a55d24; }
+  .scales{ display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;padding:14px;background:var(--accent-soft);border-radius:12px;margin-bottom:12px; }
+  .pan{ min-height:60px;background:rgba(255,255,255,.6);border-radius:8px;padding:8px;display:flex;flex-wrap:wrap;gap:4px;justify-content:center;align-items:center; }
+  .pan .mini{ width:24px;height:24px;background:#f0d97a;border:1px solid #b5a04e;border-radius:50%;font-size:10px;display:flex;align-items:center;justify-content:center;color:#665a1b; }
+  .vs{ text-align:center;font-size:22px;font-weight:800;color:var(--accent-dark); }
+  .vs.L{ color:#4a7aa4; }
+  .vs.R{ color:#a44040; }
+  .vs.E{ color:var(--green-dark); }
+  .controls{ display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:10px 0; }
+  .controls button{
+    background:var(--card);border:2px solid var(--ink-faint);border-radius:8px;
+    padding:8px 14px;font:inherit;font-weight:700;font-size:13px;cursor:pointer;transition:all .12s;
+  }
+  .controls button.primary{ background:var(--accent);color:white;border-color:var(--accent-dark); }
+  .controls button.side-l{ border-color:#4a7aa4;color:#4a7aa4; }
+  .controls button.side-r{ border-color:#a44040;color:#a44040; }
+  .hint{ text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:10px; }
+  .weighings-left{ text-align:center;font-weight:700;color:var(--accent-dark);margin-bottom:10px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const N = 8;
+const MAX_WEIGHINGS = 2;
+const KEY = 'balance_coin_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, wins:0, bestWithOneWeigh:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">⚖️</div>
+    <h1 class="hero-title">가짜 동전 <span style="color:var(--accent);">찾기</span></h1>
+    <div class="hero-sub">${N}개 동전 중 하나가 <b>다른 무게</b>(가볍거나 무거움).<br>저울 <b>${MAX_WEIGHINGS}번</b>으로 찾으세요.</div>
+    <div class="rule-card">
+      양쪽 저울판에 동전을 올리고 비교.<br>
+      왼쪽↓ = 왼쪽이 무거움 / 오른쪽↓ = 오른쪽이 무거움 / 균형 = 같음.<br>
+      ${MAX_WEIGHINGS}회 사용 후 최종 1개 지목.
+      ${stats.wins > 0 ? `<div class="best">🌟 승리 ${stats.wins}회 / ${stats.played}게임</div>` : ''}
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const coinIds = Array.from({length:N}, (_,i)=>i+1);
+  const fakeIdx = Math.floor(Math.random()*N);
+  const fakeIsHeavy = Math.random() < 0.5;
+
+  const state = {
+    weighings: [],
+    left: [],
+    right: [],
+    phase: 'setup', // setup | weighed | picking | done
+    guess: null,
+    won: null
+  };
+
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat" id="w-count">저울 0/${MAX_WEIGHINGS}</div><div class="stat" id="phase-stat">배치 중</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="hint" id="hint">동전을 클릭해 왼쪽/오른쪽 저울판에 배치</div>
+    <div class="scales">
+      <div class="pan" id="pan-l"></div>
+      <div class="vs" id="vs">⚖️</div>
+      <div class="pan" id="pan-r"></div>
+    </div>
+    <div class="weighings-left" id="remain">남은 저울: ${MAX_WEIGHINGS}</div>
+    <div class="controls" id="controls"></div>
+    <div class="coins" id="coins"></div>
+    <div class="feedback" id="fb"></div>
+  `;
+  app.appendChild(card);
+  renderCoins();
+  renderControls();
+
+  function renderCoins(){
+    const coinsEl = document.getElementById('coins');
+    coinsEl.innerHTML = '';
+    coinIds.forEach(id => {
+      const c = $el('div','coin');
+      c.textContent = id;
+      c.dataset.id = id;
+      if(state.left.includes(id)) c.classList.add('placedL');
+      else if(state.right.includes(id)) c.classList.add('placedR');
+      if(state.phase === 'picking' && state.guess === id) c.classList.add('picked');
+      if(state.phase === 'done' && id === fakeIdx + 1) c.classList.add('revealed');
+      c.onclick = ()=>onCoinClick(id);
+      coinsEl.appendChild(c);
+    });
+    const panL = document.getElementById('pan-l');
+    const panR = document.getElementById('pan-r');
+    panL.innerHTML = state.left.map(id => `<div class="mini">${id}</div>`).join('');
+    panR.innerHTML = state.right.map(id => `<div class="mini">${id}</div>`).join('');
+  }
+  function renderControls(){
+    const c = document.getElementById('controls');
+    const phase = $el('div'); // will fill
+    if(state.phase === 'setup'){
+      c.innerHTML = `
+        <button class="side-l" id="side-l">→ 왼쪽판에 (선택된 동전)</button>
+        <button class="side-r" id="side-r">오른쪽판에 →</button>
+        <button id="clear">비우기</button>
+        <button class="primary" id="weigh" ${state.left.length === 0 || state.right.length === 0 || state.left.length !== state.right.length ? 'disabled' : ''}>저울 측정</button>
+      `;
+      document.getElementById('side-l').onclick = ()=>{ state._stage = 'L'; updateHint(); };
+      document.getElementById('side-r').onclick = ()=>{ state._stage = 'R'; updateHint(); };
+      document.getElementById('clear').onclick = ()=>{
+        state.left = []; state.right = []; state._stage = null;
+        renderCoins(); renderControls(); document.getElementById('vs').textContent='⚖️'; document.getElementById('vs').className='vs';
+      };
+      document.getElementById('weigh').onclick = weigh;
+    } else if(state.phase === 'weighed'){
+      c.innerHTML = `
+        <button id="reset">다음 저울 준비</button>
+        <button class="primary" id="go-pick" ${state.weighings.length < 1 ? 'disabled' : ''}>최종 지목으로</button>
+      `;
+      document.getElementById('reset').onclick = ()=>{
+        state.left = []; state.right = [];
+        state.phase = 'setup';
+        document.getElementById('vs').textContent='⚖️'; document.getElementById('vs').className='vs';
+        renderCoins(); renderControls(); updateHint();
+      };
+      document.getElementById('go-pick').onclick = ()=>{
+        state.phase = 'picking'; renderCoins(); renderControls(); updateHint();
+      };
+    } else if(state.phase === 'picking'){
+      c.innerHTML = `
+        <button class="primary" id="confirm" ${state.guess == null ? 'disabled' : ''}>이 동전이 가짜!</button>
+      `;
+      document.getElementById('confirm').onclick = confirmGuess;
+    } else {
+      c.innerHTML = '';
+    }
+    updateHint();
+    document.getElementById('w-count').textContent = `저울 ${state.weighings.length}/${MAX_WEIGHINGS}`;
+    document.getElementById('phase-stat').textContent = state.phase === 'setup' ? '배치 중' : state.phase === 'weighed' ? '측정됨' : state.phase === 'picking' ? '지목 중' : '종료';
+    document.getElementById('remain').textContent = `남은 저울: ${MAX_WEIGHINGS - state.weighings.length}`;
+  }
+  function updateHint(){
+    const h = document.getElementById('hint');
+    if(state.phase === 'setup'){
+      if(state._stage === 'L') h.textContent = '왼쪽판에 넣을 동전을 클릭';
+      else if(state._stage === 'R') h.textContent = '오른쪽판에 넣을 동전을 클릭';
+      else h.textContent = '왼쪽 or 오른쪽 버튼을 눌러 어느 판에 올릴지 정하고 동전을 클릭';
+    } else if(state.phase === 'weighed'){
+      h.textContent = '결과를 보고 다음 저울 or 최종 지목';
+    } else if(state.phase === 'picking'){
+      h.textContent = '가짜 동전을 클릭해 지목하세요';
+    }
+  }
+  function onCoinClick(id){
+    if(state.phase === 'setup'){
+      if(state._stage === 'L'){
+        if(state.right.includes(id)) state.right = state.right.filter(x => x !== id);
+        if(state.left.includes(id)) state.left = state.left.filter(x => x !== id);
+        else state.left.push(id);
+      } else if(state._stage === 'R'){
+        if(state.left.includes(id)) state.left = state.left.filter(x => x !== id);
+        if(state.right.includes(id)) state.right = state.right.filter(x => x !== id);
+        else state.right.push(id);
+      }
+      renderCoins(); renderControls();
+    } else if(state.phase === 'picking'){
+      state.guess = id;
+      renderCoins(); renderControls();
+    }
+  }
+  function weigh(){
+    const lw = state.left.reduce((s,id)=>s + (id-1 === fakeIdx ? (fakeIsHeavy?1.1:0.9) : 1), 0);
+    const rw = state.right.reduce((s,id)=>s + (id-1 === fakeIdx ? (fakeIsHeavy?1.1:0.9) : 1), 0);
+    const vs = document.getElementById('vs');
+    if(Math.abs(lw - rw) < 1e-6){ vs.textContent='= 균형'; vs.className='vs E'; }
+    else if(lw > rw){ vs.textContent='◀ 왼쪽 무거움'; vs.className='vs L'; }
+    else { vs.textContent='오른쪽 무거움 ▶'; vs.className='vs R'; }
+    state.weighings.push({ L: state.left.slice(), R: state.right.slice(), result: lw === rw ? 'E' : (lw > rw ? 'L' : 'R') });
+    state.phase = state.weighings.length >= MAX_WEIGHINGS ? 'picking' : 'weighed';
+    renderCoins();
+    renderControls();
+  }
+  function confirmGuess(){
+    state.phase = 'done';
+    state.won = state.guess - 1 === fakeIdx;
+    const stats = loadStats(KEY, { played:0, wins:0, bestWithOneWeigh:0 });
+    stats.played++;
+    if(state.won){
+      stats.wins++;
+      if(state.weighings.length <= 1) stats.bestWithOneWeigh++;
+    }
+    Brain.saveStats(KEY, stats);
+    renderCoins(); renderControls();
+    const fb = document.getElementById('fb');
+    if(state.won){
+      fb.className='feedback right';
+      fb.textContent = `✓ 정답! ${fakeIdx+1}번이 가짜였어요 (${fakeIsHeavy?'무거움':'가벼움'}, ${state.weighings.length}회 측정).`;
+    } else {
+      fb.className='feedback wrong';
+      fb.textContent = `✗ ${fakeIdx+1}번이 가짜였어요 (${fakeIsHeavy?'무거움':'가벼움'}).`;
+    }
+    setTimeout(showResult, 2200);
+  }
+  function showResult(){
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = state.won ? (state.weighings.length <= 1 ? '🏆' : '🎉') : '😢';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">${state.won ? '찾아냈습니다' : '놓쳤어요'}</div>
+      <div class="result-sub">가짜는 ${fakeIdx+1}번 (${fakeIsHeavy?'무거움':'가벼움'}) · 측정 ${state.weighings.length}회</div>
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`가짜 동전 찾기\n⚖️ ${state.won?'승':'패'} (측정 ${state.weighings.length}회)`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { N, MAX_WEIGHINGS, KEY };
+</script>
+</body>
+</html>

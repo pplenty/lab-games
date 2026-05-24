@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>리듬 레인 | 5분 퍼즐</title>
+<meta name="description" content="떨어지는 노트를 판정선에 맞춰 탭하는 60초 Canvas 리듬 게임.">
+<meta property="og:title" content="리듬 레인">
+<meta property="og:description" content="떨어지는 노트를 판정선에 맞춰 탭.">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/rhythm-lane/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#7b5cff; --accent-dark:#5940cc; --accent-soft:#c9c0ff; }
+  main{ max-width: 640px; }
+  .hud-grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:8px;
+    margin-bottom:12px;
+  }
+  .hud-box{
+    background:var(--card);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    padding:8px 10px;
+    text-align:center;
+  }
+  .hud-label{
+    color:var(--ink-dim);
+    font-size:11px;
+    font-weight:800;
+  }
+  .hud-value{
+    color:var(--accent-dark);
+    font-size:19px;
+    font-weight:900;
+    font-variant-numeric:tabular-nums;
+  }
+  .game-stage{
+    background:var(--card);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:12px;
+    margin-bottom:14px;
+  }
+  .rhythm-canvas{
+    display:block;
+    width:100%;
+    aspect-ratio:4 / 5;
+    background:#080916;
+    border-radius:8px;
+    cursor:pointer;
+    touch-action:none;
+  }
+  .lane-help{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:8px;
+    margin:0 0 12px;
+  }
+  .lane-key{
+    background:var(--card);
+    border:1px solid #e6ddcf;
+    border-radius:8px;
+    color:var(--ink-dim);
+    font-size:13px;
+    font-weight:800;
+    padding:8px;
+    text-align:center;
+  }
+  .hint-line{
+    color:var(--ink-dim);
+    font-size:13px;
+    line-height:1.6;
+    text-align:center;
+  }
+  .score-hero{
+    color:var(--accent-dark);
+    font-size:54px;
+    font-weight:900;
+    line-height:1;
+    margin:18px 0 8px;
+    text-align:center;
+  }
+  .result-stats{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:8px;
+    margin:16px 0;
+  }
+  .result-stats .hud-box{
+    border:1px solid #e6ddcf;
+    box-shadow:none;
+  }
+  @media(max-width:520px){
+    main{ padding-inline:14px; }
+    .hud-grid{ grid-template-columns:repeat(2,1fr); }
+    .result-stats{ grid-template-columns:1fr; }
+    .score-hero{ font-size:46px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const GAME_ID = 'rhythm-lane';
+const STORAGE_KEY = GAME_ID + '_stats';
+const GAME_MS = 60000;
+const BPM = 118;
+const BEAT = 60000 / BPM;
+const TRAVEL_MS = 1550;
+const LANES = 4;
+const KEYS = ['KeyD', 'KeyF', 'KeyJ', 'KeyK'];
+const KEY_LABELS = ['D', 'F', 'J', 'K'];
+const COLORS = ['#68e8ff', '#9d80ff', '#ff75b8', '#ffe06b'];
+const JUDGE = {
+  perfect: 42,
+  great: 82,
+  good: 128,
+  miss: 176
+};
+
+let canvas = null;
+let ctx = null;
+let rafId = 0;
+let state = null;
+let view = { w: 360, h: 450, dpr: 1, laneW: 90, hitY: 360 };
+
+function clamp(n, lo, hi){
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function rand(lo, hi){
+  return lo + Math.random() * (hi - lo);
+}
+
+function setCanvasSize(){
+  if (!canvas || !ctx) return;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(300, Math.floor(rect.width));
+  const h = Math.max(360, Math.floor(rect.height || w * 1.25));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  view = { w, h, dpr, laneW: w / LANES, hitY: h * 0.79 };
+}
+
+function makeChart(){
+  const notes = [];
+  let id = 0;
+
+  function add(beat, lane){
+    const hitAt = Math.round(beat * BEAT + 900);
+    if (hitAt < GAME_MS - 1200) {
+      notes.push({ id: id++, lane, hitAt, judged: false, result: null });
+    }
+  }
+
+  for (let beat = 0; beat < 112; beat++) {
+    if (beat % 4 === 0) {
+      add(beat, (beat / 4) % 4);
+    } else if (beat % 4 === 1) {
+      add(beat, 3 - ((beat / 4) | 0) % 4);
+    } else if (beat % 4 === 2) {
+      add(beat, (beat * 3) % 4);
+    }
+
+    if (beat > 16 && beat % 8 === 6) {
+      add(beat + 0.5, (beat / 2) % 4);
+    }
+
+    if (beat > 32 && beat % 12 === 4) {
+      add(beat, 0);
+      add(beat, 3);
+    }
+
+    if (beat > 64 && beat % 6 === 3) {
+      add(beat + 0.5, (beat + 1) % 4);
+    }
+  }
+
+  return notes.sort((a, b) => a.hitAt - b.hitAt || a.lane - b.lane);
+}
+
+function resetState(){
+  state = {
+    running: true,
+    startedAt: performance.now(),
+    lastAt: 0,
+    notes: makeChart(),
+    particles: [],
+    laneFlash: [0, 0, 0, 0],
+    score: 0,
+    combo: 0,
+    bestCombo: 0,
+    hit: 0,
+    miss: 0,
+    perfect: 0,
+    great: 0,
+    good: 0,
+    judgement: 'READY',
+    judgementAt: 0,
+    pulse: 0
+  };
+}
+
+function elapsed(now){
+  return now - state.startedAt;
+}
+
+function remainingMs(now){
+  return Math.max(0, GAME_MS - elapsed(now));
+}
+
+function noteY(note, now){
+  const until = note.hitAt - elapsed(now);
+  return view.hitY - (until / TRAVEL_MS) * (view.hitY + 70);
+}
+
+function laneCenter(lane){
+  return lane * view.laneW + view.laneW / 2;
+}
+
+function addParticles(lane, y, color, count, power){
+  const x = laneCenter(lane);
+  for (let i = 0; i < count; i++) {
+    const a = rand(-Math.PI, 0);
+    const sp = rand(power * 0.35, power);
+    const life = rand(0.32, 0.72);
+    state.particles.push({
+      x,
+      y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      life,
+      maxLife: life,
+      size: rand(2, 5),
+      color
+    });
+  }
+}
+
+function judgeLane(lane){
+  if (!state || !state.running) return;
+  const now = performance.now();
+  const t = elapsed(now);
+  let best = null;
+  let bestDiff = Infinity;
+
+  for (const note of state.notes) {
+    if (note.judged || note.lane !== lane) continue;
+    const diff = Math.abs(note.hitAt - t);
+    if (diff < bestDiff) {
+      best = note;
+      bestDiff = diff;
+    }
+    if (note.hitAt - t > JUDGE.miss) break;
+  }
+
+  state.laneFlash[lane] = 1;
+
+  if (!best || bestDiff > JUDGE.miss) {
+    state.combo = 0;
+    state.judgement = 'EMPTY';
+    state.judgementAt = now;
+    addParticles(lane, view.hitY, '#ff5e78', 8, 90);
+    return;
+  }
+
+  best.judged = true;
+  let points = 0;
+  let label = '';
+  let color = COLORS[lane];
+
+  if (bestDiff <= JUDGE.perfect) {
+    label = 'PERFECT';
+    points = 1000;
+    state.perfect += 1;
+  } else if (bestDiff <= JUDGE.great) {
+    label = 'GREAT';
+    points = 700;
+    state.great += 1;
+  } else if (bestDiff <= JUDGE.good) {
+    label = 'GOOD';
+    points = 420;
+    state.good += 1;
+  } else {
+    label = 'MISS';
+    points = 0;
+    color = '#ff5e78';
+  }
+
+  if (label === 'MISS') {
+    state.combo = 0;
+    state.miss += 1;
+  } else {
+    state.combo += 1;
+    state.bestCombo = Math.max(state.bestCombo, state.combo);
+    state.hit += 1;
+    state.score += points + Math.min(400, state.combo * 8);
+  }
+
+  state.judgement = label;
+  state.judgementAt = now;
+  addParticles(lane, view.hitY, color, label === 'PERFECT' ? 28 : 18, label === 'PERFECT' ? 190 : 140);
+  if (navigator.vibrate) navigator.vibrate(label === 'MISS' ? 28 : 12);
+}
+
+function autoMiss(now){
+  const t = elapsed(now);
+  for (const note of state.notes) {
+    if (note.judged) continue;
+    if (t - note.hitAt > JUDGE.miss) {
+      note.judged = true;
+      note.result = 'miss';
+      state.combo = 0;
+      state.miss += 1;
+      state.judgement = 'MISS';
+      state.judgementAt = now;
+      addParticles(note.lane, view.hitY, '#ff5e78', 6, 75);
+    } else if (note.hitAt - t > JUDGE.miss) {
+      break;
+    }
+  }
+}
+
+function updateParticles(dt){
+  const next = [];
+  for (const p of state.particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.985;
+    p.vy = p.vy * 0.985 + 360 * dt;
+    p.life -= dt;
+    if (p.life > 0) next.push(p);
+  }
+  state.particles = next;
+}
+
+function drawBackground(now){
+  const g = ctx.createLinearGradient(0, 0, 0, view.h);
+  g.addColorStop(0, '#080916');
+  g.addColorStop(0.48, '#171247');
+  g.addColorStop(1, '#090816');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, view.w, view.h);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  const pulse = 0.16 + Math.sin(now / 170) * 0.04;
+  const glow = ctx.createRadialGradient(view.w * 0.5, view.h * 0.25, 0, view.w * 0.5, view.h * 0.25, view.w * 0.7);
+  glow.addColorStop(0, 'rgba(123,92,255,' + pulse + ')');
+  glow.addColorStop(1, 'rgba(123,92,255,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, view.w, view.h);
+  ctx.restore();
+
+  for (let i = 0; i < 36; i++) {
+    const x = (i * 97 + now * 0.018) % view.w;
+    const y = (i * 53 + now * 0.045) % view.h;
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.12 + (i % 5) * 0.035) + ')';
+    ctx.fillRect(x, y, 1.5, 1.5);
+  }
+}
+
+function drawLanes(now){
+  for (let lane = 0; lane < LANES; lane++) {
+    const x = lane * view.laneW;
+    const flash = state.laneFlash[lane];
+    const laneGrad = ctx.createLinearGradient(x, 0, x + view.laneW, 0);
+    laneGrad.addColorStop(0, 'rgba(255,255,255,.025)');
+    laneGrad.addColorStop(0.5, flash > 0 ? 'rgba(255,255,255,' + (0.08 + flash * 0.22) + ')' : 'rgba(255,255,255,.045)');
+    laneGrad.addColorStop(1, 'rgba(255,255,255,.025)');
+    ctx.fillStyle = laneGrad;
+    ctx.fillRect(x, 0, view.laneW, view.h);
+
+    ctx.strokeStyle = 'rgba(255,255,255,.12)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, view.h);
+    ctx.stroke();
+
+    const c = laneCenter(lane);
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.fillStyle = COLORS[lane];
+    ctx.globalAlpha = 0.08 + flash * 0.16;
+    ctx.fillRect(c - view.laneW * 0.22, 0, view.laneW * 0.44, view.h);
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(255,255,255,.55)';
+    ctx.font = '800 13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(KEY_LABELS[lane], c, view.h - 18);
+  }
+
+  ctx.strokeStyle = 'rgba(255,255,255,.12)';
+  ctx.beginPath();
+  ctx.moveTo(view.w, 0);
+  ctx.lineTo(view.w, view.h);
+  ctx.stroke();
+
+  const linePulse = 0.65 + Math.sin(now / 115) * 0.25;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.strokeStyle = 'rgba(255,255,255,' + linePulse + ')';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(12, view.hitY);
+  ctx.lineTo(view.w - 12, view.hitY);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(123,92,255,.3)';
+  ctx.lineWidth = 16;
+  ctx.beginPath();
+  ctx.moveTo(12, view.hitY);
+  ctx.lineTo(view.w - 12, view.hitY);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawNotes(now){
+  const t = elapsed(now);
+  for (const note of state.notes) {
+    if (note.judged) continue;
+    if (note.hitAt - t > TRAVEL_MS + 120) continue;
+    if (t - note.hitAt > JUDGE.miss + 100) continue;
+    const y = noteY(note, now);
+    const x = laneCenter(note.lane);
+    const w = view.laneW * 0.62;
+    const h = Math.max(18, view.w * 0.045);
+    const color = COLORS[note.lane];
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.shadowBlur = 18;
+    ctx.shadowColor = color;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2);
+    else ctx.rect(x - w / 2, y - h / 2, w, h);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.72)';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x - w * 0.34, y - h * 0.24, w * 0.68, h * 0.24, h * 0.12);
+    else ctx.rect(x - w * 0.34, y - h * 0.24, w * 0.68, h * 0.24);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawParticles(){
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const p of state.particles) {
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (0.8 + alpha), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawJudgement(now){
+  const age = now - state.judgementAt;
+  if (age > 720 || !state.judgement) return;
+  const alpha = 1 - age / 720;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '900 ' + Math.round(view.w * 0.095) + 'px system-ui, sans-serif';
+  const color = state.judgement === 'MISS' || state.judgement === 'EMPTY' ? '#ff5e78' : '#ffffff';
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = color;
+  ctx.fillStyle = color;
+  ctx.fillText(state.judgement, view.w / 2, view.h * 0.33 - age * 0.02);
+  ctx.restore();
+}
+
+function drawProgress(now){
+  const remain = remainingMs(now);
+  const pct = 1 - remain / GAME_MS;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,.12)';
+  ctx.fillRect(14, 14, view.w - 28, 6);
+  const grad = ctx.createLinearGradient(14, 0, view.w - 14, 0);
+  grad.addColorStop(0, '#68e8ff');
+  grad.addColorStop(0.5, '#ff75b8');
+  grad.addColorStop(1, '#ffe06b');
+  ctx.fillStyle = grad;
+  ctx.fillRect(14, 14, (view.w - 28) * pct, 6);
+  ctx.restore();
+}
+
+function draw(now){
+  drawBackground(now);
+  drawLanes(now);
+  drawNotes(now);
+  drawParticles();
+  drawJudgement(now);
+  drawProgress(now);
+}
+
+function updateHud(now){
+  const timeEl = document.getElementById('hud-time');
+  if (!timeEl || !state) return;
+  timeEl.textContent = Math.ceil(remainingMs(now) / 1000) + 's';
+  document.getElementById('hud-score').textContent = state.score;
+  document.getElementById('hud-combo').textContent = state.combo;
+  document.getElementById('hud-hit').textContent = state.hit;
+}
+
+function update(now){
+  if (!state.lastAt) state.lastAt = now;
+  const dt = Math.min(0.035, (now - state.lastAt) / 1000);
+  state.lastAt = now;
+
+  for (let i = 0; i < LANES; i++) {
+    state.laneFlash[i] = Math.max(0, state.laneFlash[i] - dt * 5.5);
+  }
+
+  autoMiss(now);
+  updateParticles(dt);
+
+  if (remainingMs(now) <= 0) {
+    finish();
+  }
+}
+
+function loop(now){
+  if (!state || !state.running) return;
+  update(now);
+  if (!state.running) return;
+  draw(now);
+  updateHud(now);
+  rafId = requestAnimationFrame(loop);
+}
+
+function renderHome(){
+  cancelAnimationFrame(rafId);
+  clear();
+  const stats = loadStats(STORAGE_KEY, { played: 0, bestScore: 0 });
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div id="title-screen">' +
+      '<div class="brand-icon">♪</div>' +
+      '<h1 class="hero-title">리듬 레인</h1>' +
+      '<p class="hero-sub">떨어지는 노트를 판정선에 맞춰 탭하는 Canvas 리듬 게임.</p>' +
+      '<div class="today-card"><div class="today-label">BEST</div><div class="today-date">' + (stats.bestScore || 0) + '점</div></div>' +
+      '<div class="rule-card">' +
+        '<h3>규칙</h3>' +
+        '<p>노트가 판정선에 닿는 순간 레인을 탭하세요. 키보드는 D, F, J, K를 사용합니다. 정확할수록 점수와 콤보가 크게 올라갑니다.</p>' +
+      '</div>' +
+      '<div class="lane-help"><div class="lane-key">D</div><div class="lane-key">F</div><div class="lane-key">J</div><div class="lane-key">K</div></div>' +
+      '<div class="btn-row"><button class="btn" id="start-btn">시작</button></div>' +
+      '<div class="credits">5분 퍼즐 · 2026</div>' +
+    '</div>';
+  document.getElementById('start-btn').onclick = start;
+}
+
+function renderPlaying(){
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div class="hud-grid">' +
+      '<div class="hud-box"><div class="hud-label">TIME</div><div class="hud-value" id="hud-time">60s</div></div>' +
+      '<div class="hud-box"><div class="hud-label">SCORE</div><div class="hud-value" id="hud-score">0</div></div>' +
+      '<div class="hud-box"><div class="hud-label">COMBO</div><div class="hud-value" id="hud-combo">0</div></div>' +
+      '<div class="hud-box"><div class="hud-label">HIT</div><div class="hud-value" id="hud-hit">0</div></div>' +
+    '</div>' +
+    '<div class="game-stage"><canvas class="rhythm-canvas" id="rhythm-canvas" aria-label="리듬 레인 게임 화면"></canvas></div>' +
+    '<div class="lane-help"><div class="lane-key">D</div><div class="lane-key">F</div><div class="lane-key">J</div><div class="lane-key">K</div></div>' +
+    '<p class="hint-line">레인을 탭하거나 D F J K 키를 누르세요.</p>';
+
+  canvas = document.getElementById('rhythm-canvas');
+  ctx = canvas.getContext('2d');
+  setCanvasSize();
+  canvas.addEventListener('pointerdown', function(event){
+    event.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const lane = clamp(Math.floor((event.clientX - rect.left) / view.laneW), 0, LANES - 1);
+    judgeLane(lane);
+  });
+}
+
+function start(){
+  renderPlaying();
+  resetState();
+  draw(performance.now());
+  rafId = requestAnimationFrame(loop);
+}
+
+function accuracy(){
+  const judged = state.hit + state.miss;
+  return judged ? Math.round((state.hit / judged) * 100) : 0;
+}
+
+function finish(){
+  if (!state || !state.running) return;
+  state.running = false;
+  cancelAnimationFrame(rafId);
+  const finalScore = state.score;
+  const acc = accuracy();
+  const stats = recordBestScore(STORAGE_KEY, finalScore, {
+    hit: state.hit,
+    miss: state.miss,
+    perfect: state.perfect,
+    bestCombo: state.bestCombo,
+    accuracy: acc,
+    date: Brain.todayDateString()
+  });
+
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<section class="card">' +
+      '<h1 class="title">리듬 레인 결과</h1>' +
+      '<div class="score-hero">' + finalScore + '</div>' +
+      '<p class="puzzle-desc" style="text-align:center;">최고 기록 ' + (stats.bestScore || finalScore) + '점</p>' +
+      '<div class="result-stats">' +
+        '<div class="hud-box"><div class="hud-label">ACCURACY</div><div class="hud-value">' + acc + '%</div></div>' +
+        '<div class="hud-box"><div class="hud-label">PERFECT</div><div class="hud-value">' + state.perfect + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">BEST COMBO</div><div class="hud-value">' + state.bestCombo + '</div></div>' +
+      '</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn" id="again-btn">다시</button>' +
+        '<button class="btn secondary" id="share-btn">공유</button>' +
+      '</div>' +
+    '</section>';
+
+  document.getElementById('again-btn').onclick = start;
+  document.getElementById('share-btn').onclick = function(event){
+    const text = '리듬 레인 ' + finalScore + '점 · 정확도 ' + acc + '% · 콤보 ' + state.bestCombo + '\\nhttps://games.jdgrid.com/brain/games/rhythm-lane/';
+    shareToClipboard(text, event.currentTarget);
+  };
+}
+
+document.addEventListener('keydown', function(event){
+  if (!state || !state.running) return;
+  const lane = KEYS.indexOf(event.code);
+  if (lane >= 0) {
+    event.preventDefault();
+    judgeLane(lane);
+  }
+});
+
+window.addEventListener('resize', function(){
+  setCanvasSize();
+});
+
+renderHome();
+</script>
+</body>
+</html>

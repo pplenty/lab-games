@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>얼굴과 이름 | 5분 퍼즐</title>
+<meta property="og:title" content="얼굴과 이름">
+<meta property="og:description" content="얼굴과 이름을 짝지어 기억하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#d67a54;--accent-dark:#a05533;--accent-soft:#f0c4a6; }
+  .faces-row{ display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px;max-width:480px;margin-left:auto;margin-right:auto; }
+  .face{ aspect-ratio:3/4;background:var(--accent-soft);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px; }
+  .face .emo{ font-size:48px;line-height:1; }
+  .face .nm{ font-size:13px;font-weight:700;color:var(--accent-dark);margin-top:6px; }
+  .quiz-face{ text-align:center;padding:20px;background:var(--accent-soft);border-radius:14px;margin-bottom:14px; }
+  .quiz-face .emo{ font-size:72px;line-height:1; }
+  .opts{ display:grid;grid-template-columns:repeat(2,1fr);gap:8px; }
+  .opts button{ padding:14px;background:white;border:2px solid var(--ink-faint);border-radius:10px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;transition:all .12s; }
+  .opts button:hover:not(:disabled){ border-color:var(--accent);background:var(--accent-soft); }
+  .opts button.correct{ background:var(--green);color:white;border-color:var(--green-dark); }
+  .opts button.wrong{ background:var(--red);color:white;border-color:#a43232; }
+  .phase-note{ text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:10px; }
+  .timer{ text-align:center;font-weight:700;color:var(--accent-dark);margin-bottom:8px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, shuffle, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const FACES = ['👩','👨','👧','🧑','👱','👨‍🦰','👩‍🦱','👵','👴','🧔'];
+const NAMES = ['지훈','서연','민수','하윤','도현','수아','은우','가영','정호','미래','준서','지아','현우'];
+const COUNT = 5;
+const STUDY_MS = 12000;
+const KEY = 'face_name_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🙂</div>
+    <h1 class="hero-title">얼굴과 <span style="color:var(--accent);">이름</span></h1>
+    <div class="hero-sub">${COUNT}명의 얼굴-이름을 ${STUDY_MS/1000}초간 외운 뒤<br>얼굴을 보고 이름을 맞혀보세요.</div>
+    ${stats.bestScore>0?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${COUNT}</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const faces = shuffle(FACES).slice(0, COUNT);
+  const names = shuffle(NAMES).slice(0, COUNT);
+  const pairs = faces.map((f,i)=>({face:f, name:names[i]}));
+
+  clear(app);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="phase-note">${STUDY_MS/1000}초 동안 외우세요</div>
+    <div class="timer" id="t">${(STUDY_MS/1000).toFixed(1)}s</div>
+    <div class="faces-row">
+      ${pairs.map(p => `<div class="face"><div class="emo">${p.face}</div><div class="nm">${p.name}</div></div>`).join('')}
+    </div>
+  `;
+  app.appendChild(card);
+  const start = performance.now();
+  const iv = setInterval(()=>{
+    const rem = Math.max(0, STUDY_MS - (performance.now() - start));
+    document.getElementById('t').textContent = (rem/1000).toFixed(1)+'s';
+    if(rem <= 0){ clearInterval(iv); quiz(pairs); }
+  }, 100);
+}
+
+function quiz(pairs){
+  const state = { i:0, correct:0, order: shuffle(pairs) };
+  next();
+  function next(){
+    if(state.i >= pairs.length){
+      const stats = Brain.recordBestScore(KEY, state.correct, { total: pairs.length });
+      const isBest = stats.bestScore === state.correct;
+      clear(app);
+      const r = $el('div','result-card');
+      r.innerHTML = `
+        <div class="result-emoji">${state.correct===pairs.length?'🏆':state.correct>=3?'🎉':'👏'}</div>
+        <div class="result-title">얼굴-이름 종료</div>
+        <div class="result-big">${state.correct}/${pairs.length}</div>
+        ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+        <div class="btn-row">
+          <button class="btn" id="s">공유</button>
+          <button class="btn secondary" id="a">다시</button>
+          <button class="btn ghost" id="h">홈</button>
+        </div>
+      `;
+      app.appendChild(r);
+      document.getElementById('a').onclick=startGame;
+      document.getElementById('h').onclick=showTitle;
+      document.getElementById('s').onclick=(e)=>Brain.shareToClipboard(`얼굴과 이름\n🙂 ${state.correct}/${pairs.length}${isBest?' 🌟':''}`, e.target);
+      return;
+    }
+    const p = state.order[state.i];
+    const others = shuffle(pairs.filter(x => x.name !== p.name)).slice(0,3).map(x=>x.name);
+    const opts = shuffle([p.name, ...others]);
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${pairs.length}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="quiz-face"><div class="emo">${p.face}</div></div>
+      <div class="phase-note">이 사람의 이름은?</div>
+      <div class="opts">${opts.map(n=>`<button data-n="${n}">${n}</button>`).join('')}</div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    card.querySelectorAll('button').forEach(b=>{
+      b.onclick = ()=>{
+        card.querySelectorAll('button').forEach(x=>x.disabled=true);
+        const fb = document.getElementById('fb');
+        if(b.dataset.n === p.name){ b.classList.add('correct'); fb.className='feedback right'; fb.textContent='✓'; state.correct++; }
+        else { b.classList.add('wrong'); [...card.querySelectorAll('button')].find(x=>x.dataset.n===p.name).classList.add('correct'); fb.className='feedback wrong'; fb.textContent='정답: '+p.name; }
+        setTimeout(()=>{ state.i++; next(); }, 1000);
+      };
+    });
+  }
+}
+showTitle();
+window.__GAME__ = { FACES, NAMES, COUNT, STUDY_MS, KEY };
+</script>
+</body>
+</html>

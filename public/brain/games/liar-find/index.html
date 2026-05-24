@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>라이어 찾기 | 5분 퍼즐</title>
+<meta property="og:title" content="라이어 찾기">
+<meta property="og:description" content="네 명의 진술을 분석해 거짓말쟁이를 찾아보세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#8c5a9e;--accent-dark:#623f6f;--accent-soft:#d3bbde; }
+  .statements{ display:flex;flex-direction:column;gap:8px;margin-bottom:16px; }
+  .stmt{ display:flex;gap:12px;align-items:center;background:var(--bg-2);padding:12px 14px;border-radius:10px; }
+  .stmt .who{ background:var(--accent);color:white;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0; }
+  .clue{ background:#fffaf0;border-left:3px solid var(--gold);padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:14px;color:#8a6a28; }
+  .buttons{ display:grid;grid-template-columns:repeat(4,1fr);gap:10px; }
+  .btn-who{ padding:16px 6px;background:white;border:2px solid var(--ink-faint);border-radius:10px;font:inherit;font-size:18px;font-weight:800;cursor:pointer;transition:all .1s; }
+  .btn-who:hover:not(:disabled){ border-color:var(--accent);background:var(--accent-soft); }
+  .btn-who.correct{ background:var(--green);color:white;border-color:var(--green-dark); }
+  .btn-who.wrong{ background:var(--red);color:white;border-color:#a43232; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, seededPick, mulberry32, randomSeed, escapeHtml } = Brain;
+injectBackLink('../../');
+
+// Each puzzle: 3-4 suspects, one is the liar, brute-force verified.
+// Constraint interpretation: "X는 범인이 아니다" / "Y가 범인이다" / "Z의 말이 거짓" etc.
+// Internal: each statement is a predicate function over (culprit).
+const PUZZLES = [
+  {
+    scene:'사무실의 커피가 사라졌다.',
+    people:['A','B','C'],
+    statements:[
+      { who:'A', text:'"저는 범인이 아닙니다."',   pred:c=>c!=='A' },
+      { who:'B', text:'"A가 범인입니다."',         pred:c=>c==='A' },
+      { who:'C', text:'"저는 커피를 싫어해요."',   pred:c=>c!=='C' }
+    ],
+    clue:'세 명 중 한 명만 진실, 나머지는 거짓. 범인은 1명.',
+    rule:'one-true',
+    culprit:'C'
+  },
+  {
+    scene:'도서관의 책갈피가 옮겨졌다.',
+    people:['가','나','다'],
+    statements:[
+      { who:'가', text:'"나가 옮기는 것을 봤어요."', pred:c=>c==='나' },
+      { who:'나', text:'"가의 말이 사실입니다."',     pred:c=>c==='나' },
+      { who:'다', text:'"저는 어제 도서관에 없었어요."', pred:(c,h)=>!h }
+    ],
+    clue:'세 명 중 한 명만 거짓말. 범인은 1명.',
+    rule:'one-lie',
+    culprit:'나',
+    hasHidden:true
+  },
+  {
+    scene:'식당의 마지막 빵이 사라졌다.',
+    people:['P','Q','R'],
+    statements:[
+      { who:'P', text:'"R이 가져갔어요."',          pred:c=>c==='R' },
+      { who:'Q', text:'"P는 거짓말을 합니다."',     pred:c=>c!=='R' },
+      { who:'R', text:'"저는 빵을 먹지 않습니다."', pred:c=>c!=='R' }
+    ],
+    clue:'세 명 중 한 명만 진실. 범인은 1명.',
+    rule:'one-true',
+    culprit:'R'
+  },
+  {
+    scene:'편집실의 특집 기사 파일이 삭제되었다.',
+    people:['K','L','M'],
+    statements:[
+      { who:'K', text:'"M이 파일을 지웠어요."',       pred:c=>c==='M' },
+      { who:'L', text:'"K의 말은 거짓입니다."',       pred:c=>c!=='M' },
+      { who:'M', text:'"저는 범인이 아닙니다."',      pred:c=>c!=='M' }
+    ],
+    clue:'세 명 중 한 명만 진실. 범인은 1명.',
+    rule:'one-true',
+    culprit:'M'
+  },
+  {
+    scene:'시험지 한 장이 교무실에서 사라졌다.',
+    people:['민수','지영','현우'],
+    statements:[
+      { who:'민수', text:'"지영이 시험지를 봤어요."',   pred:c=>c==='지영' },
+      { who:'지영', text:'"저는 아닙니다."',            pred:c=>c!=='지영' },
+      { who:'현우', text:'"민수의 말이 거짓입니다."',   pred:c=>c!=='지영' }
+    ],
+    clue:'세 명 중 한 명만 진실. 범인은 1명.',
+    rule:'one-true',
+    culprit:'지영'
+  },
+  {
+    scene:'도서관의 귀한 책이 대출 없이 사라졌다.',
+    people:['갑','을','병'],
+    statements:[
+      { who:'갑', text:'"병이 책을 가져갔어요."',       pred:c=>c==='병' },
+      { who:'을', text:'"갑은 거짓말을 하고 있어요."',  pred:c=>c!=='병' },
+      { who:'병', text:'"갑이 범인입니다."',            pred:c=>c==='갑' }
+    ],
+    clue:'세 명 중 한 명만 거짓말. 범인은 1명.',
+    rule:'one-lie',
+    culprit:'갑'
+  }
+];
+
+const TOTAL = 3;
+const KEY = 'liar_find_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔍</div>
+    <h1 class="hero-title">라이어 <span style="color:var(--accent);">찾기</span></h1>
+    <div class="hero-sub">진술을 분석해 거짓말쟁이(범인)를<br>한 번에 지목하세요. 매 판 ${TOTAL}문제 무작위.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const order = Brain.shuffle(PUZZLES, rng);
+  const state = { order, i:0, correct:0 };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const p = state.order[state.i];
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="puzzle-desc">${escapeHtml(p.scene)}</div>
+      <div class="statements">
+        ${p.statements.map(s => `<div class="stmt"><div class="who">${escapeHtml(s.who)}</div><div>${escapeHtml(s.text)}</div></div>`).join('')}
+      </div>
+      <div class="clue">💡 ${escapeHtml(p.clue)}</div>
+      <div class="buttons" style="grid-template-columns:repeat(${p.people.length},1fr);">
+        ${p.people.map(n => `<button class="btn-who" data-n="${escapeHtml(n)}">${escapeHtml(n)}</button>`).join('')}
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    card.querySelectorAll('.btn-who').forEach(b=>{
+      b.onclick = ()=>{
+        card.querySelectorAll('.btn-who').forEach(x=>x.disabled=true);
+        const fb = document.getElementById('fb');
+        if(b.dataset.n === p.culprit){
+          b.classList.add('correct');
+          fb.className='feedback right'; fb.textContent='✓';
+          state.correct++;
+        } else {
+          b.classList.add('wrong');
+          card.querySelector(`.btn-who[data-n="${p.culprit}"]`).classList.add('correct');
+          fb.className='feedback wrong'; fb.textContent='범인은 '+p.culprit;
+        }
+        setTimeout(()=>{ state.i++; next(); }, 1300);
+      };
+    });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=2?'🎉':'👏'}</div>
+      <div class="result-title">추리 종료</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`라이어 찾기\n🔍 ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { PUZZLES, TOTAL, KEY };
+</script>
+</body>
+</html>

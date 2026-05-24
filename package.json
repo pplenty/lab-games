@@ -1,0 +1,17 @@
+{
+  "name": "lab-games",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "context": "node tools/context.mjs",
+    "dev": "python3 -m http.server 4173 --directory public",
+    "game:new": "node tools/scaffold-brain-game.mjs",
+    "build": "node tools/build-sitemap.mjs",
+    "check": "node tools/check-site.mjs",
+    "verify": "npm run build && npm run check"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>거스름돈 계산 | 5분 퍼즐</title>
+<meta property="og:title" content="거스름돈 계산">
+<meta property="og:description" content="얼마를 거슬러줘야 할까요?">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#478b77;--accent-dark:#2a6654;--accent-soft:#b2d4c6; }
+  .scene{ padding:24px 16px;background:var(--accent-soft);border-radius:14px;text-align:center;margin-bottom:14px; }
+  .scene .price{ font-size:32px;font-weight:800;color:var(--accent-dark); }
+  .scene .paid{ font-size:22px;color:var(--ink-dim);margin-top:6px; }
+  .scene .prompt{ font-size:13px;color:var(--ink-dim);margin-top:8px; }
+  .input-row{ background:var(--card);border-radius:10px;padding:12px;box-shadow:var(--shadow);display:flex;gap:8px; }
+  .input-row input{ flex:1;padding:12px;border:2px solid var(--ink-faint);border-radius:8px;font:inherit;font-size:26px;font-weight:700;text-align:center;background:var(--bg); }
+  .input-row button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const TOTAL = 8;
+const KEY = 'change_calc_stats';
+const app = document.getElementById('app');
+
+function fmt(n){ return n.toLocaleString('ko-KR'); }
+function genQ(){
+  // price: 100-9900 won in 100s, avoid multiples of 1000 so change is non-trivial
+  let price;
+  do { price = (1 + Math.floor(Math.random()*98)) * 100; } while(price % 1000 === 0);
+  // paid: next round thousand plus optional extra
+  const extraTicks = Math.random() < 0.4 ? 0 : 1 + Math.floor(Math.random()*4);
+  const paid = Math.ceil(price / 1000) * 1000 + extraTicks * 1000;
+  return { price, paid, answer: paid - price };
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">💴</div>
+    <h1 class="hero-title">거스름돈 <span style="color:var(--accent);">계산</span></h1>
+    <div class="hero-sub">가격과 낸 돈을 보고<br>얼마를 거슬러줘야 할까요?</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = { i:0, correct:0 };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const q = genQ();
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="scene">
+        <div class="price">가격 ${fmt(q.price)}원</div>
+        <div class="paid">받은 돈 ${fmt(q.paid)}원</div>
+        <div class="prompt">거스름돈은?</div>
+      </div>
+      <div class="input-row">
+        <input type="number" id="ans" placeholder="원" autocomplete="off" autofocus>
+        <button id="sub">→</button>
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    const input = document.getElementById('ans');
+    input.focus();
+    function check(){
+      const v = parseInt(input.value, 10);
+      if(isNaN(v)) return;
+      const fb = document.getElementById('fb');
+      if(v === q.answer){ fb.className='feedback right'; fb.textContent='✓ '+fmt(q.answer)+'원'; state.correct++; }
+      else { fb.className='feedback wrong'; fb.textContent='정답: '+fmt(q.answer)+'원'; }
+      setTimeout(()=>{ state.i++; next(); }, 1000);
+    }
+    document.getElementById('sub').onclick = check;
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=6?'🎉':'👏'}</div>
+      <div class="result-title">장사 끝</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`거스름돈 계산\n💴 ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { TOTAL, KEY, genQ };
+</script>
+</body>
+</html>

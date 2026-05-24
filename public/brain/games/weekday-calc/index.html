@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>요일 계산 | 5분 퍼즐</title>
+<meta property="og:title" content="요일 계산">
+<meta property="og:description" content="주어진 날짜의 요일을 빠르게 맞추세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#bd4080;--accent-dark:#8f2e60;--accent-soft:#e6b5cf; }
+  .date-display{
+    text-align:center;padding:32px 18px;background:var(--accent-soft);border-radius:14px;margin-bottom:14px;
+  }
+  .date-big{ font-size:42px;font-weight:800;color:var(--accent-dark); }
+  .hint{ color:var(--ink-dim);font-size:13px;margin-top:8px; }
+  .days{ display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:14px; }
+  .day-btn{
+    padding:14px 6px;background:white;border:2px solid var(--ink-faint);border-radius:10px;
+    font:inherit;font-weight:700;font-size:14px;cursor:pointer;transition:all .1s;
+  }
+  .day-btn:hover:not(:disabled){ border-color:var(--accent);background:var(--accent-soft); }
+  .day-btn.correct{ background:var(--green);color:white;border-color:var(--green-dark); }
+  .day-btn.wrong{ background:var(--red);color:white;border-color:#a44040; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, rand, mulberry32, randomSeed } = Brain;
+injectBackLink('../../');
+
+const DAYS = ['일','월','화','수','목','금','토'];
+const TOTAL = 5;
+const KEY = 'weekday_stats';
+const app = document.getElementById('app');
+
+function randomDate(rng){
+  const y = 2000 + Math.floor(rng() * 50);
+  const m = 1 + Math.floor(rng() * 12);
+  const daysIn = new Date(y, m, 0).getDate();
+  const d = 1 + Math.floor(rng() * daysIn);
+  return new Date(y, m-1, d);
+}
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">📅</div>
+    <h1 class="hero-title">요일 <span style="color:var(--accent);">계산</span></h1>
+    <div class="hero-sub">주어진 날짜가 무슨 요일인지<br>빠르게 맞혀보세요. ${TOTAL}문제.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const state = { rng, i:0, correct:0 };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const d = randomDate(state.rng);
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="date-display">
+        <div class="date-big">${d.getFullYear()}. ${d.getMonth()+1}. ${d.getDate()}</div>
+        <div class="hint">이 날은 무슨 요일일까요?</div>
+      </div>
+      <div class="days" id="days">
+        ${DAYS.map(x => `<button class="day-btn" data-d="${x}">${x}</button>`).join('')}
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    const answer = DAYS[d.getDay()];
+    card.querySelectorAll('.day-btn').forEach(b=>{
+      b.onclick = ()=>{
+        card.querySelectorAll('.day-btn').forEach(x=>x.disabled=true);
+        const fb = document.getElementById('fb');
+        if(b.dataset.d === answer){
+          b.classList.add('correct');
+          fb.className='feedback right'; fb.textContent='✓ '+answer+'요일';
+          state.correct++;
+        } else {
+          b.classList.add('wrong');
+          card.querySelector(`.day-btn[data-d="${answer}"]`).classList.add('correct');
+          fb.className='feedback wrong'; fb.textContent='정답은 '+answer+'요일';
+        }
+        setTimeout(()=>{ state.i++; next(); }, 1100);
+      };
+    });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = state.correct === TOTAL ? '🏆' : state.correct >= 3 ? '🎉' : '👏';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">요일 챌린지 종료</div>
+      <div class="result-big">${state.correct} / ${TOTAL}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고 기록</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`요일 계산\n📅 ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { DAYS, TOTAL, KEY, randomDate };
+</script>
+</body>
+</html>

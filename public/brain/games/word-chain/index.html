@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>끝말잇기 | 5분 퍼즐</title>
+<meta property="og:title" content="끝말잇기">
+<meta property="og:description" content="AI와 번갈아 단어를 이어가세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#c97a6c;--accent-dark:#965241;--accent-soft:#e6bfb5; }
+  .chain{ display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto;margin-bottom:14px; }
+  .chain-row{ display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px; }
+  .chain-row.me{ background:var(--accent-soft); }
+  .chain-row.ai{ background:var(--bg-2); }
+  .chain-row .who{ font-size:12px;font-weight:700;color:var(--ink-dim);min-width:28px; }
+  .chain-row .w{ font-size:20px;font-weight:700;flex:1; }
+  .chain-row .last{ color:var(--accent-dark);text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:4px; }
+  .target-display{ background:var(--accent-soft);padding:18px;border-radius:12px;text-align:center;margin-bottom:12px; }
+  .target-display .hint{ color:var(--ink-dim);font-size:13px; }
+  .target-display .ch{ font-size:42px;font-weight:800;color:var(--accent-dark);margin-top:6px; }
+  .input-row{ background:var(--card);border-radius:10px;padding:12px;box-shadow:var(--shadow);display:flex;gap:8px; }
+  .input-row input{ flex:1;padding:12px;border:2px solid var(--ink-faint);border-radius:8px;font:inherit;font-size:20px;font-weight:700;background:var(--bg); }
+  .input-row button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+  .timer{ text-align:center;color:var(--ink-dim);font-size:13px;margin-top:6px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, shuffle, mulberry32, randomSeed } = Brain;
+injectBackLink('../../');
+
+/* Small dictionary — 2-5 chars, common Korean nouns */
+const DICT = new Set([
+  '사과','과일','일기','기차','차례','예절','절약','약속','속담','담요',
+  '요리','리본','본인','인사','사람','람보','보석','석류','류현진','진실',
+  '실수','수박','박수','수건','건물','물고기','기린','린스','스키','키위',
+  '위성','성공','공기','기억','억만','만두','두부','부엉이','이불','불꽃',
+  '꽃잎','잎사귀','귀신','신발','발자국','국수','수학','학생','생일','일요일',
+  '일기장','장난감','감자','자두','두더지','지도','도시','시간','간식','식당',
+  '당근','근육','육지','지구','구름','름달','달력','역사','사자','자격',
+  '격자','자석','석양','양파','파도','도넛','넛트','트럭','럭비','비밀',
+  '밀가루','루비','비행기','기린','린터','터널','널빤지','지갑','갑옷','옷장',
+  '장미','미소','소금','금고','고양이','이빨','빨래','래퍼','퍼즐','즐거움'
+]);
+
+const DURATION = 60000;
+const KEY = 'wordchain_stats';
+const app = document.getElementById('app');
+
+/* Extract last character (last syllable) */
+function lastChar(w){ return [...w].slice(-1)[0]; }
+function firstChar(w){ return [...w][0]; }
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔗</div>
+    <h1 class="hero-title">끝말 <span style="color:var(--accent);">잇기</span></h1>
+    <div class="hero-sub">AI와 번갈아 단어를 이어가세요.<br>60초 안에 몇 단어까지?</div>
+    <div class="rule-card">
+      AI가 단어를 제시하면 마지막 글자로 시작하는 단어를 입력.<br>
+      이미 쓴 단어·사전에 없는 단어는 불가.<br>
+      10초 내 답을 못 내면 AI 승.
+      ${stats.bestScore > 0 ? `<div class="best">🌟 최고 ${stats.bestScore}단어 연결</div>` : ''}
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  // Pick a starter
+  const words = [...DICT];
+  const starter = words[Math.floor(rng() * words.length)];
+  const state = {
+    chain: [{ who:'ai', w: starter }],
+    used: new Set([starter]),
+    startedAt: performance.now(),
+    turnLimit: 10000,
+    turnStart: performance.now(),
+    finished: false,
+    timer: null
+  };
+
+  function aiRespond(){
+    const target = lastChar(state.chain[state.chain.length-1].w);
+    const candidates = [];
+    for(const w of DICT){
+      if(state.used.has(w)) continue;
+      if(firstChar(w) === target) candidates.push(w);
+    }
+    if(candidates.length === 0) return null;
+    return candidates[Math.floor(Math.random()*candidates.length)];
+  }
+
+  function render(){
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">🔗 ${state.chain.length}</div><div class="stat" id="remain">60s</div>`;
+    app.appendChild(top);
+    const chainWrap = $el('div','chain');
+    state.chain.forEach(c => {
+      const row = $el('div','chain-row '+c.who);
+      const w = c.w;
+      const parts = [...w];
+      const html = parts.map((ch, i) => i === parts.length-1 ? `<span class="last">${ch}</span>` : ch).join('');
+      row.innerHTML = `<div class="who">${c.who === 'ai' ? 'AI' : '나'}</div><div class="w">${html}</div>`;
+      chainWrap.appendChild(row);
+    });
+    app.appendChild(chainWrap);
+
+    const last = state.chain[state.chain.length - 1];
+    if(last.who === 'ai' && !state.finished){
+      const target = lastChar(last.w);
+      const disp = $el('div','target-display');
+      disp.innerHTML = `<div class="hint">이 글자로 시작하는 단어를 입력하세요</div><div class="ch">${target}</div>`;
+      app.appendChild(disp);
+      const inp = $el('div','input-row');
+      inp.innerHTML = `<input id="in" placeholder="ex. ${target}..." autocomplete="off" autofocus><button id="go">→</button>`;
+      app.appendChild(inp);
+      const fb = $el('div','feedback'); fb.id='fb'; app.appendChild(fb);
+      const input = document.getElementById('in');
+      input.focus();
+      function submit(){
+        const w = input.value.trim();
+        if(!w) return;
+        if(state.used.has(w)){ fb.className='feedback wrong'; fb.textContent='이미 쓴 단어예요.'; return; }
+        if(!DICT.has(w)){ fb.className='feedback wrong'; fb.textContent='사전에 없는 단어예요.'; return; }
+        if(firstChar(w) !== target){ fb.className='feedback wrong'; fb.textContent='"'+target+'"로 시작해야 해요.'; return; }
+        state.used.add(w); state.chain.push({ who:'me', w });
+        state.turnStart = performance.now();
+        // AI's turn
+        const aiW = aiRespond();
+        if(!aiW){
+          fb.className='feedback right'; fb.textContent='AI가 못 이었어요. 당신 승!';
+          state.finished = true;
+          setTimeout(finish, 900);
+          render();
+          return;
+        }
+        state.used.add(aiW); state.chain.push({ who:'ai', w: aiW });
+        render();
+      }
+      document.getElementById('go').onclick = submit;
+      input.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); submit(); } });
+    }
+  }
+
+  function tick(){
+    if(state.finished){ return; }
+    const elapsed = performance.now() - state.startedAt;
+    const remaining = Math.max(0, DURATION - elapsed);
+    const el = document.getElementById('remain');
+    if(el) el.textContent = (remaining/1000).toFixed(1)+'s';
+    if(remaining <= 0){ state.finished = true; finish(); return; }
+    // per-turn limit
+    const turnElapsed = performance.now() - state.turnStart;
+    if(turnElapsed > state.turnLimit && state.chain[state.chain.length-1].who === 'ai'){
+      state.finished = true;
+      finish();
+    }
+  }
+  function finish(){
+    clearInterval(state.timer);
+    // score = total words the player got in (excluding starter)
+    const mine = state.chain.filter(c => c.who === 'me').length;
+    const stats = recordBestScore(KEY, mine, { total: state.chain.length });
+    const isBest = stats.bestScore === mine;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${mine>=10?'🏆':mine>=5?'🎉':'👏'}</div>
+      <div class="result-title">끝말잇기 종료</div>
+      <div class="result-big">${mine}</div>
+      <div class="result-sub">연결한 내 단어 수 (체인 길이 ${state.chain.length})</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`끝말잇기\n🔗 ${mine}단어 연결${isBest?' 🌟':''}`, e.target);
+  }
+  state.timer = setInterval(tick, 200);
+  render();
+}
+showTitle();
+window.__GAME__ = { DICT: [...DICT], DURATION, KEY, lastChar, firstChar };
+</script>
+</body>
+</html>

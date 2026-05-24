@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>거꾸로 세기 | 5분 퍼즐</title>
+<meta property="og:title" content="거꾸로 세기">
+<meta property="og:description" content="제시된 수에서 정해진 간격으로 거꾸로 세세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#4a9aa5;--accent-dark:#2e737d;--accent-soft:#b5d7dc; }
+  .display{
+    text-align:center;padding:24px 10px;background:var(--accent-soft);
+    border-radius:14px;margin-bottom:14px;
+  }
+  .display .prompt{ color:var(--ink-dim);font-size:13px;letter-spacing:.1em;margin-bottom:4px; }
+  .display .start{ font-size:52px;font-weight:800;color:var(--accent-dark);line-height:1;font-variant-numeric:tabular-nums; }
+  .display .op{ font-size:16px;color:var(--accent-dark);font-weight:700;margin-top:6px; }
+  .display .goal{ color:var(--ink-dim);font-size:13px;margin-top:8px; }
+  .chain{ display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:12px;font-variant-numeric:tabular-nums; }
+  .chip{
+    min-width:56px;padding:10px 12px;border-radius:10px;background:var(--bg-2);color:var(--ink-dim);
+    font-size:18px;font-weight:700;
+  }
+  .chip.current{ background:var(--accent);color:white; }
+  .chip.done{ background:var(--green);color:white; }
+  .input-area{ background:var(--card);border-radius:12px;padding:14px;box-shadow:var(--shadow);display:flex;gap:10px; }
+  .input-area input{
+    flex:1;padding:12px;border:2px solid var(--ink-faint);border-radius:8px;
+    font:inherit;font-size:24px;font-weight:700;text-align:center;background:var(--bg);
+    font-variant-numeric:tabular-nums;
+  }
+  .input-area button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestTime, injectBackLink, shareToClipboard, formatMs } = Brain;
+injectBackLink('../../');
+
+const STEPS = 8;
+const KEY = 'countdown_stats';
+const app = document.getElementById('app');
+
+function genPuzzle(){
+  // pick step (3, 4, 7, 8, 9, 11, 13) — not trivial 1/2/5/10
+  const steps = [3, 4, 7, 8, 9, 11, 13];
+  const step = steps[Math.floor(Math.random()*steps.length)];
+  const start = 100 + Math.floor(Math.random()*(300)) + step * STEPS;
+  return { start, step };
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestMs:null });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">⏬</div>
+    <h1 class="hero-title">거꾸로 <span style="color:var(--accent);">세기</span></h1>
+    <div class="hero-sub">제시된 수에서 정해진 간격으로<br>${STEPS}번 거꾸로 세어 빠르게 입력하세요.</div>
+    ${stats.bestMs ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${formatMs(stats.bestMs)}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const puz = genPuzzle();
+  const state = {
+    start: puz.start,
+    step: puz.step,
+    i: 0,
+    current: puz.start,
+    mistakes: 0,
+    startedAt: performance.now(),
+    tickHandle: null
+  };
+
+  function render(){
+    clear(app);
+    const top = $el('div','topbar');
+    const elapsed = performance.now() - state.startedAt;
+    top.innerHTML = `<div class="stat">${state.i}/${STEPS}</div><div class="stat" id="t">${formatMs(elapsed)}</div><div class="stat">오답 ${state.mistakes}</div>`;
+    app.appendChild(top);
+
+    const disp = $el('div','display');
+    disp.innerHTML = `
+      <div class="prompt">아래 수에서 ${state.step}씩 뺀 값을 차례대로 입력</div>
+      <div class="start">${state.start}</div>
+      <div class="op">− ${state.step}씩 거꾸로</div>
+      <div class="goal">목표까지 ${STEPS - state.i}번 남음</div>
+    `;
+    app.appendChild(disp);
+
+    const chain = $el('div','chain');
+    const values = [];
+    let v = state.start;
+    for(let k=0;k<STEPS;k++){
+      v -= state.step;
+      values.push(v);
+    }
+    chain.innerHTML = values.map((v,idx) => {
+      if(idx < state.i) return `<div class="chip done">${v}</div>`;
+      if(idx === state.i) return `<div class="chip current">?</div>`;
+      return `<div class="chip">?</div>`;
+    }).join('');
+    app.appendChild(chain);
+
+    const inp = $el('div','input-area');
+    inp.innerHTML = `
+      <input type="number" id="ans" autocomplete="off" autofocus placeholder="${state.start} − ${state.step} = ?">
+      <button id="sub">→</button>
+    `;
+    app.appendChild(inp);
+
+    const fb = $el('div','feedback'); fb.id='fb';
+    app.appendChild(fb);
+
+    const input = document.getElementById('ans');
+    const submit = document.getElementById('sub');
+    input.focus();
+
+    function check(){
+      const val = parseInt(input.value, 10);
+      if(isNaN(val)) return;
+      const target = state.start - state.step * (state.i + 1);
+      if(val === target){
+        state.i++;
+        if(state.i >= STEPS){
+          finish();
+        } else {
+          render();
+        }
+      } else {
+        state.mistakes++;
+        fb.className = 'feedback wrong';
+        fb.textContent = '다시 계산해보세요.';
+        input.value = '';
+        input.focus();
+        const ms = document.querySelectorAll('.topbar .stat')[2];
+        if(ms) ms.textContent = '오답 ' + state.mistakes;
+      }
+    }
+    submit.onclick = check;
+    input.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); check(); } });
+  }
+
+  function tick(){
+    const t = document.getElementById('t');
+    if(t) t.textContent = formatMs(performance.now() - state.startedAt);
+  }
+  function finish(){
+    clearInterval(state.tickHandle);
+    const elapsed = performance.now() - state.startedAt;
+    const penalty = state.mistakes * 2000;
+    const final = Math.round(elapsed + penalty);
+    const stats = recordBestTime(KEY, final, { mistakes: state.mistakes });
+    const isBest = stats.bestMs === final;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = final < 30000 ? '🏆' : final < 45000 ? '🎉' : '👏';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">완주!</div>
+      <div class="result-big">${formatMs(final)}</div>
+      <div class="result-sub">오답 ${state.mistakes}회${state.mistakes > 0 ? ` (+${(state.mistakes*2).toFixed(0)}s 패널티)` : ''}</div>
+      ${isBest ? '<div class="ribbon">🌟 최단 기록</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>
+      shareToClipboard(`거꾸로 세기\n⏬ ${formatMs(final)} (-${state.step}씩)${isBest?' 🌟':''}`, e.target);
+  }
+
+  render();
+  state.tickHandle = setInterval(tick, 200);
+}
+
+showTitle();
+window.__GAME__ = { STEPS, KEY, genPuzzle };
+</script>
+</body>
+</html>

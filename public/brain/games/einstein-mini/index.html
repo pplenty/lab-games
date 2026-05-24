@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>아인슈타인 미니 | 5분 퍼즐</title>
+<meta property="og:title" content="아인슈타인 미니">
+<meta property="og:description" content="진술들을 조합해 세 사람의 속성을 알아내세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#5a8ba0;--accent-dark:#3c6a7e;--accent-soft:#b8d0dc; }
+  .intro{ background:#fbfcff;border-left:3px solid var(--accent);padding:12px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;color:var(--ink-dim);line-height:1.7; }
+  .stmts{ display:flex;flex-direction:column;gap:8px;margin-bottom:14px; }
+  .stmt{ background:var(--bg-2);padding:10px 14px;border-radius:10px;font-size:14px; }
+  .stmt .n{ color:var(--accent);font-weight:700;margin-right:8px; }
+  .assign-table{ background:var(--card);padding:10px;border-radius:10px;box-shadow:var(--shadow);margin-bottom:14px; }
+  .row{ display:grid;grid-template-columns:80px 1fr;gap:8px;margin-bottom:8px;align-items:center; }
+  .row:last-child{ margin-bottom:0; }
+  .row .lab{ font-weight:800;color:var(--accent-dark); }
+  .chips{ display:flex;gap:4px;flex-wrap:wrap; }
+  .chip-btn{ background:var(--bg-2);border:2px solid transparent;border-radius:16px;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer;transition:all .1s; }
+  .chip-btn.active{ background:var(--accent);color:white;border-color:var(--accent-dark); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, saveStats, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const KEY = 'einstein_mini_stats';
+const app = document.getElementById('app');
+
+// Mini puzzle: 3 people × 1 attribute (color). Solution: permutation.
+// Puzzle: "A는 빨강이 아니다", "B는 파랑이다", ... → infer.
+const PUZZLES = [
+  {
+    people:['A','B','C'],
+    colors:['빨강','파랑','초록'],
+    statements:[
+      'B는 파랑을 좋아한다.',
+      'A는 초록을 좋아하지 않는다.'
+    ],
+    solution:{ A:'빨강', B:'파랑', C:'초록' }
+  },
+  {
+    people:['가','나','다'],
+    colors:['노랑','보라','주황'],
+    statements:[
+      '다는 노랑이 아니다.',
+      '가는 주황을 좋아한다.',
+      '나는 보라를 싫어한다.'
+    ],
+    solution:{ 가:'주황', 나:'노랑', 다:'보라' }
+  },
+  {
+    people:['X','Y','Z'],
+    colors:['검정','흰색','회색'],
+    statements:[
+      'Y는 검정을 좋아하지 않는다.',
+      'Z는 흰색이다.',
+      'X는 회색이 아니다.'
+    ],
+    solution:{ X:'검정', Y:'회색', Z:'흰색' }
+  },
+  {
+    people:['영수','미나','준호'],
+    colors:['의사','교사','요리사'],
+    statements:[
+      '미나는 요리사이다.',
+      '영수는 교사가 아니다.',
+      '준호는 의사가 아니다.'
+    ],
+    solution:{ 영수:'의사', 미나:'요리사', 준호:'교사' }
+  },
+  {
+    people:['철수','영희','민호'],
+    colors:['김밥','라면','피자'],
+    statements:[
+      '민호는 피자를 좋아한다.',
+      '철수는 라면을 싫어한다.',
+      '영희는 피자를 먹지 않는다.'
+    ],
+    solution:{ 철수:'김밥', 영희:'라면', 민호:'피자' }
+  },
+  {
+    people:['수지','현수','지민'],
+    colors:['독서','운동','음악'],
+    statements:[
+      '수지는 독서를 좋아한다.',
+      '현수는 운동이 아니다.',
+      '지민은 음악이 아니다.'
+    ],
+    solution:{ 수지:'독서', 현수:'음악', 지민:'운동' }
+  }
+];
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, solved:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🧩</div>
+    <h1 class="hero-title">아인슈타인 <span style="color:var(--accent);">미니</span></h1>
+    <div class="hero-sub">진술 2~3개를 조합해<br>세 사람에게 속성을 배정하세요.</div>
+    ${stats.solved>0?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">해결 ${stats.solved}/${stats.played}</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const p = PUZZLES[Math.floor(Math.random()*PUZZLES.length)];
+  const state = { p, assign:{} };
+  p.people.forEach(n => state.assign[n] = null);
+
+  function render(){
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">추론 퍼즐</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="intro">세 사람 ${p.people.join(', ')}가 각자 다른 색을 좋아합니다. 아래 진술을 바탕으로 배정하세요.</div>
+      <div class="stmts">
+        ${p.statements.map((s,i)=>`<div class="stmt"><span class="n">${i+1}</span>${s}</div>`).join('')}
+      </div>
+      <div class="assign-table">
+        ${p.people.map(n => `
+          <div class="row">
+            <div class="lab">${n}</div>
+            <div class="chips">${p.colors.map(c => `<button class="chip-btn${state.assign[n]===c?' active':''}" data-n="${n}" data-c="${c}">${c}</button>`).join('')}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="check">확인</button>
+        <button class="btn ghost" id="clear-btn">모두 지우기</button>
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    card.querySelectorAll('.chip-btn').forEach(b=>{
+      b.onclick = ()=>{
+        const n = b.dataset.n, c = b.dataset.c;
+        if(state.assign[n] === c) state.assign[n] = null;
+        else state.assign[n] = c;
+        render();
+      };
+    });
+    document.getElementById('clear-btn').onclick = ()=>{ p.people.forEach(n=>state.assign[n]=null); render(); };
+    document.getElementById('check').onclick = ()=>{
+      // Ensure every assigned and all different
+      const values = p.people.map(n => state.assign[n]);
+      if(values.some(v => v == null)){ document.getElementById('fb').className='feedback wrong'; document.getElementById('fb').textContent='모두 배정해주세요.'; return; }
+      if(new Set(values).size !== values.length){ document.getElementById('fb').className='feedback wrong'; document.getElementById('fb').textContent='색은 각자 다르게!'; return; }
+      const correct = p.people.every(n => state.assign[n] === p.solution[n]);
+      const stats = loadStats(KEY, { played:0, solved:0 });
+      stats.played++;
+      if(correct) stats.solved++;
+      saveStats(KEY, stats);
+      finish(correct, p);
+    };
+  }
+  render();
+}
+function finish(correct, p){
+  clear(app);
+  const r = $el('div','result-card');
+  r.innerHTML = `
+    <div class="result-emoji">${correct?'🏆':'😢'}</div>
+    <div class="result-title">${correct?'정답! 모두 일관됩니다.':'아쉬워요…'}</div>
+    <div class="result-sub">정답: ${p.people.map(n => n+'→'+p.solution[n]).join(', ')}</div>
+    <div class="btn-row">
+      <button class="btn" id="a">다시</button>
+      <button class="btn ghost" id="h">홈</button>
+      <button class="btn secondary" id="s">공유</button>
+    </div>
+  `;
+  app.appendChild(r);
+  document.getElementById('a').onclick = startGame;
+  document.getElementById('h').onclick = showTitle;
+  document.getElementById('s').onclick = (e)=>Brain.shareToClipboard(`아인슈타인 미니\n🧩 ${correct?'해결':'실패'}`, e.target);
+}
+showTitle();
+window.__GAME__ = { PUZZLES, KEY };
+</script>
+</body>
+</html>

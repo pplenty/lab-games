@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>128 도달 | 5분 퍼즐</title>
+<meta property="og:title" content="128 도달">
+<meta property="og:description" content="같은 숫자를 합쳐 128 타일을 만들어보세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#e09340;--accent-dark:#b5721f;--accent-soft:#f4d3a6; }
+  .board{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:6px;
+    padding:8px;background:#bbab8a;border-radius:10px;
+    max-width:340px;margin:0 auto 14px;
+  }
+  .tile{
+    aspect-ratio:1;background:#cdc1b4;border-radius:6px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:28px;font-weight:800;color:var(--ink);
+    transition:all .12s;font-variant-numeric:tabular-nums;
+  }
+  .tile[data-v="0"]{ background:#cdc1b4;color:transparent; }
+  .tile[data-v="2"]{ background:#eee4da; }
+  .tile[data-v="4"]{ background:#ede0c8; }
+  .tile[data-v="8"]{ background:#f2b179;color:white; }
+  .tile[data-v="16"]{ background:#f59563;color:white; }
+  .tile[data-v="32"]{ background:#f67c5f;color:white; }
+  .tile[data-v="64"]{ background:#f65e3b;color:white; }
+  .tile[data-v="128"]{ background:#edcf72;color:white;font-size:26px; }
+  .tile[data-v="256"]{ background:#edcc61;color:white;font-size:26px; }
+  .tile[data-v="512"]{ background:#edc850;color:white;font-size:24px; }
+  .tile[data-v="1024"]{ background:#edc53f;color:white;font-size:22px; }
+  .tile[data-v="2048"]{ background:#edc22e;color:white;font-size:20px; }
+  .controls{
+    display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);
+    gap:6px;justify-content:center;margin:0 auto;
+  }
+  .controls button{
+    border:0;border-radius:10px;background:var(--accent-soft);font:inherit;font-size:22px;
+    cursor:pointer;transition:all .12s;
+  }
+  .controls button:hover:not(:disabled){ background:var(--accent);color:white; }
+  .goal{ text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:10px; }
+  .goal b{ color:var(--accent-dark); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const N = 4;
+const GOAL = 128;
+const KEY = '2048mini_stats';
+const app = document.getElementById('app');
+
+function makeBoard(){ return Array.from({length:N}, () => Array(N).fill(0)); }
+function clone(b){ return b.map(r => r.slice()); }
+
+function addRandom(b){
+  const empty = [];
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(b[r][c]===0) empty.push([r,c]);
+  if(empty.length === 0) return false;
+  const [r,c] = empty[Math.floor(Math.random()*empty.length)];
+  b[r][c] = Math.random() < 0.9 ? 2 : 4;
+  return true;
+}
+function rotateCW(b){
+  const out = makeBoard();
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++) out[c][N-1-r] = b[r][c];
+  return out;
+}
+function slideRowLeft(row){
+  const comp = row.filter(v => v !== 0);
+  const out = []; let gained = 0; let i = 0;
+  while(i < comp.length){
+    if(i+1 < comp.length && comp[i] === comp[i+1]){
+      out.push(comp[i]*2); gained += comp[i]*2; i += 2;
+    } else { out.push(comp[i]); i++; }
+  }
+  while(out.length < N) out.push(0);
+  return { row: out, gained };
+}
+function moveLeft(b){
+  let changed = false, gained = 0;
+  const out = b.map(row => {
+    const { row: nr, gained: g } = slideRowLeft(row);
+    gained += g;
+    if(!changed && nr.some((v,i)=>v !== row[i])) changed = true;
+    return nr;
+  });
+  return { board: out, gained, changed };
+}
+function move(b, dir){
+  // dir: 0=left, 1=up, 2=right, 3=down
+  let work = clone(b);
+  for(let i = 0; i < dir; i++) work = rotateCW(work);
+  const res = moveLeft(work);
+  let nb = res.board;
+  for(let i = 0; i < (4-dir)%4; i++) nb = rotateCW(nb);
+  return { board: nb, gained: res.gained, changed: res.changed };
+}
+function anyMoveAvailable(b){
+  for(let d=0;d<4;d++) if(move(b, d).changed) return true;
+  return false;
+}
+function boardMax(b){ return Math.max(...b.flat()); }
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0, bestTile:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🧮</div>
+    <h1 class="hero-title">128 <span style="color:var(--accent);">도달</span></h1>
+    <div class="hero-sub">같은 숫자 두 개를 합치면 그 합이 되는<br>퍼즐. <b>128</b> 타일 만들기가 목표!</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}점 · ${stats.bestTile}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = { board: makeBoard(), score: 0, reached:false, finished:false };
+  addRandom(state.board); addRandom(state.board);
+
+  clear(app);
+  const topbar = $el('div','topbar');
+  topbar.innerHTML = `<div class="stat">🎯 <span id="score">0</span></div><div class="stat" id="best-tile">최고 2</div>`;
+  app.appendChild(topbar);
+  const goal = $el('div','goal', `목표: <b>128</b> 타일 만들기`);
+  app.appendChild(goal);
+  const card = $el('div','card');
+  card.innerHTML = `<div class="board" id="board"></div>
+    <div class="controls">
+      <div></div><button data-d="1">↑</button><div></div>
+      <button data-d="0">←</button><div></div><button data-d="2">→</button>
+      <div></div><button data-d="3">↓</button><div></div>
+    </div>`;
+  app.appendChild(card);
+
+  function render(){
+    const board = document.getElementById('board');
+    board.innerHTML = '';
+    state.board.forEach(row => row.forEach(v=>{
+      const t = $el('div','tile');
+      t.dataset.v = v;
+      t.textContent = v || '';
+      board.appendChild(t);
+    }));
+    document.getElementById('score').textContent = state.score;
+    document.getElementById('best-tile').textContent = '최고 ' + boardMax(state.board);
+  }
+  function doMove(dir){
+    if(state.finished) return;
+    const res = move(state.board, dir);
+    if(!res.changed) return;
+    state.board = res.board;
+    state.score += res.gained;
+    addRandom(state.board);
+    render();
+    const maxTile = boardMax(state.board);
+    if(maxTile >= GOAL && !state.reached){
+      state.reached = true;
+      setTimeout(()=>finish('reached'), 400);
+    } else if(!anyMoveAvailable(state.board)){
+      state.finished = true;
+      setTimeout(()=>finish('stuck'), 400);
+    }
+  }
+  card.querySelectorAll('.controls button').forEach(b=>{
+    b.onclick = ()=>doMove(+b.dataset.d);
+  });
+  const keyHandler = (e)=>{
+    if(state.finished) return;
+    if(e.key==='ArrowUp'){ e.preventDefault(); doMove(1); }
+    else if(e.key==='ArrowDown'){ e.preventDefault(); doMove(3); }
+    else if(e.key==='ArrowLeft'){ e.preventDefault(); doMove(0); }
+    else if(e.key==='ArrowRight'){ e.preventDefault(); doMove(2); }
+  };
+  document.addEventListener('keydown', keyHandler);
+  state._keyHandler = keyHandler;
+
+  function finish(kind){
+    state.finished = true;
+    document.removeEventListener('keydown', state._keyHandler);
+    const stats = recordBestScore(KEY, state.score, { tile: boardMax(state.board), kind });
+    if(boardMax(state.board) > (stats.bestTile || 0)){ stats.bestTile = boardMax(state.board); Brain.saveStats(KEY, stats); }
+    const isBest = stats.bestScore === state.score && state.score > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    const title = kind === 'reached' ? '🎉 128 도달!' : '더 이상 움직일 수 없어요';
+    const emoji = kind === 'reached' ? '🏆' : '🙂';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">${title}</div>
+      <div class="result-big">${state.score}점</div>
+      <div class="result-sub">최고 타일 ${boardMax(state.board)}</div>
+      ${isBest ? '<div class="ribbon">🌟 개인 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="btn-share">공유</button>
+        <button class="btn secondary" id="btn-again">다시</button>
+        <button class="btn ghost" id="btn-home">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('btn-again').onclick = startGame;
+    document.getElementById('btn-home').onclick = showTitle;
+    document.getElementById('btn-share').onclick = (e)=>
+      shareToClipboard(`128 도달\n🧮 ${state.score}점 · 최고 타일 ${boardMax(state.board)}${isBest?'\n🌟 최고':''}`, e.target);
+  }
+
+  render();
+}
+
+showTitle();
+window.__GAME__ = { makeBoard, slideRowLeft, move, moveLeft, anyMoveAvailable, boardMax, rotateCW, N, GOAL, KEY };
+</script>
+</body>
+</html>

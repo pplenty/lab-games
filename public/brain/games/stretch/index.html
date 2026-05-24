@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>5분 집중 세트</title>
+<style>
+  :root{
+    --bg:#eef6f3;
+    --bg-2:#dcece6;
+    --card:#ffffff;
+    --ink:#1f2a28;
+    --ink-dim:#6a7572;
+    --ink-faint:#b0b8b4;
+    --accent:#2ab0a0;
+    --accent-dark:#1a8a7d;
+    --accent-soft:#a6e2d8;
+    --cool:#5596c0;
+    --cool-dark:#3e78a0;
+    --green:#7fbb5d;
+    --red:#e57373;
+    --yellow:#f6c445;
+    --purple:#a177bc;
+    --orange:#f08a3e;
+    --shadow:0 4px 14px rgba(0,0,0,.06);
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    background:linear-gradient(135deg,var(--bg) 0%,var(--bg-2) 100%);
+    color:var(--ink);
+    font-family:"Pretendard","Noto Sans KR","Apple SD Gothic Neo",system-ui,-apple-system,sans-serif;
+    font-size:16px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  main{max-width:640px;margin:0 auto;padding:5vh 24px 15vh;}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;font-size:13px;color:var(--ink-dim);}
+  .progress-dots{display:flex;gap:6px;}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--ink-faint);transition:all .3s;}
+  .dot.active{background:var(--accent);transform:scale(1.25);}
+  .dot.done{background:var(--green);}
+  .card{background:var(--card);border-radius:var(--radius);padding:32px 28px;box-shadow:var(--shadow);margin-bottom:20px;}
+  h1.title{font-size:30px;font-weight:800;margin-bottom:8px;letter-spacing:-.02em;}
+  h2.puzzle-title{font-size:22px;font-weight:700;margin-bottom:6px;letter-spacing:-.01em;}
+  .puzzle-desc{color:var(--ink-dim);font-size:14px;margin-bottom:24px;line-height:1.7;}
+  .btn{
+    background:var(--accent);color:white;border:0;border-radius:10px;
+    padding:14px 28px;font:inherit;font-weight:600;font-size:16px;cursor:pointer;
+    transition:all .2s;box-shadow:0 2px 8px rgba(42,176,160,.3);
+  }
+  .btn:hover:not(:disabled){background:var(--accent-dark);transform:translateY(-1px);}
+  .btn:active:not(:disabled){transform:translateY(0);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+  .btn.secondary{background:transparent;color:var(--ink);border:2px solid var(--ink);box-shadow:none;}
+  .btn.secondary:hover:not(:disabled){background:var(--ink);color:white;}
+  .btn.ghost{background:transparent;color:var(--ink-dim);border:1px solid var(--ink-faint);box-shadow:none;padding:10px 20px;font-size:14px;}
+  .btn.ghost:hover:not(:disabled){color:var(--ink);border-color:var(--ink);}
+  .btn-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:20px;}
+  .feedback{margin-top:14px;font-size:14px;min-height:20px;text-align:center;}
+  .feedback.wrong{color:var(--red);}
+  .feedback.right{color:var(--accent-dark);font-weight:600;}
+
+  /* Title */
+  #title-screen{text-align:center;padding-top:10vh;}
+  .brand{font-size:42px;margin-bottom:20px;}
+  .hero-title{font-size:36px;font-weight:800;margin-bottom:12px;letter-spacing:-.02em;}
+  .hero-sub{color:var(--ink-dim);font-size:16px;margin-bottom:36px;line-height:1.8;max-width:380px;margin-left:auto;margin-right:auto;}
+  .today-card{background:var(--card);border-radius:var(--radius);padding:20px;margin-bottom:24px;box-shadow:var(--shadow);}
+  .today-label{color:var(--ink-dim);font-size:12px;letter-spacing:.2em;margin-bottom:6px;}
+  .today-date{font-size:20px;font-weight:700;}
+  .best-score{color:var(--accent-dark);font-weight:700;margin-top:8px;}
+  .puzzle-list{text-align:left;margin-top:20px;list-style:none;}
+  .puzzle-list li{padding:8px 0;color:var(--ink-dim);font-size:14px;display:flex;align-items:center;gap:10px;}
+  .puzzle-list li .emoji{font-size:20px;}
+  .credits{color:var(--ink-faint);font-size:11px;text-align:center;margin-top:40px;letter-spacing:.15em;}
+
+  /* Anagram */
+  .anagram-slots{display:flex;gap:10px;justify-content:center;margin-bottom:24px;}
+  .slot{
+    width:64px;height:72px;border:2px dashed var(--ink-faint);border-radius:12px;
+    display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700;
+    background:var(--bg-2);transition:all .2s;cursor:pointer;
+  }
+  .slot.filled{border-style:solid;border-color:var(--accent);background:white;color:var(--ink);}
+  .slot.correct{border-color:var(--green);background:#e6f4da;color:var(--green);}
+  .slot.wrong{border-color:var(--red);background:#fadada;color:var(--red);}
+  .anagram-letters{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-bottom:12px;}
+  .letter-btn{
+    width:60px;height:60px;border-radius:10px;background:var(--accent-soft);
+    color:var(--accent-dark);font-size:26px;font-weight:700;border:0;cursor:pointer;
+    transition:all .15s;
+  }
+  .letter-btn:hover:not(:disabled){background:var(--accent);color:white;transform:translateY(-2px);}
+  .letter-btn:disabled{opacity:.3;cursor:not-allowed;}
+  .anagram-hint{text-align:center;color:var(--ink-dim);font-size:14px;font-style:italic;margin-bottom:16px;}
+
+  /* Sudoku */
+  .sudoku-wrap{display:flex;flex-direction:column;align-items:center;}
+  .sudoku-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;background:var(--ink);padding:4px;border-radius:6px;max-width:300px;width:100%;}
+  .sudoku-cell{
+    aspect-ratio:1;background:white;display:flex;align-items:center;justify-content:center;
+    font-size:24px;font-weight:700;cursor:pointer;transition:all .12s;
+    position:relative;user-select:none;
+  }
+  .sudoku-cell.prefilled{background:#eef1f0;color:var(--ink);cursor:not-allowed;}
+  .sudoku-cell:not(.prefilled):hover{background:var(--accent-soft);}
+  .sudoku-cell.active{background:var(--accent-soft);outline:3px solid var(--accent);z-index:2;}
+  /* 2x2 block separators via gap offsets */
+  .sudoku-cell[data-c="1"]{margin-right:2px;}
+  .sudoku-cell[data-r="1"]{margin-bottom:2px;}
+  .num-keypad{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:20px;max-width:300px;width:100%;}
+  .num-key{
+    aspect-ratio:1;background:var(--bg-2);border:0;border-radius:8px;
+    font:inherit;font-weight:700;font-size:20px;cursor:pointer;transition:all .12s;
+  }
+  .num-key:hover{background:var(--accent-soft);}
+  .num-key.clear{background:#f0e0e0;color:var(--red);}
+
+  /* Height ordering */
+  .height-intro{background:#f0f7f5;padding:14px 18px;border-radius:10px;margin-bottom:20px;border-left:3px solid var(--accent);}
+  .height-intro .stmt{padding:4px 0;font-size:15px;}
+  .height-intro .stmt::before{content:"•  ";color:var(--accent);font-weight:700;}
+  .height-task{text-align:center;color:var(--ink-dim);font-size:14px;margin-bottom:14px;}
+  .height-list{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;}
+  .height-row{
+    display:flex;align-items:center;background:var(--bg-2);border-radius:12px;padding:12px 14px;
+    gap:10px;
+  }
+  .height-rank{background:var(--accent);color:white;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;}
+  .height-name{flex:1;font-weight:700;font-size:18px;}
+  .height-btns{display:flex;gap:6px;}
+  .height-btns button{
+    width:36px;height:36px;border-radius:8px;background:white;border:1px solid var(--ink-faint);
+    font:inherit;font-size:16px;cursor:pointer;transition:all .12s;
+  }
+  .height-btns button:hover:not(:disabled){background:var(--accent-soft);border-color:var(--accent);}
+  .height-btns button:disabled{opacity:.3;cursor:not-allowed;}
+  .height-hint{text-align:center;color:var(--ink-faint);font-size:12px;margin-bottom:8px;}
+
+  /* Stroop */
+  .stroop-round-info{text-align:center;color:var(--ink-dim);font-size:14px;margin-bottom:18px;}
+  .stroop-display{
+    display:flex;align-items:center;justify-content:center;
+    height:150px;margin-bottom:24px;background:var(--bg-2);border-radius:14px;
+  }
+  .stroop-word{font-size:54px;font-weight:800;letter-spacing:.05em;}
+  .stroop-options{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
+  .stroop-btn{
+    aspect-ratio:1.4;border:2px solid var(--ink-faint);border-radius:12px;background:white;
+    font:inherit;font-size:16px;font-weight:700;cursor:pointer;transition:all .12s;
+  }
+  .stroop-btn:hover{border-color:var(--accent);transform:translateY(-1px);}
+  .stroop-progress{display:flex;justify-content:center;gap:4px;}
+  .stroop-dot{width:18px;height:4px;border-radius:2px;background:var(--ink-faint);}
+  .stroop-dot.pass{background:var(--green);}
+  .stroop-dot.fail{background:var(--red);}
+  .stroop-dot.current{background:var(--accent);}
+  .stroop-timer-bar{height:6px;background:var(--bg-2);border-radius:3px;overflow:hidden;margin-bottom:14px;}
+  .stroop-timer-fill{height:100%;background:var(--accent);transition:width linear;}
+
+  /* Maze */
+  .maze-wrap{display:flex;flex-direction:column;align-items:center;}
+  .maze-grid{display:grid;gap:1px;background:#2a3d3a;padding:2px;border-radius:6px;margin-bottom:18px;}
+  .maze-cell{aspect-ratio:1;background:white;display:flex;align-items:center;justify-content:center;font-size:14px;transition:background .15s;user-select:none;}
+  .maze-cell.wall{background:#2a3d3a;}
+  .maze-cell.start{background:var(--green);color:white;font-weight:700;}
+  .maze-cell.end{background:var(--orange);color:white;font-weight:700;}
+  .maze-cell.path{background:var(--accent-soft);}
+  .maze-cell.current{background:var(--accent);color:white;box-shadow:inset 0 0 0 2px var(--accent-dark);}
+  .maze-controls{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,56px);gap:6px;}
+  .maze-controls button{
+    border:0;border-radius:10px;background:var(--bg-2);font:inherit;font-size:24px;
+    cursor:pointer;transition:all .12s;
+  }
+  .maze-controls button:hover:not(:disabled){background:var(--accent-soft);}
+  .maze-controls button.reset{background:#f2e2e2;color:var(--red);font-size:13px;font-weight:700;}
+  .maze-info{display:flex;gap:24px;color:var(--ink-dim);font-size:13px;margin-bottom:12px;}
+
+  /* Results */
+  .score-hero{text-align:center;padding:20px 0;}
+  .score-big{font-size:72px;font-weight:800;color:var(--accent);line-height:1;letter-spacing:-.03em;}
+  .score-label{color:var(--ink-dim);font-size:13px;letter-spacing:.2em;margin-top:8px;}
+  .score-grade{font-size:24px;font-weight:700;margin-top:16px;}
+  .score-comment{color:var(--ink-dim);font-size:15px;margin-top:6px;font-style:italic;}
+  .breakdown{margin-top:24px;}
+  .breakdown-row{display:flex;align-items:center;gap:14px;padding:12px 4px;border-bottom:1px solid #e8f0ed;}
+  .breakdown-row:last-child{border-bottom:0;}
+  .breakdown-icon{font-size:26px;width:40px;text-align:center;}
+  .breakdown-name{flex:1;font-weight:600;}
+  .breakdown-time{color:var(--ink-dim);font-size:13px;margin-right:12px;}
+  .breakdown-score{font-weight:700;color:var(--accent-dark);font-variant-numeric:tabular-nums;min-width:60px;text-align:right;}
+  .breakdown-bar{height:6px;background:#eaf4f0;border-radius:3px;overflow:hidden;margin-top:8px;}
+  .breakdown-bar-fill{height:100%;background:linear-gradient(to right,var(--accent-soft),var(--accent));border-radius:3px;transition:width 1s;}
+
+  .fade-in{animation:fadein .5s ease;}
+  @keyframes fadein{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+  @media(max-width:540px){
+    main{padding:3vh 16px 15vh;}
+    .card{padding:22px 18px;}
+    h1.title,.hero-title{font-size:26px;}
+    .score-big{font-size:58px;}
+    .slot{width:54px;height:62px;font-size:24px;}
+    .letter-btn{width:52px;height:52px;font-size:22px;}
+  }
+</style>
+</head>
+<body>
+<a class="nav-back" href="../../" style="position:fixed;top:16px;left:16px;background:#fff;color:#666;text-decoration:none;padding:6px 14px;border-radius:20px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.07);z-index:10;">← 홈</a>
+<main id="app"></main>
+<script>
+/* =========================================================
+   『5분 집중 세트』 — 5종 새 미니 퍼즐
+   ========================================================= */
+
+/* ---------- Data banks ---------- */
+const ANAGRAM_BANK = [
+  { word:'사과나무', hint:'과일이 열리는 식물' },
+  { word:'저녁노을', hint:'해 질 녘 하늘의 빛' },
+  { word:'바닷바람', hint:'바다에서 불어오는 바람' },
+  { word:'파도소리', hint:'바다에서 들리는 소리' },
+  { word:'겨울하늘', hint:'추운 계절의 맑은 하늘' },
+  { word:'구름사이', hint:'하늘의 틈새를 가리킴' },
+  { word:'별빛정원', hint:'별이 비치는 작은 공간' },
+  { word:'봄비내려', hint:'봄의 부드러운 강수' }
+];
+
+const SUDOKU_BANK = [
+  {
+    puzzle:[
+      [1,0,0,4],
+      [0,0,1,0],
+      [0,1,0,0],
+      [4,0,0,1]
+    ],
+    solution:[
+      [1,2,3,4],
+      [3,4,1,2],
+      [2,1,4,3],
+      [4,3,2,1]
+    ]
+  },
+  {
+    puzzle:[
+      [0,2,0,0],
+      [3,0,0,2],
+      [0,3,2,0],
+      [0,0,0,3]
+    ],
+    solution:[
+      [1,2,3,4],
+      [3,4,1,2],
+      [4,3,2,1],
+      [2,1,4,3]
+    ]
+  },
+  {
+    puzzle:[
+      [1,0,3,0],
+      [0,4,0,2],
+      [0,1,0,3],
+      [4,0,2,0]
+    ],
+    solution:[
+      [1,2,3,4],
+      [3,4,1,2],
+      [2,1,4,3],
+      [4,3,2,1]
+    ]
+  }
+];
+
+const HEIGHT_BANK = [
+  {
+    people:['민수','지수','현우','서연'],
+    statements:[
+      '민수는 서연보다 키가 크다.',
+      '지수는 현우보다 크다.',
+      '서연은 지수보다 크다.',
+      '네 사람 중 서연은 두 번째로 크다.'
+    ],
+    answerTallestFirst:['민수','서연','지수','현우']
+  },
+  {
+    people:['아라','보검','세진','다현'],
+    statements:[
+      '다현은 보검보다 크다.',
+      '아라는 세진보다 작다.',
+      '세진은 다현보다 크다.',
+      '보검은 가장 작지 않다.'
+    ],
+    answerTallestFirst:['세진','다현','보검','아라']
+  }
+];
+
+const STROOP_COLORS = [
+  { name:'빨강', hex:'#e05656' },
+  { name:'파랑', hex:'#4a7aa4' },
+  { name:'초록', hex:'#6ca02c' },
+  { name:'노랑', hex:'#daa520' }
+];
+const STROOP_ROUNDS = 10;
+const STROOP_TIME_MS = 2400;
+
+/* ---------- Seeded random ---------- */
+function todaySeed(){
+  const d = new Date();
+  return d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate();
+}
+function mulberry32(seed){
+  return function(){
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ t>>>15, t | 1);
+    t ^= t + Math.imul(t ^ t>>>7, t | 61);
+    return ((t ^ t>>>14) >>> 0) / 4294967296;
+  };
+}
+function seededPick(arr, rng){ return arr[Math.floor(rng()*arr.length)]; }
+function shuffle(arr, rng){
+  const a = [...arr];
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(rng()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+/* ---------- Maze generator (DFS carving, odd dims) ---------- */
+function generateMaze(w, h, rng){
+  const maze = Array.from({length:h}, ()=>Array(w).fill(1));
+  const stack = [[0,0]];
+  maze[0][0] = 0;
+  while(stack.length){
+    const [x,y] = stack[stack.length-1];
+    const dirs = shuffle([[2,0],[-2,0],[0,2],[0,-2]], rng);
+    let moved = false;
+    for(const [dx,dy] of dirs){
+      const nx = x+dx, ny = y+dy;
+      if(nx>=0 && nx<w && ny>=0 && ny<h && maze[ny][nx]===1){
+        maze[ny][nx] = 0;
+        maze[y+dy/2][x+dx/2] = 0;
+        stack.push([nx,ny]);
+        moved = true;
+        break;
+      }
+    }
+    if(!moved) stack.pop();
+  }
+  // Ensure exit cell is open — trivially true via (0,0) carving since (w-1,h-1) was reached.
+  return maze;
+}
+
+/* ---------- Scoring helpers ---------- */
+function clamp(n, lo, hi){ return Math.max(lo, Math.min(hi, n)); }
+function formatTime(ms){
+  const s = Math.floor(ms/1000);
+  const m = Math.floor(s/60);
+  const ss = (s % 60).toString().padStart(2,'0');
+  return m+':'+ss;
+}
+function gradeFor(avg){
+  if(avg >= 90) return {grade:'S', label:'탁월한 유연함',   color:'#1a8a7d'};
+  if(avg >= 75) return {grade:'A', label:'단단한 집중',     color:'#2ab0a0'};
+  if(avg >= 60) return {grade:'B', label:'좋은 리듬',       color:'#5596c0'};
+  if(avg >= 40) return {grade:'C', label:'조금 더 천천히',   color:'#a177bc'};
+  return             {grade:'D', label:'한 번 더 도전',       color:'#6a7572'};
+}
+
+/* ---------- Persistence ---------- */
+function loadBest(){ try{ return JSON.parse(localStorage.getItem('brain_stretch_best')||'null'); }catch(e){ return null; }}
+function saveBest(score){
+  const cur = loadBest();
+  if(!cur || score > cur.score){
+    try{ localStorage.setItem('brain_stretch_best', JSON.stringify({score, date:new Date().toISOString().slice(0,10)})); }catch(e){}
+  }
+}
+
+/* ---------- DOM helpers ---------- */
+const app = document.getElementById('app');
+function $el(tag, cls, html){
+  const e = document.createElement(tag);
+  if(cls) e.className = cls;
+  if(html != null) e.innerHTML = html;
+  return e;
+}
+function clear(){ app.innerHTML = ''; }
+function escapeHtml(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ---------- Pipeline ---------- */
+const STEPS = [
+  { id:'anagram',  title:'글자 뒤집기',  icon:'🔤', run:runAnagram },
+  { id:'sudoku',   title:'4×4 스도쿠',   icon:'🧩', run:runSudoku  },
+  { id:'height',   title:'키 순서',      icon:'📏', run:runHeight  },
+  { id:'stroop',   title:'색깔 잇기',    icon:'🎨', run:runStroop  },
+  { id:'maze',     title:'미로 탈출',    icon:'🕹️', run:runMaze    }
+];
+const results = [];
+let stepIdx = 0;
+
+/* ========================================================
+   Title
+   ======================================================== */
+function showTitle(){
+  clear();
+  const best = loadBest();
+  const dateStr = new Date().toISOString().slice(0,10).replace(/-/g,'.');
+  const ts = $el('div');
+  ts.id = 'title-screen';
+  ts.innerHTML = `
+    <div class="brand">🧠</div>
+    <h1 class="hero-title">5분 집중 세트</h1>
+    <div class="hero-sub">
+      오후 시간에 가볍게 뇌를 풀어주는<br>
+      5가지 새 퍼즐. 약 5~7분 소요.
+    </div>
+    <div class="today-card">
+      <div class="today-label">T O D A Y</div>
+      <div class="today-date">${dateStr}</div>
+      ${best ? `<div class="best-score">최고 점수  ${best.score} / 500</div>` : ''}
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="btn-start">시 작 하 기</button>
+    </div>
+    <ul class="puzzle-list" style="max-width:320px;margin:28px auto 0;">
+      ${STEPS.map((s,i)=>`<li><span class="emoji">${s.icon}</span> ${i+1}. ${s.title}</li>`).join('')}
+    </ul>
+    <div class="credits">built by Claude · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = beginRun;
+}
+
+/* ========================================================
+   Runner
+   ======================================================== */
+function beginRun(){
+  results.length = 0;
+  stepIdx = 0;
+  nextStep();
+}
+function renderTopbar(){
+  const tb = $el('div','topbar');
+  const dots = STEPS.map((_,i)=>{
+    let cls = 'dot';
+    if(i < stepIdx) cls += ' done';
+    else if(i === stepIdx) cls += ' active';
+    return `<span class="${cls}"></span>`;
+  }).join('');
+  tb.innerHTML = `
+    <div>퍼즐 ${stepIdx+1} / ${STEPS.length}</div>
+    <div class="progress-dots">${dots}</div>
+  `;
+  return tb;
+}
+function nextStep(){
+  if(stepIdx >= STEPS.length) return showResults();
+  clear();
+  app.appendChild(renderTopbar());
+  const step = STEPS[stepIdx];
+  const started = performance.now();
+  step.run((score)=>{
+    const elapsed = performance.now() - started;
+    results.push({ id:step.id, title:step.title, icon:step.icon, score:clamp(Math.round(score),0,100), time:elapsed });
+    stepIdx++;
+    setTimeout(nextStep, 420);
+  });
+}
+
+/* ========================================================
+   Puzzle 1 — 글자 뒤집기 (Anagram)
+   ======================================================== */
+function runAnagram(done){
+  const rng = mulberry32(todaySeed() ^ 0xa1a1);
+  const q = seededPick(ANAGRAM_BANK, rng);
+  const answer = [...q.word];
+  let letters;
+  // shuffle until result != original
+  do { letters = shuffle(answer, rng); } while(letters.join('') === q.word);
+
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <h2 class="puzzle-title">🔤 글자 뒤집기</h2>
+    <div class="puzzle-desc">흐트러진 글자들을 순서대로 배열해서 올바른 단어를 만드세요.</div>
+    <div class="anagram-hint">💬 힌트:  ${escapeHtml(q.hint)}</div>
+    <div class="anagram-slots" id="ana-slots">
+      ${answer.map((_,i)=>`<div class="slot" data-s="${i}"></div>`).join('')}
+    </div>
+    <div class="anagram-letters" id="ana-letters">
+      ${letters.map((ch,i)=>`<button class="letter-btn" data-l="${i}">${escapeHtml(ch)}</button>`).join('')}
+    </div>
+    <div class="feedback" id="ana-fb"></div>
+    <div class="btn-row">
+      <button class="btn" id="ana-submit">제출</button>
+      <button class="btn ghost" id="ana-reset">지우기</button>
+    </div>
+  `;
+  app.appendChild(card);
+  const slots = card.querySelectorAll('.slot');
+  const letterBtns = card.querySelectorAll('.letter-btn');
+  const fb = document.getElementById('ana-fb');
+  const submit = document.getElementById('ana-submit');
+  const reset = document.getElementById('ana-reset');
+  const placement = new Array(answer.length).fill(null); // slot index -> letter index
+
+  function refresh(){
+    slots.forEach((s,si)=>{
+      const li = placement[si];
+      if(li==null){ s.textContent=''; s.classList.remove('filled','correct','wrong'); }
+      else { s.textContent = letters[li]; s.classList.add('filled'); s.classList.remove('correct','wrong'); }
+    });
+    letterBtns.forEach((b,li)=>{
+      const used = placement.indexOf(li) !== -1;
+      b.disabled = used;
+    });
+  }
+
+  letterBtns.forEach(b => {
+    b.onclick = ()=>{
+      const li = +b.dataset.l;
+      if(placement.indexOf(li) !== -1) return;
+      const empty = placement.indexOf(null);
+      if(empty < 0) return;
+      placement[empty] = li;
+      refresh();
+    };
+  });
+  slots.forEach(s => {
+    s.onclick = ()=>{
+      const si = +s.dataset.s;
+      if(placement[si] != null){
+        placement[si] = null;
+        refresh();
+      }
+    };
+  });
+  reset.onclick = ()=>{ placement.fill(null); fb.textContent=''; fb.className='feedback'; refresh(); };
+  let attempts = 0;
+  submit.onclick = ()=>{
+    if(placement.some(v=>v==null)){
+      fb.className='feedback wrong';
+      fb.textContent='모든 칸을 채워주세요.';
+      return;
+    }
+    attempts++;
+    const guess = placement.map(li=>letters[li]).join('');
+    if(guess === q.word){
+      slots.forEach(s=>s.classList.add('correct'));
+      fb.className='feedback right';
+      fb.textContent='✓ 정답! "'+q.word+'"';
+      submit.disabled=true; reset.disabled=true;
+      letterBtns.forEach(b=>b.disabled=true);
+      const score = [100,80,60,40][Math.min(attempts-1,3)] ?? 20;
+      setTimeout(()=>done(score), 900);
+    } else {
+      // mark correctness per slot
+      placement.forEach((li,si)=>{
+        if(letters[li] === q.word[si]) slots[si].classList.add('correct');
+        else slots[si].classList.add('wrong');
+      });
+      fb.className='feedback wrong';
+      if(attempts >= 3){
+        fb.textContent = '정답은 "'+q.word+'"였어요.';
+        submit.disabled=true; reset.disabled=true;
+        setTimeout(()=>done(0), 1400);
+      } else {
+        fb.textContent = '한 번 더! 맞춘 글자는 초록색.';
+      }
+    }
+  };
+}
+
+/* ========================================================
+   Puzzle 2 — 4x4 스도쿠
+   ======================================================== */
+function validateSudoku(grid){
+  const expected = '1234';
+  // rows
+  for(let r=0;r<4;r++){
+    const vals = grid[r].slice().sort().join('');
+    if(vals !== expected) return false;
+  }
+  // cols
+  for(let c=0;c<4;c++){
+    const vals = [grid[0][c],grid[1][c],grid[2][c],grid[3][c]].sort().join('');
+    if(vals !== expected) return false;
+  }
+  // 2x2 blocks
+  for(let br=0;br<2;br++) for(let bc=0;bc<2;bc++){
+    const vals = [];
+    for(let r=0;r<2;r++) for(let c=0;c<2;c++) vals.push(grid[br*2+r][bc*2+c]);
+    if(vals.sort().join('') !== expected) return false;
+  }
+  return true;
+}
+
+function runSudoku(done){
+  const rng = mulberry32(todaySeed() ^ 0x5d5d);
+  const q = seededPick(SUDOKU_BANK, rng);
+  const grid = q.puzzle.map(r=>r.slice());
+
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <h2 class="puzzle-title">🧩 4×4 스도쿠</h2>
+    <div class="puzzle-desc">빈 칸을 채워서 1~4가 각 행, 각 열, 그리고 2×2 블록마다 한 번씩 등장하도록 만드세요.</div>
+    <div class="sudoku-wrap">
+      <div class="sudoku-grid" id="sud-grid">
+        ${grid.map((row,r)=>row.map((v,c)=>{
+          const pre = q.puzzle[r][c] !== 0;
+          return `<div class="sudoku-cell${pre?' prefilled':''}" data-r="${r}" data-c="${c}">${v||''}</div>`;
+        }).join('')).join('')}
+      </div>
+      <div class="num-keypad" id="sud-keypad">
+        ${[1,2,3,4].map(n=>`<button class="num-key" data-n="${n}">${n}</button>`).join('')}
+        <button class="num-key clear" data-n="0">지움</button>
+      </div>
+    </div>
+    <div class="feedback" id="sud-fb"></div>
+    <div class="btn-row">
+      <button class="btn" id="sud-submit">제출</button>
+      <button class="btn ghost" id="sud-give-up">포기</button>
+    </div>
+  `;
+  app.appendChild(card);
+  const cells = card.querySelectorAll('.sudoku-cell');
+  const keys = card.querySelectorAll('.num-key');
+  const fb = document.getElementById('sud-fb');
+  let active = null;
+
+  cells.forEach(cell=>{
+    if(cell.classList.contains('prefilled')) return;
+    cell.onclick = ()=>{
+      if(active) active.classList.remove('active');
+      active = cell;
+      active.classList.add('active');
+    };
+  });
+  keys.forEach(k=>{
+    k.onclick = ()=>{
+      if(!active) return;
+      const n = +k.dataset.n;
+      const r = +active.dataset.r, c = +active.dataset.c;
+      grid[r][c] = n;
+      active.textContent = n===0 ? '' : n;
+    };
+  });
+
+  document.getElementById('sud-submit').onclick = ()=>{
+    if(grid.some(row=>row.some(v=>v===0))){
+      fb.className='feedback wrong';
+      fb.textContent='모든 칸을 채워주세요.';
+      return;
+    }
+    if(validateSudoku(grid)){
+      fb.className='feedback right';
+      fb.textContent='✓ 완벽해요!';
+      cells.forEach(c=>c.onclick=null);
+      setTimeout(()=>done(100), 900);
+    } else {
+      fb.className='feedback wrong';
+      fb.textContent='규칙을 만족하지 않는 배치가 있어요.';
+    }
+  };
+  document.getElementById('sud-give-up').onclick = ()=>{
+    // reveal solution visually
+    cells.forEach(cell=>{
+      const r = +cell.dataset.r, c = +cell.dataset.c;
+      if(!cell.classList.contains('prefilled')){
+        cell.textContent = q.solution[r][c];
+        cell.style.color = 'var(--red)';
+      }
+      cell.onclick = null;
+    });
+    fb.className='feedback wrong';
+    fb.textContent='정답을 표시했어요.';
+    setTimeout(()=>done(0), 1600);
+  };
+}
+
+/* ========================================================
+   Puzzle 3 — 키 순서
+   ======================================================== */
+function runHeight(done){
+  const rng = mulberry32(todaySeed() ^ 0x7b7b);
+  const q = seededPick(HEIGHT_BANK, rng);
+  const initialOrder = shuffle(q.people, rng);
+  let order = initialOrder.slice();
+  // ensure starting order differs from answer
+  if(order.join('|') === q.answerTallestFirst.join('|')){
+    order = order.reverse();
+  }
+
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <h2 class="puzzle-title">📏 키 순서</h2>
+    <div class="puzzle-desc">진술을 읽고 네 사람의 키 순서를 맞춰보세요. (맨 위가 가장 큰 사람)</div>
+    <div class="height-intro">
+      ${q.statements.map(s=>`<div class="stmt">${escapeHtml(s)}</div>`).join('')}
+    </div>
+    <div class="height-task">가장 큰 사람부터 작은 사람 순서로 정렬:</div>
+    <div class="height-list" id="h-list"></div>
+    <div class="height-hint">↑ ↓ 버튼으로 순서를 바꿔주세요.</div>
+    <div class="feedback" id="h-fb"></div>
+    <div class="btn-row">
+      <button class="btn" id="h-submit">제출</button>
+    </div>
+  `;
+  app.appendChild(card);
+  const list = document.getElementById('h-list');
+  const fb = document.getElementById('h-fb');
+
+  function renderList(){
+    list.innerHTML = order.map((name,i)=>`
+      <div class="height-row">
+        <div class="height-rank">${i+1}</div>
+        <div class="height-name">${escapeHtml(name)}</div>
+        <div class="height-btns">
+          <button data-act="up" data-i="${i}"${i===0?' disabled':''}>↑</button>
+          <button data-act="down" data-i="${i}"${i===order.length-1?' disabled':''}>↓</button>
+        </div>
+      </div>
+    `).join('');
+    list.querySelectorAll('button').forEach(b=>{
+      b.onclick = ()=>{
+        const i = +b.dataset.i;
+        const act = b.dataset.act;
+        if(act==='up' && i>0){ [order[i-1],order[i]] = [order[i],order[i-1]]; }
+        if(act==='down' && i<order.length-1){ [order[i+1],order[i]] = [order[i],order[i+1]]; }
+        renderList();
+      };
+    });
+  }
+  renderList();
+
+  let attempts = 0;
+  document.getElementById('h-submit').onclick = ()=>{
+    attempts++;
+    if(order.join('|') === q.answerTallestFirst.join('|')){
+      fb.className='feedback right';
+      fb.textContent='✓ 정답!';
+      list.querySelectorAll('button').forEach(b=>b.disabled=true);
+      const score = attempts===1 ? 100 : attempts===2 ? 70 : 40;
+      setTimeout(()=>done(score), 900);
+    } else if(attempts >= 3){
+      fb.className='feedback wrong';
+      fb.textContent='정답 순서: '+q.answerTallestFirst.join(' > ');
+      list.querySelectorAll('button').forEach(b=>b.disabled=true);
+      setTimeout(()=>done(0), 1600);
+    } else {
+      // count inversions vs answer for feedback
+      const correctPos = order.filter((n,i)=>n===q.answerTallestFirst[i]).length;
+      fb.className='feedback wrong';
+      fb.textContent = `${correctPos} / 4 명이 올바른 위치에 있어요.`;
+    }
+  };
+}
+
+/* ========================================================
+   Puzzle 4 — 스트룹
+   ======================================================== */
+function runStroop(done){
+  const rng = mulberry32(todaySeed() ^ 0x0c0c);
+  const rounds = [];
+  for(let i=0;i<STROOP_ROUNDS;i++){
+    let wordIdx = Math.floor(rng()*4);
+    let colorIdx = Math.floor(rng()*4);
+    // 70% mismatched
+    if(rng() < 0.7 && wordIdx === colorIdx){
+      colorIdx = (colorIdx + 1 + Math.floor(rng()*3)) % 4;
+    }
+    rounds.push({ wordIdx, colorIdx });
+  }
+
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <h2 class="puzzle-title">🎨 색깔 잇기</h2>
+    <div class="puzzle-desc">가운데 글자의 <b>실제 색깔</b>을 고르세요. 글자의 뜻이 아닌 <u>색깔</u>입니다.</div>
+    <div class="stroop-round-info" id="st-info">라운드 1 / ${STROOP_ROUNDS}</div>
+    <div class="stroop-timer-bar"><div class="stroop-timer-fill" id="st-timer"></div></div>
+    <div class="stroop-display"><div class="stroop-word" id="st-word"></div></div>
+    <div class="stroop-options" id="st-options"></div>
+    <div class="stroop-progress" id="st-progress">
+      ${Array.from({length:STROOP_ROUNDS},()=>'<div class="stroop-dot"></div>').join('')}
+    </div>
+  `;
+  app.appendChild(card);
+  const wordEl = document.getElementById('st-word');
+  const infoEl = document.getElementById('st-info');
+  const optsEl = document.getElementById('st-options');
+  const timerFill = document.getElementById('st-timer');
+  const dots = card.querySelectorAll('.stroop-dot');
+
+  let idx = 0, correct = 0, timer = null, timerStart = 0;
+
+  function showRound(){
+    if(idx >= STROOP_ROUNDS){
+      const score = Math.round(correct / STROOP_ROUNDS * 100);
+      wordEl.textContent='';
+      infoEl.textContent = `${correct} / ${STROOP_ROUNDS} 정답`;
+      setTimeout(()=>done(score), 900);
+      return;
+    }
+    const r = rounds[idx];
+    infoEl.textContent = `라운드 ${idx+1} / ${STROOP_ROUNDS}`;
+    wordEl.textContent = STROOP_COLORS[r.wordIdx].name;
+    wordEl.style.color = STROOP_COLORS[r.colorIdx].hex;
+
+    // shuffle option order per round
+    const optOrder = shuffle([0,1,2,3], mulberry32(todaySeed() ^ (idx*7919)));
+    optsEl.innerHTML = optOrder.map(ci=>`<button class="stroop-btn" data-c="${ci}" style="color:${STROOP_COLORS[ci].hex};">${STROOP_COLORS[ci].name}</button>`).join('');
+    dots[idx].classList.add('current');
+
+    // reset timer
+    timerFill.style.transition = 'none';
+    timerFill.style.width = '100%';
+    requestAnimationFrame(()=>{
+      timerFill.style.transition = `width ${STROOP_TIME_MS}ms linear`;
+      timerFill.style.width = '0%';
+    });
+    timerStart = performance.now();
+    if(timer) clearTimeout(timer);
+    timer = setTimeout(()=>onAnswer(-1), STROOP_TIME_MS);
+
+    optsEl.querySelectorAll('.stroop-btn').forEach(btn=>{
+      btn.onclick = ()=>{
+        const picked = +btn.dataset.c;
+        onAnswer(picked);
+      };
+    });
+  }
+
+  function onAnswer(picked){
+    if(timer){ clearTimeout(timer); timer=null; }
+    const r = rounds[idx];
+    dots[idx].classList.remove('current');
+    if(picked === r.colorIdx){
+      dots[idx].classList.add('pass');
+      correct++;
+    } else {
+      dots[idx].classList.add('fail');
+    }
+    idx++;
+    setTimeout(showRound, 300);
+  }
+  setTimeout(showRound, 500);
+}
+
+/* ========================================================
+   Puzzle 5 — 미로 탈출
+   ======================================================== */
+function runMaze(done){
+  const SIZE = 9; // 9x9 (odd)
+  const rng = mulberry32(todaySeed() ^ 0x4d4d);
+  const maze = generateMaze(SIZE, SIZE, rng);
+
+  // Player state
+  let px = 0, py = 0;
+  const endX = SIZE-1, endY = SIZE-1;
+  const trail = new Set([`0,0`]);
+  const startTime = performance.now();
+
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <h2 class="puzzle-title">🕹️ 미로 탈출</h2>
+    <div class="puzzle-desc">초록색(시작)에서 주황색(도착)까지 길을 따라가세요. 키보드 방향키 또는 아래 버튼을 사용할 수 있어요.</div>
+    <div class="maze-info">
+      <div>🟢 시작</div><div>🟠 도착</div><div id="maze-moves">걸음 0</div>
+    </div>
+    <div class="maze-wrap">
+      <div class="maze-grid" id="maze-grid" style="grid-template-columns:repeat(${SIZE},1fr);max-width:${SIZE*36}px;width:100%;"></div>
+      <div class="maze-controls" id="maze-ctrls">
+        <div></div>
+        <button data-d="up">↑</button>
+        <div></div>
+        <button data-d="left">←</button>
+        <button data-d="reset" class="reset">⟲</button>
+        <button data-d="right">→</button>
+        <div></div>
+        <button data-d="down">↓</button>
+        <div></div>
+      </div>
+    </div>
+    <div class="feedback" id="maze-fb"></div>
+  `;
+  app.appendChild(card);
+  const grid = document.getElementById('maze-grid');
+  const movesEl = document.getElementById('maze-moves');
+  const fb = document.getElementById('maze-fb');
+  let moves = 0;
+  let finished = false;
+
+  function render(){
+    grid.innerHTML = '';
+    for(let y=0;y<SIZE;y++) for(let x=0;x<SIZE;x++){
+      const cell = $el('div','maze-cell');
+      if(maze[y][x]===1) cell.classList.add('wall');
+      else if(x===0&&y===0) cell.classList.add('start');
+      else if(x===endX&&y===endY) cell.classList.add('end');
+      if(trail.has(x+','+y) && !(x===0&&y===0) && !(x===endX&&y===endY)) cell.classList.add('path');
+      if(x===px&&y===py){ cell.classList.add('current'); }
+      grid.appendChild(cell);
+    }
+  }
+  render();
+
+  function tryMove(dx, dy){
+    if(finished) return;
+    const nx = px+dx, ny = py+dy;
+    if(nx<0||nx>=SIZE||ny<0||ny>=SIZE) return;
+    if(maze[ny][nx]===1) return;
+    px = nx; py = ny;
+    moves++;
+    movesEl.textContent = '걸음 '+moves;
+    trail.add(px+','+py);
+    render();
+    if(px===endX && py===endY){
+      finished = true;
+      const elapsed = (performance.now()-startTime)/1000;
+      fb.className='feedback right';
+      fb.textContent='✓ 탈출! ('+elapsed.toFixed(1)+'초, '+moves+'걸음)';
+      document.querySelectorAll('#maze-ctrls button').forEach(b=>b.disabled=true);
+      // Score: time & move efficiency.
+      // Minimum moves ≈ Manhattan optimal; generous formula.
+      const optimal = (SIZE-1)*2;
+      const extraMoves = Math.max(0, moves - optimal);
+      const score = clamp(Math.round(100 - elapsed*2 - extraMoves*1.5), 30, 100);
+      setTimeout(()=>done(score), 1100);
+    }
+  }
+  function reset(){
+    if(finished) return;
+    px=0; py=0; trail.clear(); trail.add('0,0');
+    moves=0; movesEl.textContent='걸음 0';
+    render();
+  }
+  card.querySelectorAll('#maze-ctrls button').forEach(b=>{
+    b.onclick = ()=>{
+      const d = b.dataset.d;
+      if(d==='up') tryMove(0,-1);
+      else if(d==='down') tryMove(0,1);
+      else if(d==='left') tryMove(-1,0);
+      else if(d==='right') tryMove(1,0);
+      else if(d==='reset') reset();
+    };
+  });
+  const keyHandler = (e)=>{
+    if(finished) return;
+    if(e.key==='ArrowUp'){ e.preventDefault(); tryMove(0,-1); }
+    else if(e.key==='ArrowDown'){ e.preventDefault(); tryMove(0,1); }
+    else if(e.key==='ArrowLeft'){ e.preventDefault(); tryMove(-1,0); }
+    else if(e.key==='ArrowRight'){ e.preventDefault(); tryMove(1,0); }
+  };
+  document.addEventListener('keydown', keyHandler);
+  // cleanup on done — done() triggers nextStep which calls clear(); handler auto-garbage OK
+}
+
+/* ========================================================
+   Results
+   ======================================================== */
+function showResults(){
+  clear();
+  const total = results.reduce((a,r)=>a+r.score, 0);
+  const avg = total / 5;
+  const grade = gradeFor(avg);
+  saveBest(total);
+
+  const card = $el('div','card fade-in');
+  card.innerHTML = `
+    <div class="score-hero">
+      <div class="score-big">${total}</div>
+      <div class="score-label">오늘의 뇌 점수 · / 500</div>
+      <div class="score-grade" style="color:${grade.color};">${grade.grade}  ${grade.label}</div>
+      <div class="score-comment">${comment(total)}</div>
+    </div>
+    <div class="breakdown">
+      ${results.map(r=>`
+        <div class="breakdown-row">
+          <div class="breakdown-icon">${r.icon}</div>
+          <div style="flex:1;">
+            <div class="breakdown-name">${r.title}</div>
+            <div class="breakdown-bar"><div class="breakdown-bar-fill" style="width:${clamp(r.score,0,100)}%"></div></div>
+          </div>
+          <div class="breakdown-time">${formatTime(r.time)}</div>
+          <div class="breakdown-score">${r.score}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="btn-share">결과 공유</button>
+      <button class="btn secondary" id="btn-restart">다시 도전</button>
+    </div>
+    <div class="credits">© 2026 · 5분 집중 세트</div>
+  `;
+  app.appendChild(card);
+  document.getElementById('btn-restart').onclick = showTitle;
+  document.getElementById('btn-share').onclick = ()=>{
+    const date = new Date().toISOString().slice(0,10);
+    const bars = results.map(r=>{
+      const b = Math.round(r.score/20);
+      return r.icon + ' ' + '█'.repeat(b) + '░'.repeat(5-b);
+    }).join('\n');
+    const text = `5분 집중 세트 — ${date}\n점수 ${total}/500  ${grade.grade}\n\n${bars}`;
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(text).then(()=>{
+        const btn = document.getElementById('btn-share');
+        const orig = btn.textContent;
+        btn.textContent = '✓ 복사됨';
+        setTimeout(()=>btn.textContent = orig, 1500);
+      });
+    } else alert(text);
+  };
+}
+function comment(total){
+  if(total >= 450) return '뇌 근육이 유연하네요.';
+  if(total >= 380) return '좋은 흐름. 이대로 가세요.';
+  if(total >= 300) return '평균 이상. 조금만 더.';
+  if(total >= 200) return '워밍업은 꾸준함이 핵심이에요.';
+  return '오늘은 쉬고 내일 다시 봐요.';
+}
+
+/* ---------- Boot ---------- */
+showTitle();
+</script>
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>초성 퀴즈 | 5분 퍼즐</title>
+<meta property="og:title" content="초성 퀴즈">
+<meta property="og:description" content="초성만 보고 단어를 맞혀보세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#c9864b;--accent-dark:#9e6530;--accent-soft:#ecc79d; }
+  .chosung-display{
+    text-align:center;padding:34px 20px;background:var(--accent-soft);
+    border-radius:14px;margin-bottom:14px;
+  }
+  .chosung-txt{ font-size:58px;font-weight:800;letter-spacing:.18em;color:var(--accent-dark);line-height:1; }
+  .category{ color:var(--ink-dim);font-size:13px;margin-top:8px;letter-spacing:.1em; }
+  .input-row{
+    background:var(--card);border-radius:12px;padding:14px;box-shadow:var(--shadow);
+    display:flex;gap:10px;margin-bottom:10px;
+  }
+  .input-row input{
+    flex:1;padding:12px 14px;border:2px solid var(--ink-faint);border-radius:8px;
+    font:inherit;font-size:20px;font-weight:700;text-align:center;letter-spacing:.15em;background:var(--bg);
+  }
+  .input-row input:focus{ outline:none;border-color:var(--accent);background:white; }
+  .input-row button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, shuffle, mulberry32, randomSeed, loadStats, recordBestScore,
+        injectBackLink, shareToClipboard, escapeHtml } = Brain;
+injectBackLink('../../');
+
+const BANK = [
+  // 음식 (12)
+  { w:'사과', c:'음식' }, { w:'바나나', c:'음식' }, { w:'초콜릿', c:'음식' },
+  { w:'라면', c:'음식' }, { w:'김밥', c:'음식' }, { w:'떡볶이', c:'음식' },
+  { w:'비빔밥', c:'음식' }, { w:'김치찌개', c:'음식' }, { w:'된장찌개', c:'음식' },
+  { w:'삼겹살', c:'음식' }, { w:'햄버거', c:'음식' }, { w:'카페라떼', c:'음식' },
+  // 물건 (12)
+  { w:'컴퓨터', c:'물건' }, { w:'우체통', c:'물건' }, { w:'꽃다발', c:'물건' },
+  { w:'전화기', c:'물건' }, { w:'손수건', c:'물건' }, { w:'달력', c:'물건' },
+  { w:'지우개', c:'물건' }, { w:'선풍기', c:'물건' }, { w:'냉장고', c:'물건' },
+  { w:'계산기', c:'물건' }, { w:'이어폰', c:'물건' }, { w:'충전기', c:'물건' },
+  // 교통 (6)
+  { w:'지하철', c:'교통' }, { w:'자전거', c:'교통' }, { w:'자동차', c:'교통' },
+  { w:'비행기', c:'교통' }, { w:'기차역', c:'교통' }, { w:'버스터미널', c:'교통' },
+  // 자연 (10)
+  { w:'무지개', c:'자연' }, { w:'개나리', c:'자연' }, { w:'겨울바람', c:'자연' },
+  { w:'눈사람', c:'자연' }, { w:'단풍잎', c:'자연' }, { w:'벚꽃', c:'자연' },
+  { w:'소나기', c:'자연' }, { w:'가을하늘', c:'자연' }, { w:'별빛', c:'자연' },
+  { w:'해바라기', c:'자연' },
+  // 동물 (10)
+  { w:'호랑이', c:'동물' }, { w:'코끼리', c:'동물' }, { w:'강아지', c:'동물' },
+  { w:'고양이', c:'동물' }, { w:'원숭이', c:'동물' }, { w:'다람쥐', c:'동물' },
+  { w:'거북이', c:'동물' }, { w:'독수리', c:'동물' }, { w:'병아리', c:'동물' },
+  { w:'메뚜기', c:'동물' },
+  // 직업 (6)
+  { w:'선생님', c:'직업' }, { w:'소방관', c:'직업' }, { w:'경찰관', c:'직업' },
+  { w:'의사', c:'직업' }, { w:'간호사', c:'직업' }, { w:'요리사', c:'직업' },
+  // 장소 (8)
+  { w:'도서관', c:'장소' }, { w:'노래방', c:'장소' }, { w:'영화관', c:'장소' },
+  { w:'박물관', c:'장소' }, { w:'미술관', c:'장소' }, { w:'놀이공원', c:'장소' },
+  { w:'동물원', c:'장소' }, { w:'수영장', c:'장소' },
+  // 운동 (4)
+  { w:'배드민턴', c:'운동' }, { w:'농구공', c:'운동' }, { w:'축구공', c:'운동' },
+  { w:'태권도', c:'운동' },
+  // 일상/놀이 (5)
+  { w:'가위바위보', c:'놀이' }, { w:'여름방학', c:'일상' }, { w:'겨울방학', c:'일상' },
+  { w:'숙제', c:'일상' }, { w:'소풍', c:'일상' }
+];
+
+const JAMO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+function extractChosung(word){
+  return [...word].map(ch => {
+    const code = ch.charCodeAt(0) - 0xac00;
+    if(code < 0 || code > 11171) return ch;
+    const ci = Math.floor(code / 588);
+    return JAMO[ci];
+  }).join(' ');
+}
+
+const TOTAL = 8;
+const KEY = 'chosung_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">ㅊㅅ</div>
+    <h1 class="hero-title">초성 <span style="color:var(--accent);">퀴즈</span></h1>
+    <div class="hero-sub">초성만 보고 단어를 맞혀보세요.<br>총 ${TOTAL}문제, 카테고리 힌트 포함.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const qs = shuffle(BANK, rng).slice(0, TOTAL);
+  const state = { qs, i:0, correct:0 };
+  next();
+
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const q = state.qs[state.i];
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1} / ${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="chosung-display">
+        <div class="chosung-txt">${extractChosung(q.w)}</div>
+        <div class="category">💡 ${escapeHtml(q.c)}</div>
+      </div>
+      <div class="input-row">
+        <input type="text" id="ans" placeholder="정답 입력" autocomplete="off" autofocus>
+        <button id="sub">제출</button>
+      </div>
+      <div class="feedback" id="fb"></div>
+      <div class="btn-row"><button class="btn ghost" id="skip">모르겠어요 (−0점)</button></div>
+    `;
+    app.appendChild(card);
+
+    const input = document.getElementById('ans');
+    const submit = document.getElementById('sub');
+    const fb = document.getElementById('fb');
+    input.focus();
+
+    let tried = 0;
+    function check(){
+      const v = input.value.trim().replace(/\s/g, '');
+      if(!v) return;
+      tried++;
+      if(v === q.w){
+        fb.className = 'feedback right';
+        fb.textContent = '✓ 정답!';
+        state.correct++;
+        setTimeout(()=>{ state.i++; next(); }, 700);
+      } else if(tried >= 2){
+        fb.className = 'feedback wrong';
+        fb.textContent = '정답은 "' + q.w + '"였어요.';
+        setTimeout(()=>{ state.i++; next(); }, 1100);
+      } else {
+        fb.className = 'feedback wrong';
+        fb.textContent = '한 번 더!';
+        input.value = ''; input.focus();
+      }
+    }
+    submit.onclick = check;
+    input.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); check(); } });
+    document.getElementById('skip').onclick = ()=>{
+      fb.className = 'feedback info';
+      fb.textContent = '정답은 "' + q.w + '"';
+      setTimeout(()=>{ state.i++; next(); }, 900);
+    };
+  }
+
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total: TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    const pct = Math.round(state.correct / TOTAL * 100);
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = pct >= 88 ? '🏆' : pct >= 63 ? '🎉' : pct >= 38 ? '👏' : '🙂';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">초성 챌린지 종료</div>
+      <div class="result-big">${state.correct} / ${TOTAL}</div>
+      <div class="result-sub">정답률 ${pct}%</div>
+      ${isBest ? '<div class="ribbon">🌟 개인 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e) =>
+      shareToClipboard(`초성 퀴즈\nㅊㅅ ${state.correct}/${TOTAL} (${pct}%)${isBest?' 🌟':''}`, e.target);
+  }
+}
+
+showTitle();
+window.__GAME__ = { BANK, TOTAL, KEY, extractChosung };
+</script>
+</body>
+</html>

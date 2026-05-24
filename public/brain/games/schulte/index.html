@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>숫자 1~25 · 집중 스프린트</title>
+<meta property="og:title" content="숫자 1~25 · 집중 스프린트">
+<meta property="og:description" content="5x5 격자에서 1부터 25까지 순서대로 빠르게 클릭하는 집중력 훈련.">
+<meta property="og:type" content="website">
+<style>
+  :root{
+    --bg:#fef3f3;
+    --bg-2:#fce3e3;
+    --card:#ffffff;
+    --ink:#2d1f1f;
+    --ink-dim:#7a6a6a;
+    --ink-faint:#c9b5b5;
+    --accent:#e57373;
+    --accent-dark:#c24f4f;
+    --accent-soft:#f5b8b8;
+    --green:#7db167;
+    --gold:#e0b040;
+    --shadow:0 4px 14px rgba(0,0,0,.07);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{
+    background:linear-gradient(135deg,var(--bg) 0%,var(--bg-2) 100%);
+    color:var(--ink);
+    font-family:"Pretendard","Noto Sans KR","Apple SD Gothic Neo",system-ui,sans-serif;
+    font-size:16px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;user-select:none;
+  }
+  main{max-width:520px;margin:0 auto;padding:4vh 20px 10vh;}
+  h1.title{font-size:24px;font-weight:800;text-align:center;color:var(--accent-dark);}
+  .topbar{display:flex;justify-content:space-between;margin-bottom:16px;font-size:14px;}
+  .topbar .stat{background:var(--card);padding:8px 14px;border-radius:20px;font-weight:700;box-shadow:var(--shadow);color:var(--accent-dark);font-variant-numeric:tabular-nums;}
+  .topbar .stat.next{background:var(--accent);color:white;}
+
+  .card{background:var(--card);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);margin-bottom:16px;}
+
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin:0 auto;max-width:420px;}
+  .tile{
+    aspect-ratio:1;background:white;border:2px solid var(--accent-soft);border-radius:10px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:24px;font-weight:700;color:var(--ink);cursor:pointer;
+    transition:all .12s;user-select:none;
+  }
+  .tile:hover:not(.done){background:var(--accent-soft);}
+  .tile.done{background:#ebd8d8;border-color:#e0c8c8;color:transparent;cursor:default;}
+  .tile.correct-flash{background:var(--green);color:white;transform:scale(0.92);}
+  .tile.wrong-flash{background:var(--accent);color:white;}
+
+  #title-screen{text-align:center;padding-top:8vh;}
+  .phone-icon{font-size:46px;margin-bottom:12px;}
+  .hero-title{font-size:30px;font-weight:800;margin-bottom:10px;}
+  .hero-sub{color:var(--ink-dim);font-size:15px;margin:0 auto 24px;max-width:340px;line-height:1.8;}
+  .rule-card{background:var(--card);border-radius:var(--radius);padding:16px;margin-bottom:18px;box-shadow:var(--shadow);text-align:left;}
+  .rule-card h3{font-size:14px;color:var(--accent-dark);margin-bottom:8px;letter-spacing:.1em;}
+  .rule-card p{color:var(--ink-dim);font-size:13px;line-height:1.8;}
+  .best-time{font-weight:700;color:var(--gold);font-size:15px;}
+
+  .btn{
+    background:var(--accent);color:white;border:0;border-radius:10px;
+    padding:13px 28px;font:inherit;font-weight:700;font-size:15px;cursor:pointer;
+    transition:all .2s;box-shadow:0 2px 8px rgba(229,115,115,.3);letter-spacing:.08em;
+  }
+  .btn:hover{background:var(--accent-dark);transform:translateY(-1px);}
+  .btn.secondary{background:transparent;color:var(--ink);border:2px solid var(--ink);box-shadow:none;}
+  .btn.ghost{background:transparent;color:var(--ink-dim);border:1px solid var(--ink-faint);box-shadow:none;padding:10px 20px;font-size:13px;}
+  .btn-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:18px;}
+
+  .result-card{text-align:center;}
+  .result-emoji{font-size:48px;margin-bottom:8px;}
+  .result-title{font-size:26px;font-weight:800;margin-bottom:8px;}
+  .result-time{font-size:44px;font-weight:800;color:var(--accent-dark);font-variant-numeric:tabular-nums;margin:12px 0;}
+  .result-stats{color:var(--ink-dim);font-size:14px;}
+  .ribbon{display:inline-block;background:var(--gold);color:white;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700;margin-top:8px;letter-spacing:.1em;}
+  .history-list{margin-top:14px;color:var(--ink-dim);font-size:13px;}
+  .history-list .entry{display:flex;justify-content:space-between;padding:4px 10px;}
+  .history-list .entry.best{color:var(--gold);font-weight:700;}
+
+  .credits{color:var(--ink-faint);font-size:11px;text-align:center;margin-top:26px;letter-spacing:.15em;}
+
+  @media(max-width:480px){
+    .tile{font-size:20px;}
+  }
+</style>
+</head>
+<body>
+<a class="nav-back" href="../../" style="position:fixed;top:16px;left:16px;background:#fff;color:#666;text-decoration:none;padding:6px 14px;border-radius:20px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.07);z-index:10;">← 홈</a>
+<main id="app"></main>
+<script>
+/* =========================================================
+   『숫자 1~25 · 집중 스프린트』 — game7 (Schulte Table)
+   ========================================================= */
+
+const N = 5; // 5x5
+const TOTAL = N*N; // 25
+
+/* PRNG */
+function mulberry32(seed){
+  return function(){
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ t>>>15, t | 1);
+    t ^= t + Math.imul(t ^ t>>>7, t | 61);
+    return ((t ^ t>>>14) >>> 0) / 4294967296;
+  };
+}
+function shuffle(arr, rng){
+  const a = [...arr];
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(rng()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+function makeGrid(rng){
+  const nums = Array.from({length:TOTAL}, (_,i)=>i+1);
+  return shuffle(nums, rng);
+}
+
+/* Persistence */
+const KEY = 'schulte_stats';
+function loadStats(){
+  try{ return JSON.parse(localStorage.getItem(KEY)||'{"played":0,"bestMs":null,"recent":[]}'); }
+  catch(e){ return {played:0,bestMs:null,recent:[]}; }
+}
+function saveStats(s){ try{ localStorage.setItem(KEY, JSON.stringify(s)); }catch(e){} }
+function recordScore(ms){
+  const s = loadStats();
+  s.played++;
+  if(s.bestMs == null || ms < s.bestMs) s.bestMs = ms;
+  s.recent.unshift(ms);
+  if(s.recent.length > 5) s.recent = s.recent.slice(0,5);
+  saveStats(s);
+  return s;
+}
+
+function fmtMs(ms){
+  const s = ms/1000;
+  return s.toFixed(2) + 's';
+}
+
+/* State */
+const state = {
+  grid: [],
+  nextTarget: 1,
+  startedAt: 0,
+  startedClock: false,
+  wrongCount: 0,
+  finished: false,
+  elapsedMs: 0
+};
+
+const app = document.getElementById('app');
+function clear(){ app.innerHTML=''; }
+function $el(tag, cls, html){ const e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; }
+
+let tickInterval = null;
+
+function showTitle(){
+  clear();
+  const stats = loadStats();
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="phone-icon">🎯</div>
+    <h1 class="hero-title">숫자 <span style="color:var(--accent);">1 → 25</span></h1>
+    <div class="hero-sub">5×5 격자에서 1부터 25까지<br>순서대로 빠르게 클릭하세요.</div>
+    <div class="rule-card">
+      <h3>집중력 훈련 · Schulte Table</h3>
+      <p>
+        시선을 격자 가운데 두고 주변 시야로 숫자를 찾는 것이 핵심입니다.<br>
+        잘못 클릭하면 시간 패널티가 더해집니다.<br>
+        평균 40~60초, 고수는 20초대까지.
+      </p>
+      ${stats.bestMs ? `<p style="margin-top:10px;"><span class="best-time">개인 기록 · ${fmtMs(stats.bestMs)}</span></p>` : ''}
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="btn-start">시 작 하 기</button>
+    </div>
+    <div class="credits">built by Claude · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(Date.now() & 0xffffffff);
+  state.grid = makeGrid(rng);
+  state.nextTarget = 1;
+  state.startedAt = 0;
+  state.startedClock = false;
+  state.wrongCount = 0;
+  state.finished = false;
+  state.elapsedMs = 0;
+  render();
+}
+
+function render(){
+  clear();
+  const topbar = $el('div','topbar');
+  topbar.innerHTML = `
+    <div class="stat next">다음 <span id="next-num">${state.nextTarget}</span></div>
+    <div class="stat"><span id="timer">0.00s</span></div>
+    <div class="stat">오답 <span id="wrong">${state.wrongCount}</span></div>
+  `;
+  app.appendChild(topbar);
+
+  const card = $el('div','card');
+  card.innerHTML = `<div class="grid" id="grid"></div>
+    <div class="btn-row">
+      <button class="btn ghost" id="btn-reset">다시 섞기</button>
+      <button class="btn ghost" id="btn-home">홈으로</button>
+    </div>`;
+  app.appendChild(card);
+
+  renderGrid();
+
+  document.getElementById('btn-reset').onclick = startGame;
+  document.getElementById('btn-home').onclick = ()=>{ if(tickInterval) clearInterval(tickInterval); showTitle(); };
+
+  if(tickInterval) clearInterval(tickInterval);
+  tickInterval = setInterval(()=>{
+    if(state.finished || !state.startedClock) return;
+    const el = document.getElementById('timer');
+    if(el) el.textContent = fmtMs(performance.now() - state.startedAt);
+  }, 50);
+}
+
+function renderGrid(){
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  state.grid.forEach((n, idx) => {
+    const tile = $el('div','tile');
+    if(n < state.nextTarget) tile.classList.add('done');
+    tile.textContent = n;
+    tile.onclick = ()=>onTileClick(tile, n);
+    grid.appendChild(tile);
+  });
+}
+
+function onTileClick(tile, n){
+  if(state.finished) return;
+  if(n === state.nextTarget){
+    if(!state.startedClock){
+      state.startedClock = true;
+      state.startedAt = performance.now();
+    }
+    tile.classList.add('correct-flash');
+    setTimeout(()=>tile.classList.add('done'), 120);
+    state.nextTarget++;
+    document.getElementById('next-num').textContent = state.nextTarget > TOTAL ? '✓' : state.nextTarget;
+    if(state.nextTarget > TOTAL){
+      state.finished = true;
+      state.elapsedMs = performance.now() - state.startedAt;
+      // penalty: each wrong adds 1.5s
+      const finalMs = state.elapsedMs + state.wrongCount * 1500;
+      if(tickInterval) clearInterval(tickInterval);
+      const stats = recordScore(finalMs);
+      setTimeout(()=>showResult(finalMs, stats), 260);
+    }
+  } else if(n > state.nextTarget){
+    // wrong
+    tile.classList.add('wrong-flash');
+    setTimeout(()=>tile.classList.remove('wrong-flash'), 220);
+    state.wrongCount++;
+    document.getElementById('wrong').textContent = state.wrongCount;
+  }
+}
+
+function showResult(finalMs, stats){
+  const card = $el('div','card result-card');
+  const isBest = stats.bestMs === finalMs;
+  const sec = finalMs/1000;
+  const emoji = sec < 25 ? '🏆' : sec < 40 ? '🎉' : sec < 60 ? '👏' : '🙂';
+  const tier = sec < 25 ? '탁월함' : sec < 40 ? '빠름' : sec < 60 ? '평균' : '여유롭게';
+  card.innerHTML = `
+    <div class="result-emoji">${emoji}</div>
+    <div class="result-title">완주!</div>
+    <div class="result-time">${fmtMs(finalMs)}</div>
+    <div class="result-stats">
+      ${tier} · 오답 ${state.wrongCount}회${state.wrongCount>0?` (+${(state.wrongCount*1.5).toFixed(1)}s 패널티)`:''}
+    </div>
+    ${isBest ? '<div class="ribbon">🌟 개인 최고 기록</div>' : ''}
+    <div class="history-list">
+      ${stats.recent.map((ms,i)=>`<div class="entry${ms===stats.bestMs?' best':''}"><span>#${i+1}</span><span>${fmtMs(ms)}</span></div>`).join('')}
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="btn-share">결과 공유</button>
+      <button class="btn secondary" id="btn-again">다시</button>
+      <button class="btn ghost" id="btn-home">홈으로</button>
+    </div>
+  `;
+  app.appendChild(card);
+  document.getElementById('btn-again').onclick = startGame;
+  document.getElementById('btn-home').onclick = showTitle;
+  document.getElementById('btn-share').onclick = ()=>{
+    const txt = `숫자 1~25 집중 스프린트\n⏱ ${fmtMs(finalMs)}  (오답 ${state.wrongCount})${isBest?'\n🌟 개인 최고 기록!':''}`;
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(txt).then(()=>{
+        const btn = document.getElementById('btn-share');
+        const orig = btn.textContent;
+        btn.textContent='✓ 복사됨';
+        setTimeout(()=>btn.textContent=orig, 1500);
+      });
+    }
+  };
+}
+
+/* Boot */
+showTitle();
+</script>
+</body>
+</html>

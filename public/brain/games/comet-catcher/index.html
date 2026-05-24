@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>코멧 캐처 | 5분 퍼즐</title>
+<meta name="description" content="별비 속에서 혜성을 모으고 운석을 피하는 60초 Canvas 아케이드 게임.">
+<meta property="og:title" content="코멧 캐처">
+<meta property="og:description" content="별비 속에서 혜성을 모으고 운석을 피하기.">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/comet-catcher/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#516fd8; --accent-dark:#334ea6; --accent-soft:#aebdfa; }
+  main{ max-width: 640px; }
+  .hud-grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:8px;
+    margin-bottom:12px;
+  }
+  .hud-box{
+    background:var(--card);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    padding:8px 10px;
+    text-align:center;
+  }
+  .hud-label{
+    color:var(--ink-dim);
+    font-size:11px;
+    font-weight:800;
+  }
+  .hud-value{
+    color:var(--accent-dark);
+    font-size:19px;
+    font-weight:900;
+    font-variant-numeric:tabular-nums;
+  }
+  .game-stage{
+    background:var(--card);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:12px;
+    margin-bottom:14px;
+  }
+  .comet-canvas{
+    display:block;
+    width:100%;
+    aspect-ratio:4 / 5;
+    background:#090d18;
+    border-radius:8px;
+    cursor:none;
+    touch-action:none;
+  }
+  .hint-line{
+    color:var(--ink-dim);
+    font-size:13px;
+    line-height:1.6;
+    text-align:center;
+  }
+  .score-hero{
+    color:var(--accent-dark);
+    font-size:54px;
+    font-weight:900;
+    line-height:1;
+    margin:18px 0 8px;
+    text-align:center;
+  }
+  .result-stats{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:8px;
+    margin:16px 0;
+  }
+  .result-stats .hud-box{
+    border:1px solid #e6ddcf;
+    box-shadow:none;
+  }
+  @media(max-width:520px){
+    main{ padding-inline:14px; }
+    .hud-grid{ grid-template-columns:repeat(2,1fr); }
+    .result-stats{ grid-template-columns:1fr; }
+    .score-hero{ font-size:46px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const GAME_ID = 'comet-catcher';
+const STORAGE_KEY = GAME_ID + '_stats';
+const GAME_SECONDS = 60;
+const TAU = Math.PI * 2;
+
+let canvas = null;
+let ctx = null;
+let rafId = 0;
+let state = null;
+let view = { w: 360, h: 450, dpr: 1 };
+const keys = new Set();
+
+function clamp(n, lo, hi){
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function rand(lo, hi){
+  return lo + Math.random() * (hi - lo);
+}
+
+function setCanvasSize(){
+  if (!canvas || !ctx) return;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(300, Math.floor(rect.width));
+  const h = Math.max(360, Math.floor(rect.height || w * 1.25));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  view = { w, h, dpr };
+  if (state && state.stars.length === 0) state.stars = createStars();
+  if (state) {
+    state.playerX = clamp(state.playerX, 34, view.w - 34);
+    state.targetX = clamp(state.targetX, 34, view.w - 34);
+  }
+}
+
+function createStars(){
+  const stars = [];
+  const count = Math.floor(view.w * view.h / 4100);
+  for (let i = 0; i < count; i++) {
+    stars.push({
+      x: Math.random() * view.w,
+      y: Math.random() * view.h,
+      z: rand(0.35, 1.4),
+      twinkle: Math.random() * TAU
+    });
+  }
+  return stars;
+}
+
+function resetState(){
+  state = {
+    running: true,
+    startedAt: performance.now(),
+    lastAt: 0,
+    score: 0,
+    combo: 0,
+    bestCombo: 0,
+    lives: 3,
+    catches: 0,
+    dodges: 0,
+    hits: 0,
+    playerX: view.w / 2,
+    targetX: view.w / 2,
+    items: [],
+    particles: [],
+    stars: createStars(),
+    spawnTimer: 0.18,
+    shake: 0,
+    message: '혜성은 모으고 운석은 피하세요'
+  };
+}
+
+function remainingMs(now){
+  return Math.max(0, GAME_SECONDS * 1000 - (now - state.startedAt));
+}
+
+function spawnItem(){
+  const roll = Math.random();
+  let type = 'comet';
+  if (roll < 0.23) type = 'meteor';
+  else if (roll > 0.93) type = 'gold';
+  else if (roll > 0.88 && state.lives < 3) type = 'shield';
+
+  const difficulty = 1 + (performance.now() - state.startedAt) / 42000;
+  const size = type === 'meteor' ? rand(17, 25) : type === 'gold' ? rand(12, 17) : rand(11, 18);
+  const speedBase = type === 'meteor' ? 145 : type === 'gold' ? 170 : 130;
+
+  state.items.push({
+    type,
+    x: rand(size + 12, view.w - size - 12),
+    y: -size - 16,
+    vx: rand(-26, 26) * difficulty,
+    vy: (speedBase + rand(0, 72)) * difficulty,
+    r: size,
+    spin: rand(-2.6, 2.6),
+    angle: Math.random() * TAU,
+    pulse: Math.random() * TAU
+  });
+}
+
+function spawnParticles(x, y, color, count, power){
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * TAU;
+    const sp = rand(power * 0.35, power);
+    state.particles.push({
+      x,
+      y,
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      life: rand(0.35, 0.85),
+      maxLife: 0,
+      size: rand(2, 5),
+      color
+    });
+    state.particles[state.particles.length - 1].maxLife = state.particles[state.particles.length - 1].life;
+  }
+}
+
+function drawBackground(now){
+  const g = ctx.createLinearGradient(0, 0, 0, view.h);
+  g.addColorStop(0, '#090d18');
+  g.addColorStop(0.48, '#122247');
+  g.addColorStop(1, '#050711');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, view.w, view.h);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  const nebulaA = ctx.createRadialGradient(view.w * 0.18, view.h * 0.22, 0, view.w * 0.18, view.h * 0.22, view.w * 0.55);
+  nebulaA.addColorStop(0, 'rgba(94,118,255,.26)');
+  nebulaA.addColorStop(1, 'rgba(94,118,255,0)');
+  ctx.fillStyle = nebulaA;
+  ctx.fillRect(0, 0, view.w, view.h);
+
+  const nebulaB = ctx.createRadialGradient(view.w * 0.82, view.h * 0.62, 0, view.w * 0.82, view.h * 0.62, view.w * 0.5);
+  nebulaB.addColorStop(0, 'rgba(67,217,172,.18)');
+  nebulaB.addColorStop(1, 'rgba(67,217,172,0)');
+  ctx.fillStyle = nebulaB;
+  ctx.fillRect(0, 0, view.w, view.h);
+  ctx.restore();
+
+  for (const star of state.stars) {
+    const alpha = 0.35 + Math.sin(now / 540 + star.twinkle) * 0.18 + star.z * 0.22;
+    ctx.fillStyle = 'rgba(255,255,255,' + Math.max(0.18, Math.min(0.92, alpha)) + ')';
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.z, 0, TAU);
+    ctx.fill();
+  }
+}
+
+function drawComet(item){
+  const tailLen = item.r * 4.6;
+  const a = Math.atan2(item.vy, item.vx) + Math.PI;
+  const tx = item.x + Math.cos(a) * tailLen;
+  const ty = item.y + Math.sin(a) * tailLen;
+  const grad = ctx.createLinearGradient(item.x, item.y, tx, ty);
+  grad.addColorStop(0, item.type === 'gold' ? 'rgba(255,231,128,.95)' : 'rgba(130,225,255,.9)');
+  grad.addColorStop(1, 'rgba(130,225,255,0)');
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = item.r * 0.75;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(item.x, item.y);
+  ctx.lineTo(tx, ty);
+  ctx.stroke();
+  ctx.shadowBlur = item.r * 1.2;
+  ctx.shadowColor = item.type === 'gold' ? '#ffe780' : '#82e1ff';
+  ctx.fillStyle = item.type === 'gold' ? '#ffe780' : '#a8f4ff';
+  ctx.beginPath();
+  ctx.arc(item.x, item.y, item.r, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(item.x - item.r * 0.28, item.y - item.r * 0.26, item.r * 0.28, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMeteor(item){
+  ctx.save();
+  ctx.translate(item.x, item.y);
+  ctx.rotate(item.angle);
+  ctx.shadowBlur = 14;
+  ctx.shadowColor = '#ff776f';
+  ctx.fillStyle = '#6e3c4c';
+  ctx.beginPath();
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * TAU;
+    const rr = item.r * (0.72 + ((i * 37) % 10) / 28);
+    const x = Math.cos(a) * rr;
+    const y = Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,154,130,.65)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(20,12,18,.42)';
+  ctx.beginPath();
+  ctx.moveTo(-item.r * 0.4, -item.r * 0.1);
+  ctx.lineTo(item.r * 0.12, item.r * 0.22);
+  ctx.lineTo(item.r * 0.42, -item.r * 0.22);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawShield(item){
+  const pulse = 1 + Math.sin(item.pulse) * 0.12;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = '#9fedff';
+  ctx.strokeStyle = '#9fedff';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(item.x, item.y, item.r * pulse, 0, TAU);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(159,237,255,.24)';
+  ctx.beginPath();
+  ctx.arc(item.x, item.y, item.r * 0.58, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPlayer(){
+  const y = view.h - 58;
+  const x = state.playerX;
+  ctx.save();
+  ctx.translate(x, y);
+
+  const flame = 14 + Math.sin(performance.now() / 80) * 5;
+  const flameGrad = ctx.createLinearGradient(0, 8, 0, 34);
+  flameGrad.addColorStop(0, '#ffffff');
+  flameGrad.addColorStop(0.4, '#7fe7ff');
+  flameGrad.addColorStop(1, 'rgba(81,111,216,0)');
+  ctx.fillStyle = flameGrad;
+  ctx.beginPath();
+  ctx.moveTo(-8, 11);
+  ctx.lineTo(0, flame + 20);
+  ctx.lineTo(8, 11);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.shadowBlur = 16;
+  ctx.shadowColor = '#83e7ff';
+  ctx.fillStyle = '#dce9ff';
+  ctx.beginPath();
+  ctx.moveTo(0, -30);
+  ctx.lineTo(25, 24);
+  ctx.lineTo(0, 10);
+  ctx.lineTo(-25, 24);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#516fd8';
+  ctx.beginPath();
+  ctx.moveTo(0, -18);
+  ctx.lineTo(10, 12);
+  ctx.lineTo(0, 6);
+  ctx.lineTo(-10, 12);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.globalAlpha = 0.22 + state.lives * 0.08;
+  ctx.strokeStyle = '#9fedff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, 35, Math.PI * 1.08, Math.PI * 1.92);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawParticles(){
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const p of state.particles) {
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (0.7 + alpha), 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function draw(now){
+  if (!state || !ctx) return;
+  ctx.save();
+  if (state.shake > 0) {
+    ctx.translate(rand(-state.shake, state.shake), rand(-state.shake, state.shake));
+  }
+
+  drawBackground(now);
+  for (const item of state.items) {
+    if (item.type === 'meteor') drawMeteor(item);
+    else if (item.type === 'shield') drawShield(item);
+    else drawComet(item);
+  }
+  drawParticles();
+  drawPlayer();
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,.74)';
+  ctx.font = '800 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(state.message, view.w / 2, 24);
+  ctx.restore();
+}
+
+function updateHud(now){
+  const time = document.getElementById('hud-time');
+  if (!time || !state) return;
+  time.textContent = Math.ceil(remainingMs(now) / 1000) + 's';
+  document.getElementById('hud-score').textContent = state.score;
+  document.getElementById('hud-combo').textContent = 'x' + Math.max(1, state.combo);
+  document.getElementById('hud-lives').textContent = '♥'.repeat(state.lives);
+}
+
+function collect(item){
+  if (item.type === 'meteor') {
+    state.lives -= 1;
+    state.combo = 0;
+    state.hits += 1;
+    state.shake = 12;
+    state.message = '운석 충돌';
+    spawnParticles(item.x, item.y, '#ff776f', 28, 170);
+    if (navigator.vibrate) navigator.vibrate(50);
+    if (state.lives <= 0) finish();
+    return;
+  }
+
+  if (item.type === 'shield') {
+    state.lives = Math.min(3, state.lives + 1);
+    state.message = '보호막 회복';
+    spawnParticles(item.x, item.y, '#9fedff', 24, 150);
+    return;
+  }
+
+  const base = item.type === 'gold' ? 300 : 100;
+  const bonus = Math.min(240, state.combo * 18);
+  const points = base + bonus;
+  state.score += points;
+  state.combo += 1;
+  state.bestCombo = Math.max(state.bestCombo, state.combo);
+  state.catches += 1;
+  state.message = (item.type === 'gold' ? '골드 코멧 +' : '코멧 +') + points;
+  spawnParticles(item.x, item.y, item.type === 'gold' ? '#ffe780' : '#82e1ff', item.type === 'gold' ? 34 : 22, 160);
+}
+
+function update(now){
+  if (!state.running) return;
+  if (!state.lastAt) state.lastAt = now;
+  const dt = Math.min(0.035, (now - state.lastAt) / 1000);
+  state.lastAt = now;
+
+  if (remainingMs(now) <= 0) {
+    finish();
+    return;
+  }
+
+  const keySpeed = view.w * 0.82;
+  if (keys.has('ArrowLeft') || keys.has('KeyA')) state.targetX -= keySpeed * dt;
+  if (keys.has('ArrowRight') || keys.has('KeyD')) state.targetX += keySpeed * dt;
+  state.targetX = clamp(state.targetX, 34, view.w - 34);
+  state.playerX += (state.targetX - state.playerX) * Math.min(1, dt * 12);
+
+  for (const star of state.stars) {
+    star.y += (16 + star.z * 34) * dt;
+    star.twinkle += dt * 2.2;
+    if (star.y > view.h + 4) {
+      star.y = -4;
+      star.x = Math.random() * view.w;
+    }
+  }
+
+  const elapsed = (now - state.startedAt) / 1000;
+  const difficulty = 1 + elapsed / 42;
+  state.spawnTimer -= dt;
+  if (state.spawnTimer <= 0) {
+    spawnItem();
+    if (difficulty > 1.55 && Math.random() < 0.22) spawnItem();
+    state.spawnTimer = Math.max(0.18, 0.62 - difficulty * 0.11 + Math.random() * 0.12);
+  }
+
+  const shipY = view.h - 58;
+  const nextItems = [];
+  for (const item of state.items) {
+    item.x += item.vx * dt;
+    item.y += item.vy * dt;
+    item.angle += item.spin * dt;
+    item.pulse += dt * 5;
+    if (item.x < item.r || item.x > view.w - item.r) item.vx *= -1;
+
+    const hitRadius = item.type === 'meteor' ? 32 : 36;
+    const dist = Math.hypot(item.x - state.playerX, item.y - shipY);
+    if (dist < item.r + hitRadius) {
+      collect(item);
+      continue;
+    }
+
+    if (item.y > view.h + item.r + 24) {
+      if (item.type === 'meteor') state.dodges += 1;
+      if (item.type === 'comet' || item.type === 'gold') state.combo = 0;
+      continue;
+    }
+    nextItems.push(item);
+  }
+  state.items = nextItems;
+
+  const nextParticles = [];
+  for (const p of state.particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.985;
+    p.vy = p.vy * 0.985 + 44 * dt;
+    p.life -= dt;
+    if (p.life > 0) nextParticles.push(p);
+  }
+  state.particles = nextParticles;
+  state.shake = Math.max(0, state.shake - dt * 28);
+}
+
+function loop(now){
+  if (!state || !state.running) return;
+  update(now);
+  if (!state.running) return;
+  draw(now);
+  updateHud(now);
+  rafId = requestAnimationFrame(loop);
+}
+
+function renderHome(){
+  cancelAnimationFrame(rafId);
+  clear();
+  const stats = loadStats(STORAGE_KEY, { played: 0, bestScore: 0 });
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div id="title-screen">' +
+      '<div class="brand-icon">✦</div>' +
+      '<h1 class="hero-title">코멧 캐처</h1>' +
+      '<p class="hero-sub">별비 속에서 혜성을 모으고 운석을 피하는 60초 아케이드.</p>' +
+      '<div class="today-card"><div class="today-label">BEST</div><div class="today-date">' + (stats.bestScore || 0) + '점</div></div>' +
+      '<div class="rule-card">' +
+        '<h3>규칙</h3>' +
+        '<p>드래그하거나 방향키로 기체를 움직입니다. 파란 혜성과 금빛 혜성은 점수, 붉은 운석은 피해입니다. 연속 수집하면 콤보 보너스가 붙습니다.</p>' +
+      '</div>' +
+      '<div class="btn-row"><button class="btn" id="start-btn">시작</button></div>' +
+      '<div class="credits">5분 퍼즐 · 2026</div>' +
+    '</div>';
+  document.getElementById('start-btn').onclick = start;
+}
+
+function renderPlaying(){
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div class="hud-grid">' +
+      '<div class="hud-box"><div class="hud-label">TIME</div><div class="hud-value" id="hud-time">60s</div></div>' +
+      '<div class="hud-box"><div class="hud-label">SCORE</div><div class="hud-value" id="hud-score">0</div></div>' +
+      '<div class="hud-box"><div class="hud-label">COMBO</div><div class="hud-value" id="hud-combo">x1</div></div>' +
+      '<div class="hud-box"><div class="hud-label">SHIELD</div><div class="hud-value" id="hud-lives">♥♥♥</div></div>' +
+    '</div>' +
+    '<div class="game-stage"><canvas class="comet-canvas" id="comet-canvas" aria-label="코멧 캐처 게임 화면"></canvas></div>' +
+    '<p class="hint-line">드래그, 마우스 이동, 방향키로 조작합니다.</p>';
+
+  canvas = document.getElementById('comet-canvas');
+  ctx = canvas.getContext('2d');
+  setCanvasSize();
+
+  function moveToEvent(event){
+    const rect = canvas.getBoundingClientRect();
+    state.targetX = clamp(event.clientX - rect.left, 34, view.w - 34);
+  }
+
+  canvas.addEventListener('pointerdown', function(event){
+    event.preventDefault();
+    canvas.setPointerCapture(event.pointerId);
+    moveToEvent(event);
+  });
+  canvas.addEventListener('pointermove', function(event){
+    event.preventDefault();
+    moveToEvent(event);
+  });
+}
+
+function start(){
+  renderPlaying();
+  resetState();
+  draw(performance.now());
+  rafId = requestAnimationFrame(loop);
+}
+
+function finish(){
+  if (!state || !state.running) return;
+  state.running = false;
+  cancelAnimationFrame(rafId);
+
+  const finalScore = state.score;
+  const stats = recordBestScore(STORAGE_KEY, finalScore, {
+    catches: state.catches,
+    dodges: state.dodges,
+    bestCombo: state.bestCombo,
+    hits: state.hits,
+    date: Brain.todayDateString()
+  });
+
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<section class="card">' +
+      '<h1 class="title">코멧 캐처 결과</h1>' +
+      '<div class="score-hero">' + finalScore + '</div>' +
+      '<p class="puzzle-desc" style="text-align:center;">최고 기록 ' + (stats.bestScore || finalScore) + '점</p>' +
+      '<div class="result-stats">' +
+        '<div class="hud-box"><div class="hud-label">CATCH</div><div class="hud-value">' + state.catches + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">DODGE</div><div class="hud-value">' + state.dodges + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">BEST COMBO</div><div class="hud-value">x' + Math.max(1, state.bestCombo) + '</div></div>' +
+      '</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn" id="again-btn">다시</button>' +
+        '<button class="btn secondary" id="share-btn">공유</button>' +
+      '</div>' +
+    '</section>';
+
+  document.getElementById('again-btn').onclick = start;
+  document.getElementById('share-btn').onclick = function(event){
+    const text = '코멧 캐처 ' + finalScore + '점 · 수집 ' + state.catches + ' · 콤보 x' + Math.max(1, state.bestCombo) + '\\nhttps://games.jdgrid.com/brain/games/comet-catcher/';
+    shareToClipboard(text, event.currentTarget);
+  };
+}
+
+window.addEventListener('resize', function(){
+  setCanvasSize();
+});
+
+document.addEventListener('keydown', function(event){
+  keys.add(event.code);
+  if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD', 'Space'].includes(event.code)) {
+    event.preventDefault();
+  }
+});
+
+document.addEventListener('keyup', function(event){
+  keys.delete(event.code);
+});
+
+renderHome();
+</script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>숫자 암기 | 5분 퍼즐</title>
+<meta property="og:title" content="숫자 암기">
+<meta property="og:description" content="점점 길어지는 숫자열을 기억하고 그대로 입력하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#c44d7a;--accent-dark:#933457;--accent-soft:#e5a7bd; }
+  .flash{ text-align:center;padding:40px 10px;background:var(--accent-soft);border-radius:14px;margin-bottom:14px;font-size:64px;font-weight:800;color:var(--accent-dark);font-variant-numeric:tabular-nums;letter-spacing:.1em;line-height:1; }
+  .level-info{ text-align:center;color:var(--accent-dark);font-weight:700;font-size:18px;margin-bottom:8px; }
+  .hint{ text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:10px; }
+  .input-row{ background:var(--card);border-radius:10px;padding:12px;display:flex;gap:8px;box-shadow:var(--shadow); }
+  .input-row input{ flex:1;padding:12px;border:2px solid var(--ink-faint);border-radius:8px;font:inherit;font-size:28px;font-weight:700;text-align:center;letter-spacing:.15em;background:var(--bg);font-variant-numeric:tabular-nums; }
+  .input-row button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, saveStats, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const KEY = 'digit_span_stats';
+const app = document.getElementById('app');
+const START_LEN = 3;
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestLen:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔢</div>
+    <h1 class="hero-title">숫자 <span style="color:var(--accent);">암기</span></h1>
+    <div class="hero-sub">길이 ${START_LEN}부터 시작해<br>정답이면 +1자리씩. 어디까지?</div>
+    ${stats.bestLen>0?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestLen}자리</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = ()=>runLevel(START_LEN);
+}
+
+function runLevel(len){
+  let seq = '';
+  for(let i=0;i<len;i++) seq += Math.floor(Math.random()*10);
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">레벨 ${len-START_LEN+1}</div><div class="stat">${len}자리</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="level-info">숫자 ${len}자리</div>
+    <div class="hint" id="hint">잘 보세요… (${Math.max(2, len*0.7).toFixed(1)}초)</div>
+    <div class="flash" id="flash">${seq}</div>
+  `;
+  app.appendChild(card);
+  const showMs = Math.max(2000, len * 700);
+  setTimeout(()=>{
+    document.getElementById('flash').textContent = '❓';
+    document.getElementById('hint').textContent = '방금 본 숫자를 그대로 입력';
+    const inp = $el('div','input-row');
+    inp.innerHTML = `<input id="ans" type="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" autofocus><button id="sub">→</button>`;
+    card.appendChild(inp);
+    const fb = $el('div','feedback'); fb.id='fb'; card.appendChild(fb);
+    const input = document.getElementById('ans');
+    input.focus();
+    function check(){
+      const v = input.value.replace(/\D/g,'');
+      if(v.length !== len){ document.getElementById('fb').className='feedback wrong'; document.getElementById('fb').textContent = len+'자리를 입력해주세요.'; return; }
+      if(v === seq){
+        document.getElementById('fb').className='feedback right';
+        document.getElementById('fb').textContent = '✓ 정답';
+        setTimeout(()=>runLevel(len+1), 700);
+      } else {
+        document.getElementById('fb').className='feedback wrong';
+        document.getElementById('fb').textContent = '정답: '+seq;
+        setTimeout(()=>finish(len-1), 1500);
+      }
+    }
+    document.getElementById('sub').onclick = check;
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+  }, showMs);
+}
+function finish(maxLen){
+  const stats = loadStats(KEY, { played:0, bestLen:0 });
+  stats.played++;
+  if(maxLen > stats.bestLen) stats.bestLen = maxLen;
+  saveStats(KEY, stats);
+  const isBest = stats.bestLen === maxLen;
+  clear(app);
+  const r = $el('div','result-card');
+  const emoji = maxLen >= 9 ? '🏆' : maxLen >= 7 ? '🎉' : maxLen >= 5 ? '👏' : '🙂';
+  r.innerHTML = `
+    <div class="result-emoji">${emoji}</div>
+    <div class="result-title">기억 한계</div>
+    <div class="result-big">${maxLen}자리</div>
+    <div class="result-sub">평균 성인 7±2자리</div>
+    ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+    <div class="btn-row">
+      <button class="btn" id="s">공유</button>
+      <button class="btn secondary" id="a">다시</button>
+      <button class="btn ghost" id="h">홈</button>
+    </div>
+  `;
+  app.appendChild(r);
+  document.getElementById('a').onclick = ()=>runLevel(START_LEN);
+  document.getElementById('h').onclick = showTitle;
+  document.getElementById('s').onclick = (e)=>shareToClipboard(`숫자 암기\n🔢 ${maxLen}자리${isBest?' 🌟':''}`, e.target);
+}
+showTitle();
+window.__GAME__ = { KEY, START_LEN };
+</script>
+</body>
+</html>

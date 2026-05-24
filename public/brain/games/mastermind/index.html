@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>색 코드 해독 | 5분 퍼즐</title>
+<meta property="og:title" content="색 코드 해독">
+<meta property="og:description" content="4색 순서를 8번 안에 추론하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#5a7cc7;--accent-dark:#3a5c9e;--accent-soft:#c0cfe6; }
+  .board{
+    background:var(--card);border-radius:14px;padding:12px;box-shadow:var(--shadow);
+    margin-bottom:12px;max-height:380px;overflow-y:auto;
+  }
+  .row{
+    display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;
+    padding:6px 0;border-bottom:1px dashed var(--bg-2);
+  }
+  .row:last-child{ border-bottom:0; }
+  .row .i{ color:var(--ink-faint);font-size:12px;width:24px;font-variant-numeric:tabular-nums; }
+  .slots{ display:flex;gap:6px;justify-content:center; }
+  .peg{
+    width:32px;height:32px;border-radius:50%;background:var(--bg-2);
+    border:2px solid var(--ink-faint);
+  }
+  .peg.red{ background:#e05656;border-color:#b13e3e; }
+  .peg.blue{ background:#4a7aa4;border-color:#32587a; }
+  .peg.green{ background:#6ca02c;border-color:#4d7820; }
+  .peg.yellow{ background:#daa520;border-color:#9e7714; }
+  .peg.purple{ background:#a177bc;border-color:#7a5598; }
+  .peg.orange{ background:#e07d3e;border-color:#aa5a24; }
+  .feedback-dots{ display:grid;grid-template-columns:repeat(2,1fr);gap:3px;width:24px; }
+  .fb-dot{ width:10px;height:10px;border-radius:50%;background:#dfe4e9; }
+  .fb-dot.B{ background:#111; }
+  .fb-dot.W{ background:#fff;border:1px solid #888; }
+  .current{
+    background:var(--accent-soft);border-radius:10px;padding:8px;margin-bottom:12px;
+    display:flex;gap:8px;justify-content:center;align-items:center;
+  }
+  .palette{ display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:10px; }
+  .p-btn{
+    aspect-ratio:1;border-radius:50%;border:3px solid transparent;cursor:pointer;
+    transition:all .12s;box-shadow:var(--shadow);
+  }
+  .p-btn:hover{ transform:scale(1.08); }
+  .p-btn.red{ background:#e05656; }
+  .p-btn.blue{ background:#4a7aa4; }
+  .p-btn.green{ background:#6ca02c; }
+  .p-btn.yellow{ background:#daa520; }
+  .p-btn.purple{ background:#a177bc; }
+  .p-btn.orange{ background:#e07d3e; }
+  .actions{ display:flex;gap:10px;justify-content:center;margin-top:8px; }
+  .legend{ color:var(--ink-dim);font-size:12px;text-align:center;margin-top:6px;line-height:1.6; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, shuffle, mulberry32, randomSeed, loadStats, recordBestScore,
+        injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const COLORS = ['red','blue','green','yellow','purple','orange'];
+const LEN = 4;
+const MAX = 8;
+const KEY = 'mastermind_stats';
+const app = document.getElementById('app');
+
+function makeSecret(rng){
+  // With 6 colors and length 4, allowing repeats is classic. Here we allow repeats.
+  const secret = [];
+  for(let i=0;i<LEN;i++) secret.push(COLORS[Math.floor(rng()*COLORS.length)]);
+  return secret;
+}
+function scoreGuess(guess, secret){
+  const g = guess.slice(), s = secret.slice();
+  let B = 0, W = 0;
+  // Blacks (correct position)
+  for(let i=0;i<LEN;i++) if(g[i] === s[i]){ B++; g[i] = null; s[i] = null; }
+  // Whites (wrong position)
+  for(let i=0;i<LEN;i++){
+    if(g[i] == null) continue;
+    const idx = s.indexOf(g[i]);
+    if(idx >= 0){ W++; s[idx] = null; }
+  }
+  return { B, W };
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, won:0, bestTurns:null });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🎨</div>
+    <h1 class="hero-title">색 코드 <span style="color:var(--accent);">해독</span></h1>
+    <div class="hero-sub">6가지 색 중 4개로 된 비밀 배열을<br>${MAX}번 안에 맞혀보세요.</div>
+    <div class="rule-card">
+      <b>● 검정점</b> = 색·위치 모두 맞춤<br>
+      <b>○ 흰색점</b> = 색은 있으나 위치 다름<br>
+      같은 색이 반복될 수도 있습니다.<br>
+      ${stats.bestTurns ? `<div class="best">🌟 최단 승리 ${stats.bestTurns}번</div>` : ''}
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const state = {
+    secret: makeSecret(rng),
+    history: [],
+    current: [null, null, null, null],
+    finished: false, won: false
+  };
+
+  function render(){
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">시도 ${state.history.length}/${MAX}</div><div class="stat">남은 ${MAX - state.history.length}</div>`;
+    app.appendChild(top);
+
+    const board = $el('div','board');
+    state.history.forEach((h, idx) => {
+      const fbDots = [];
+      for(let i=0;i<h.fb.B;i++) fbDots.push('<div class="fb-dot B"></div>');
+      for(let i=0;i<h.fb.W;i++) fbDots.push('<div class="fb-dot W"></div>');
+      while(fbDots.length < LEN) fbDots.push('<div class="fb-dot"></div>');
+      board.innerHTML += `
+        <div class="row">
+          <div class="i">#${idx+1}</div>
+          <div class="slots">${h.guess.map(c => `<div class="peg ${c}"></div>`).join('')}</div>
+          <div class="feedback-dots">${fbDots.join('')}</div>
+        </div>
+      `;
+    });
+    app.appendChild(board);
+
+    if(state.finished){
+      renderResult();
+      return;
+    }
+
+    const cur = $el('div', 'current');
+    cur.innerHTML = state.current.map((c, i) => c
+      ? `<div class="peg ${c}" data-i="${i}" style="cursor:pointer;"></div>`
+      : `<div class="peg" data-i="${i}" style="cursor:pointer;"></div>`).join('');
+    app.appendChild(cur);
+
+    const pal = $el('div','palette');
+    pal.innerHTML = COLORS.map(c => `<button class="p-btn ${c}" data-c="${c}" title="${c}"></button>`).join('');
+    app.appendChild(pal);
+
+    const actions = $el('div','actions');
+    actions.innerHTML = `
+      <button class="btn" id="submit">제출</button>
+      <button class="btn ghost" id="clear">지우기</button>
+    `;
+    app.appendChild(actions);
+    app.appendChild($el('div','legend','파렛트 → 슬롯에 채우기. 슬롯을 클릭하면 지워집니다.'));
+
+    const firstEmpty = state.current.indexOf(null);
+    pal.querySelectorAll('.p-btn').forEach(b => {
+      b.onclick = ()=>{
+        const color = b.dataset.c;
+        const idx = state.current.indexOf(null);
+        if(idx >= 0){
+          state.current[idx] = color;
+          render();
+        }
+      };
+    });
+    cur.querySelectorAll('.peg').forEach(p => {
+      p.onclick = ()=>{
+        const i = +p.dataset.i;
+        state.current[i] = null;
+        render();
+      };
+    });
+    document.getElementById('clear').onclick = ()=>{
+      state.current = [null,null,null,null];
+      render();
+    };
+    document.getElementById('submit').onclick = ()=>{
+      if(state.current.some(c => c == null)) return;
+      const fb = scoreGuess(state.current, state.secret);
+      state.history.push({ guess: state.current.slice(), fb });
+      if(fb.B === LEN){
+        state.finished = true; state.won = true;
+      } else if(state.history.length >= MAX){
+        state.finished = true;
+      }
+      state.current = [null,null,null,null];
+      render();
+    };
+  }
+
+  function renderResult(){
+    const stats = loadStats(KEY, { played:0, won:0, bestTurns:null, recent:[] });
+    stats.played++;
+    if(state.won){
+      stats.won++;
+      if(stats.bestTurns == null || state.history.length < stats.bestTurns) stats.bestTurns = state.history.length;
+    }
+    Brain.saveStats(KEY, stats);
+    const isBest = state.won && stats.bestTurns === state.history.length;
+
+    const card = $el('div','result-card');
+    const emoji = state.won ? (state.history.length <= 4 ? '🏆' : state.history.length <= 6 ? '🎉' : '👏') : '😢';
+    card.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">${state.won ? `${state.history.length}번 만에 해독!` : '해독 실패'}</div>
+      <div class="slots" style="justify-content:center;margin:12px 0;">
+        ${state.secret.map(c => `<div class="peg ${c}" style="width:40px;height:40px;"></div>`).join('')}
+      </div>
+      <div class="result-sub">비밀 배열</div>
+      ${isBest ? '<div class="ribbon">🌟 최단 기록</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(card);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>{
+      const txt = state.history.map(h => '●'.repeat(h.fb.B) + '○'.repeat(h.fb.W) + '·'.repeat(LEN - h.fb.B - h.fb.W)).join('\n');
+      shareToClipboard(`색 코드 해독\n${state.won ? state.history.length + '/' + MAX : 'X/' + MAX}\n\n${txt}`, e.target);
+    };
+  }
+
+  render();
+}
+
+showTitle();
+window.__GAME__ = { COLORS, LEN, MAX, KEY, makeSecret, scoreGuess };
+</script>
+</body>
+</html>

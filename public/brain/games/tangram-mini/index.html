@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>도형 맞추기 | 5분 퍼즐</title>
+<meta property="og:title" content="도형 맞추기">
+<meta property="og:description" content="격자 위에 색 조각을 올려 목표 모양을 완성하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#b66e3f;--accent-dark:#874e29;--accent-soft:#e6c4a6; }
+  .boards{ display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px; }
+  .board{ text-align:center; }
+  .board-label{ color:var(--ink-dim);font-size:12px;letter-spacing:.2em;margin-bottom:6px; }
+  .mini-grid{ display:grid;grid-template-columns:repeat(4,1fr);gap:2px;background:#d0d0d0;padding:2px;border-radius:6px;aspect-ratio:1; }
+  .mini-cell{ aspect-ratio:1;background:white;border-radius:2px;cursor:pointer; }
+  .mini-cell.target{ background:var(--accent-soft); }
+  .mini-cell.placed{ background:var(--accent); }
+  .pieces{ display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:10px; }
+  .piece{ background:var(--card);padding:6px;border:2px solid var(--ink-faint);border-radius:8px;cursor:pointer;transition:all .1s; }
+  .piece:hover{ border-color:var(--accent); }
+  .piece.active{ border-color:var(--accent);background:var(--accent-soft); }
+  .piece.used{ opacity:.3;cursor:not-allowed; }
+  .piece-grid{ display:grid;gap:1px; }
+  .piece-grid > div{ width:12px;height:12px; }
+  .piece-grid > div.on{ background:var(--accent); }
+  .piece-grid > div.off{ background:transparent; }
+  .hint{ text-align:center;color:var(--ink-dim);font-size:13px;margin-bottom:8px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestTime, injectBackLink, shareToClipboard, formatClock } = Brain;
+injectBackLink('../../');
+const KEY = 'tangram_mini_stats';
+const app = document.getElementById('app');
+
+const GRID_SIZE = 4;
+
+/* Target — "L자 빌딩" 모양 (4×4 grid, 1 = filled).
+   Solvable with I-3, I-3, Square-2×2:
+     I at row 0 col 0~2  (3 cells)
+     I at row 1 col 0~2  (3 cells)
+     Square at rows 2~3 col 0~1  (4 cells)
+   Total 10 cells matches the piece sum.
+*/
+const TARGET_SIMPLE = [
+  [1,1,1,0],
+  [1,1,1,0],
+  [1,1,0,0],
+  [1,1,0,0]
+];
+
+/* Pieces: list of shape grids (relative cells as [r,c] pairs from top-left). */
+const PIECES = [
+  // I horizontal 3 cells
+  { shape:[[0,0],[0,1],[0,2]], rows:1, cols:3 },
+  // I horizontal 3 cells (another one)
+  { shape:[[0,0],[0,1],[0,2]], rows:1, cols:3 },
+  // Square 2x2 (4 cells)
+  { shape:[[0,0],[0,1],[1,0],[1,1]], rows:2, cols:2 }
+];
+
+function totalCells(p){ return p.shape.length; }
+function targetCells(){
+  const cells = [];
+  for(let r=0;r<GRID_SIZE;r++) for(let c=0;c<GRID_SIZE;c++) if(TARGET_SIMPLE[r][c]) cells.push([r,c]);
+  return cells;
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestMs:null });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔶</div>
+    <h1 class="hero-title">도형 <span style="color:var(--accent);">맞추기</span></h1>
+    <div class="hero-sub">3개의 조각을 격자 위에 놓아<br>왼쪽의 목표 모양을 완성하세요.</div>
+    ${stats.bestMs?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${formatClock(stats.bestMs)}</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = {
+    placed: Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill(null)),
+    pieces: PIECES.slice(0,3).map((p,i)=>({ ...p, used:false, id:i })),
+    activeIdx: 0,
+    startedAt: performance.now(),
+    timer:null, finished:false
+  };
+
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat" id="t">0:00</div><div class="stat">4×4 · 3조각</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="boards">
+      <div class="board"><div class="board-label">T A R G E T</div><div class="mini-grid" id="tgt"></div></div>
+      <div class="board"><div class="board-label">Y O U R S</div><div class="mini-grid" id="play"></div></div>
+    </div>
+    <div class="hint">조각을 선택한 뒤 오른쪽 격자의 빈 칸을 클릭하세요.</div>
+    <div class="pieces" id="pieces"></div>
+    <div class="btn-row">
+      <button class="btn ghost" id="reset">모두 지우기</button>
+    </div>
+    <div class="feedback" id="fb"></div>
+  `;
+  app.appendChild(card);
+  renderAll();
+
+  function renderAll(){
+    const tgt = document.getElementById('tgt');
+    tgt.innerHTML = '';
+    for(let r=0;r<GRID_SIZE;r++) for(let c=0;c<GRID_SIZE;c++){
+      const cell = $el('div','mini-cell');
+      if(TARGET_SIMPLE[r][c]) cell.classList.add('target');
+      tgt.appendChild(cell);
+    }
+    const play = document.getElementById('play');
+    play.innerHTML = '';
+    for(let r=0;r<GRID_SIZE;r++) for(let c=0;c<GRID_SIZE;c++){
+      const cell = $el('div','mini-cell');
+      if(state.placed[r][c] != null) cell.classList.add('placed');
+      cell.onclick = ()=>tryPlace(r,c);
+      play.appendChild(cell);
+    }
+    const pc = document.getElementById('pieces');
+    pc.innerHTML = '';
+    state.pieces.forEach((p,i)=>{
+      const el = $el('div','piece'+(i===state.activeIdx?' active':'')+(p.used?' used':''));
+      // mini preview
+      const g = $el('div','piece-grid');
+      g.style.gridTemplateColumns = 'repeat('+p.cols+', 12px)';
+      for(let r=0;r<p.rows;r++) for(let c=0;c<p.cols;c++){
+        const cell = $el('div', p.shape.some(([rr,cc])=>rr===r&&cc===c) ? 'on' : 'off');
+        g.appendChild(cell);
+      }
+      el.appendChild(g);
+      el.onclick = ()=>{ if(!p.used){ state.activeIdx = i; renderAll(); } };
+      pc.appendChild(el);
+    });
+  }
+  function tryPlace(r,c){
+    const p = state.pieces[state.activeIdx];
+    if(!p || p.used) return;
+    // Try to place piece with (r,c) as top-left origin
+    for(const [dr,dc] of p.shape){
+      const nr = r + dr, nc = c + dc;
+      if(nr<0||nr>=GRID_SIZE||nc<0||nc>=GRID_SIZE) return;
+      if(state.placed[nr][nc] != null) return;
+      if(!TARGET_SIMPLE[nr][nc]) return; // must be within target
+    }
+    // Place
+    for(const [dr,dc] of p.shape){
+      state.placed[r+dr][c+dc] = p.id;
+    }
+    p.used = true;
+    // Find next unused piece
+    const next = state.pieces.findIndex(x => !x.used);
+    state.activeIdx = next >= 0 ? next : state.activeIdx;
+    renderAll();
+    // Check solved
+    let allPlaced = true;
+    for(let rr=0;rr<GRID_SIZE;rr++) for(let cc=0;cc<GRID_SIZE;cc++){
+      if(TARGET_SIMPLE[rr][cc] && state.placed[rr][cc] == null) allPlaced = false;
+    }
+    if(allPlaced) finish();
+  }
+  document.getElementById('reset').onclick = ()=>{
+    state.placed = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill(null));
+    state.pieces.forEach(p => p.used = false);
+    state.activeIdx = 0;
+    renderAll();
+  };
+  function tick(){ document.getElementById('t').textContent = formatClock(performance.now()-state.startedAt); }
+  state.timer = setInterval(tick, 250);
+  function finish(){
+    state.finished = true;
+    clearInterval(state.timer);
+    const elapsed = performance.now() - state.startedAt;
+    const stats = recordBestTime(KEY, Math.round(elapsed), {});
+    const isBest = stats.bestMs === Math.round(elapsed);
+    setTimeout(()=>{
+      clear(app);
+      const r = $el('div','result-card');
+      r.innerHTML = `
+        <div class="result-emoji">${elapsed<30000?'🏆':elapsed<60000?'🎉':'👏'}</div>
+        <div class="result-title">완성!</div>
+        <div class="result-big">${formatClock(elapsed)}</div>
+        ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+        <div class="btn-row">
+          <button class="btn" id="s">공유</button>
+          <button class="btn secondary" id="a">다시</button>
+          <button class="btn ghost" id="h">홈</button>
+        </div>
+      `;
+      app.appendChild(r);
+      document.getElementById('a').onclick = startGame;
+      document.getElementById('h').onclick = showTitle;
+      document.getElementById('s').onclick = (e)=>shareToClipboard(`도형 맞추기\n🔶 ${formatClock(elapsed)}${isBest?' 🌟':''}`, e.target);
+    }, 500);
+  }
+}
+showTitle();
+window.__GAME__ = { KEY, GRID_SIZE, TARGET_SIMPLE, PIECES };
+</script>
+</body>
+</html>

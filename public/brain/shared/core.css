@@ -1,0 +1,418 @@
+/* =========================================================
+   5분 퍼즐 — Shared Design System
+   공통 디자인 토큰 + 재사용 컴포넌트. 각 게임은 --accent 계열만 override.
+   ========================================================= */
+
+:root{
+  /* Neutral base */
+  --bg: #fdf6e8;
+  --bg-2: #f2ecdc;
+  --card: #ffffff;
+  --ink: #1f1a14;
+  --ink-dim: #6b6458;
+  --ink-faint: #b8b0a0;
+
+  /* Default accent (orange) — games override */
+  --accent: #f08a3e;
+  --accent-dark: #d97429;
+  --accent-soft: #ffc896;
+
+  /* Semantic colors */
+  --green: #7db167;
+  --green-dark: #5d8a4a;
+  --red: #d06060;
+  --red-dark: #a04040;
+  --yellow: #e0b040;
+  --gold: #daa520;
+  --blue: #6a9ac4;
+  --purple: #a177bc;
+
+  /* Shape */
+  --shadow: 0 4px 14px rgba(0,0,0,.07);
+  --shadow-strong: 0 12px 30px rgba(0,0,0,.12);
+  --radius: 14px;
+  --radius-lg: 18px;
+}
+
+*{ box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color: transparent; }
+html{ -webkit-text-size-adjust: 100%; }
+html, body{ height:100%; }
+body{
+  background: linear-gradient(135deg, var(--bg) 0%, var(--bg-2) 100%);
+  color: var(--ink);
+  font-family: "Pretendard","Noto Sans KR","Apple SD Gothic Neo",system-ui,-apple-system,sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  min-height: 100dvh; /* dynamic viewport (modern) */
+  /* Safe-area (notch) 대응 */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  overscroll-behavior: none; /* 당기기 새로고침 방지 */
+}
+
+/* 모든 탭 가능한 요소: 더블탭 줌 방지 + 300ms 지연 제거 */
+button, a, input, label, [role="button"],
+.btn, .btn.secondary, .btn.ghost,
+.choice-btn, .choice, .opt, .opt-btn, .op-btn, .num-key,
+.tile, .cell, .mcell, .mem-cell, .spot-cell,
+.suspect-btn, .day-btn, .btn-who, .chip-btn, .filter-chip,
+.stroop-btn, .opt-shape, .mode-btn, .rps-btn,
+.card-tile, .num-dot, .p-btn, .pad, .key, .opt-btn {
+  touch-action: manipulation;
+}
+
+/* Layout */
+main{
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 4vh 20px 12vh;
+  padding-bottom: max(12vh, env(safe-area-inset-bottom));
+}
+main.wide{ max-width: 640px; }
+
+/* 게임 플레이 영역에서 텍스트 선택 비활성화 (입력 필드 제외) */
+.card, .topbar, .score-hero, .result-card, .stats-grid,
+.grid, .memory-grid, .sudoku-grid, .maze-grid, .nono-table,
+.pipe-grid, .dice-stage, .flash-area, .play-area, .board,
+.puzzle, .field, .arena, .pad-grid, .spot-grid,
+.controls, .dice-net {
+  -webkit-user-select: none;
+  user-select: none;
+}
+input, textarea, .prompt, .prompt-box, .q, .scene, .story, .hints, .hint-card {
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+
+/* Topbar */
+.topbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:14px;
+  font-size:14px;
+  color:var(--ink-dim);
+}
+.topbar .stat{
+  background:var(--card);
+  padding:8px 14px;
+  border-radius:20px;
+  font-weight:700;
+  color:var(--accent-dark);
+  box-shadow:var(--shadow);
+  font-variant-numeric:tabular-nums;
+}
+.topbar .stat.accent{ background:var(--accent); color:white; }
+
+/* Card */
+.card{
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 22px 20px;
+  box-shadow: var(--shadow);
+  margin-bottom: 18px;
+}
+
+/* Title / hero */
+h1.title{
+  font-size: 24px;
+  font-weight: 800;
+  text-align: center;
+  color: var(--accent-dark);
+  margin-bottom: 4px;
+  letter-spacing: -.02em;
+}
+.subtitle{
+  text-align: center;
+  color: var(--ink-dim);
+  font-size: 13px;
+  letter-spacing: .15em;
+  margin-bottom: 22px;
+}
+h2.puzzle-title{
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  letter-spacing: -.01em;
+}
+.puzzle-desc{
+  color: var(--ink-dim);
+  font-size: 14px;
+  margin-bottom: 22px;
+  line-height: 1.7;
+}
+
+/* Title screen (landing within a game) */
+#title-screen{
+  text-align:center;
+  padding-top: 6vh;
+}
+.brand-icon{
+  font-size: 46px;
+  margin-bottom: 12px;
+}
+.hero-title{
+  font-size: 30px;
+  font-weight: 800;
+  margin-bottom: 10px;
+  letter-spacing: -.02em;
+}
+.hero-sub{
+  color: var(--ink-dim);
+  font-size: 15px;
+  margin: 0 auto 24px;
+  max-width: 340px;
+  line-height: 1.8;
+}
+.today-card{
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  display:inline-block;
+  min-width:220px;
+}
+.today-label{ color:var(--ink-dim); letter-spacing:.2em; }
+.today-date{ font-weight:700; font-size:18px; margin-top:2px; }
+.best{
+  color: var(--accent-dark);
+  margin-top: 4px;
+  font-weight: 600;
+}
+.streak{
+  color: var(--accent-dark);
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* Rule card */
+.rule-card{
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow);
+  text-align: left;
+  font-size: 13px;
+  color: var(--ink-dim);
+  line-height: 1.8;
+}
+.rule-card h3{
+  color: var(--accent-dark);
+  font-size: 14px;
+  margin-bottom: 8px;
+  letter-spacing: .1em;
+}
+
+/* Buttons */
+.btn{
+  background: var(--accent);
+  color: white;
+  border: 0;
+  border-radius: 10px;
+  padding: 13px 28px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all .2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,.1);
+  letter-spacing: .08em;
+}
+.btn:hover:not(:disabled){
+  background: var(--accent-dark);
+  transform: translateY(-1px);
+}
+.btn:active:not(:disabled){ transform: translateY(0); }
+.btn:disabled{ opacity: .4; cursor: not-allowed; }
+.btn.secondary{
+  background: transparent;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  box-shadow: none;
+}
+.btn.secondary:hover:not(:disabled){ background: var(--ink); color: white; }
+.btn.ghost{
+  background: transparent;
+  color: var(--ink-dim);
+  border: 1px solid var(--ink-faint);
+  box-shadow: none;
+  padding: 10px 20px;
+  font-size: 13px;
+}
+.btn.ghost:hover:not(:disabled){
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.btn-row{
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+/* Feedback messages */
+.feedback{
+  margin-top: 14px;
+  font-size: 14px;
+  min-height: 20px;
+  text-align: center;
+}
+.feedback.wrong{ color: var(--red); }
+.feedback.right{ color: var(--green-dark); font-weight: 600; }
+.feedback.info{ color: var(--ink-dim); }
+
+/* Progress dots */
+.progress-dots{ display: flex; gap: 6px; }
+.dot{
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  transition: all .3s;
+}
+.dot.active{ background: var(--accent); transform: scale(1.2); }
+.dot.done{ background: var(--green); }
+
+/* Result card */
+.result-card{
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 26px 20px;
+  box-shadow: var(--shadow);
+  margin-bottom: 18px;
+  text-align: center;
+}
+.result-emoji{ font-size: 48px; margin-bottom: 8px; }
+.result-title{ font-size: 22px; font-weight: 800; margin-bottom: 6px; }
+.result-big{
+  font-size: 44px;
+  font-weight: 800;
+  color: var(--accent-dark);
+  font-variant-numeric: tabular-nums;
+  margin: 12px 0;
+  line-height: 1;
+}
+.result-sub{ color: var(--ink-dim); font-size: 14px; }
+.ribbon{
+  display: inline-block;
+  background: var(--gold);
+  color: white;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 10px;
+  letter-spacing: .1em;
+}
+
+/* Stats grid */
+.stats-grid{
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 14px 0;
+}
+.stat-item{
+  background: var(--bg);
+  padding: 12px;
+  border-radius: 10px;
+  text-align: center;
+}
+.stat-item .label{
+  color: var(--ink-dim);
+  font-size: 11px;
+  letter-spacing: .1em;
+}
+.stat-item .value{
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--accent-dark);
+  margin-top: 4px;
+}
+
+/* History list */
+.history-list{ margin-top: 12px; color: var(--ink-dim); font-size: 13px; }
+.history-list .entry{
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 10px;
+}
+.history-list .entry.best{ color: var(--gold); font-weight: 700; }
+
+/* Nav (back link, shown in top-left) */
+.nav-back{
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  background: var(--card);
+  color: var(--ink-dim);
+  text-decoration: none;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  box-shadow: var(--shadow);
+  z-index: 10;
+  transition: all .15s;
+}
+.nav-back:hover{ color: var(--accent-dark); transform: translateX(-2px); }
+
+/* Credits */
+.credits{
+  color: var(--ink-faint);
+  font-size: 11px;
+  text-align: center;
+  margin-top: 26px;
+  letter-spacing: .15em;
+}
+
+/* Animations */
+.fade-in{ animation: fadein .5s ease; }
+@keyframes fadein{
+  from{ opacity: 0; transform: translateY(4px); }
+  to  { opacity: 1; transform: translateY(0); }
+}
+.shake{ animation: shake .4s; }
+@keyframes shake{
+  0%,100%{ transform: translateX(0); }
+  25%   { transform: translateX(-4px); }
+  75%   { transform: translateX(4px); }
+}
+.pop{ animation: pop .3s; }
+@keyframes pop{
+  0%  { transform: scale(1); }
+  50% { transform: scale(1.1); }
+  100%{ transform: scale(1); }
+}
+
+/* Responsive */
+@media (max-width: 540px){
+  body{ font-size: 15px; }
+  main{ padding: 3vh 16px 12vh; padding-bottom: max(12vh, calc(8vh + env(safe-area-inset-bottom))); }
+  .card{ padding: 18px 16px; }
+  h1.title, .hero-title{ font-size: 26px; }
+  .result-big{ font-size: 38px; }
+  /* 버튼 최소 높이로 탭 편의 ↑ */
+  .btn{ min-height: 44px; }
+  .btn.ghost{ min-height: 40px; }
+  /* 헤더 뒷버튼이 헤더 영역 침범하지 않게 */
+  .nav-back{ top: calc(12px + env(safe-area-inset-top)); left: 12px; }
+}
+@media (max-width: 360px){
+  /* 아주 좁은 폰: 추가 여백 축소 */
+  main{ padding-left: 12px; padding-right: 12px; }
+  h1.title, .hero-title{ font-size: 22px; }
+}
+
+/* 가로 모드 (저 높이) */
+@media (max-height: 480px) and (orientation: landscape){
+  #title-screen{ padding-top: 2vh; }
+  .brand-icon{ font-size: 32px; margin-bottom: 4px; }
+  .hero-title{ font-size: 22px; margin-bottom: 6px; }
+  .hero-sub{ margin-bottom: 12px; }
+}

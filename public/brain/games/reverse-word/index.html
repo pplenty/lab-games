@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>거꾸로 단어 | 5분 퍼즐</title>
+<meta property="og:title" content="거꾸로 단어">
+<meta property="og:description" content="거꾸로 읽힌 단어의 원래 모양을 맞춰보세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#6f9b4b;--accent-dark:#4e7a28;--accent-soft:#c4dba6; }
+  .rev-display{ text-align:center;padding:34px 16px;background:var(--accent-soft);border-radius:14px;margin-bottom:14px; }
+  .rev-word{ font-size:48px;font-weight:800;color:var(--accent-dark);letter-spacing:.2em; }
+  .rev-hint{ color:var(--ink-dim);font-size:13px;margin-top:6px; }
+  .input-row{ background:var(--card);border-radius:10px;padding:12px;box-shadow:var(--shadow);display:flex;gap:8px; }
+  .input-row input{ flex:1;padding:12px;border:2px solid var(--ink-faint);border-radius:8px;font:inherit;font-size:22px;font-weight:700;text-align:center;background:var(--bg); }
+  .input-row button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, shuffle, mulberry32, randomSeed } = Brain;
+injectBackLink('../../');
+
+const BANK = [
+  // 2자 (20)
+  '사과','바다','구름','하늘','연필','라면','학교','모자','장갑','시계',
+  '거울','책상','의자','식탁','김치','계란','우유','커피','녹차','홍차',
+  // 3자 (40)
+  '거북이','자동차','자전거','바나나','초콜릿','새우깡','바닷가','호랑이','코끼리',
+  '다람쥐','무지개','선생님','운동화','컴퓨터','키보드','햄버거','떡볶이','토마토',
+  '오렌지','복숭아','지하철','박물관','도서관','미술관','경찰서','소방서','우체국',
+  '기차역','영화관','수영장','놀이터','손수건','목도리','머리띠','장난감','일기장',
+  '만화책','동화책','선풍기','냉장고',
+  // 4자 (25)
+  '사과나무','저녁노을','파도소리','바닷바람','아이스크림','딸기우유','초콜릿과자',
+  '감자튀김','소고기국','김치찌개','된장찌개','칼국수집','삼겹살집','도서관앞',
+  '놀이공원','영화관람','친구만남','가을하늘','봄바람이','겨울햇살','여름방학',
+  '겨울방학','벚꽃구경','단풍구경','별빛정원'
+];
+const TOTAL = 6;
+const KEY = 'reverse_word_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔄</div>
+    <h1 class="hero-title">거꾸로 <span style="color:var(--accent);">단어</span></h1>
+    <div class="hero-sub">거꾸로 읽힌 단어의 원래 모양을<br>빠르게 맞혀보세요. ${TOTAL}문제.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const qs = shuffle(BANK, rng).slice(0, TOTAL);
+  const state = { qs, i:0, correct:0 };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const word = state.qs[state.i];
+    const reversed = [...word].reverse().join('');
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="rev-display">
+        <div class="rev-word">${reversed}</div>
+        <div class="rev-hint">거꾸로 읽힌 단어의 원래 모양은?</div>
+      </div>
+      <div class="input-row">
+        <input type="text" id="ans" placeholder="정답 입력" autocomplete="off" autofocus>
+        <button id="sub">→</button>
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    const input = document.getElementById('ans');
+    const fb = document.getElementById('fb');
+    input.focus();
+    function check(){
+      const v = input.value.trim();
+      if(!v) return;
+      if(v === word){ fb.className='feedback right'; fb.textContent='✓'; state.correct++; }
+      else { fb.className='feedback wrong'; fb.textContent='정답은 "'+word+'"'; }
+      setTimeout(()=>{ state.i++; next(); }, 900);
+    }
+    document.getElementById('sub').onclick = check;
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=4?'🎉':'👏'}</div>
+      <div class="result-title">완료!</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`거꾸로 단어\n🔄 ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { BANK, TOTAL, KEY };
+</script>
+</body>
+</html>

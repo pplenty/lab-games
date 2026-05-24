@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>스트룹 러시 · 60초 | 5분 퍼즐</title>
+<meta property="og:title" content="스트룹 러시 · 60초">
+<meta property="og:description" content="60초 안에 글자의 실제 색을 최대한 많이 고르세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#d05a80; --accent-dark:#a83d5e; --accent-soft:#e9b5c7; }
+  .timer-bar{ height:8px;background:var(--card);border-radius:4px;overflow:hidden;margin-bottom:16px;box-shadow:var(--shadow); }
+  .timer-fill{ height:100%;background:linear-gradient(to right,var(--accent),var(--accent-dark));transition:width .1s linear; }
+  .display{ display:flex;align-items:center;justify-content:center;height:160px;background:var(--bg-2);border-radius:14px;margin-bottom:18px; }
+  .word{ font-size:64px;font-weight:800;letter-spacing:.05em;user-select:none; }
+  .options{ display:grid;grid-template-columns:repeat(4,1fr);gap:10px; }
+  .opt{ min-height:64px;border:2px solid var(--ink-faint);border-radius:12px;background:white;font:inherit;font-size:16px;font-weight:700;cursor:pointer;transition:all .12s;padding:16px 6px; }
+  .opt:hover{ border-color:var(--accent);transform:translateY(-1px); }
+  @media (max-width: 540px){
+    .options{ grid-template-columns:repeat(2,1fr); gap:12px; }
+    .opt{ min-height:60px; font-size:18px; }
+    .stroop-word{ font-size:44px; }
+    .display{ height:130px; }
+  }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, shareToClipboard, injectBackLink,
+        shuffle, mulberry32, randomSeed } = Brain;
+injectBackLink('../../');
+
+const COLORS = [
+  { name:'빨강', hex:'#e05656' },
+  { name:'파랑', hex:'#4a7aa4' },
+  { name:'초록', hex:'#6ca02c' },
+  { name:'노랑', hex:'#daa520' }
+];
+const DURATION = 60000;
+const KEY = 'stroop_rush_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0, recent:[] });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🎨</div>
+    <h1 class="hero-title">스트룹 러시 <span style="color:var(--accent);">60초</span></h1>
+    <div class="hero-sub">글자의 <b>뜻이 아닌 실제 색</b>을 고르세요.<br>맞히면 +1점, 틀리면 −1점.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}점</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const startedAt = performance.now();
+  const state = { score:0, correct:0, wrong:0, round:null };
+  let timer = null;
+
+  clear(app);
+  const topbar = $el('div','topbar');
+  topbar.innerHTML = `<div class="stat" id="st-score">🎯 0</div><div class="stat" id="st-correct">✓ 0</div><div class="stat" id="st-time">⏱ 60.0s</div>`;
+  app.appendChild(topbar);
+  const bar = $el('div','timer-bar');
+  bar.innerHTML = `<div class="timer-fill" id="fill" style="width:100%"></div>`;
+  app.appendChild(bar);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="display"><div class="word" id="word"></div></div>
+    <div class="options" id="opts"></div>
+  `;
+  app.appendChild(card);
+
+  function newRound(){
+    let wordIdx = Math.floor(rng()*4);
+    let colorIdx = Math.floor(rng()*4);
+    if(rng() < 0.75 && wordIdx === colorIdx){
+      colorIdx = (colorIdx + 1 + Math.floor(rng()*3)) % 4;
+    }
+    state.round = { wordIdx, colorIdx };
+    const w = document.getElementById('word');
+    w.textContent = COLORS[wordIdx].name;
+    w.style.color = COLORS[colorIdx].hex;
+    const opts = document.getElementById('opts');
+    const order = shuffle([0,1,2,3], rng);
+    opts.innerHTML = order.map(ci=>`<button class="opt" data-c="${ci}" style="color:${COLORS[ci].hex};">${COLORS[ci].name}</button>`).join('');
+    opts.querySelectorAll('.opt').forEach(b => {
+      b.onclick = ()=>onAnswer(+b.dataset.c);
+    });
+  }
+  function onAnswer(picked){
+    if(!state.round) return;
+    if(picked === state.round.colorIdx){
+      state.score++;
+      state.correct++;
+    } else {
+      state.score--;
+      state.wrong++;
+    }
+    document.getElementById('st-score').textContent = '🎯 ' + state.score;
+    document.getElementById('st-correct').textContent = '✓ ' + state.correct;
+    newRound();
+  }
+  function tick(){
+    const elapsed = performance.now() - startedAt;
+    const remaining = Math.max(0, DURATION - elapsed);
+    document.getElementById('st-time').textContent = '⏱ ' + (remaining/1000).toFixed(1) + 's';
+    document.getElementById('fill').style.width = (remaining/DURATION*100) + '%';
+    if(remaining <= 0){ clearInterval(timer); finish(); }
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.score, { correct: state.correct, wrong: state.wrong });
+    const isBest = stats.bestScore === state.score && state.score > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = state.score >= 40 ? '🏆' : state.score >= 25 ? '🎉' : state.score >= 15 ? '👏' : '🙂';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">60초 종료</div>
+      <div class="result-big">${state.score}점</div>
+      <div class="result-sub">정답 ${state.correct} · 오답 ${state.wrong}</div>
+      ${isBest ? '<div class="ribbon">🌟 개인 최고!</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="btn-share">결과 공유</button>
+        <button class="btn secondary" id="btn-again">다시</button>
+        <button class="btn ghost" id="btn-home">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('btn-again').onclick = startGame;
+    document.getElementById('btn-home').onclick = showTitle;
+    document.getElementById('btn-share').onclick = (e) =>
+      shareToClipboard(`스트룹 러시 60초\n🎯 ${state.score}점 (정답 ${state.correct}·오답 ${state.wrong})${isBest?'\n🌟 개인 최고':''}`, e.target);
+  }
+  newRound();
+  timer = setInterval(tick, 80);
+}
+
+showTitle();
+window.__GAME__ = { COLORS, DURATION, KEY };
+</script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영단어 플래시 | 5분 퍼즐</title>
+<meta property="og:title" content="영단어 플래시">
+<meta property="og:description" content="영단어를 보고 올바른 한국어 뜻을 고르세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#3e7ba0;--accent-dark:#2a5a7a;--accent-soft:#b5cfdf; }
+  .word-display{ text-align:center;padding:28px 16px;background:var(--accent-soft);border-radius:14px;margin-bottom:14px; }
+  .word-big{ font-size:42px;font-weight:800;color:var(--accent-dark); }
+  .word-sub{ color:var(--ink-dim);font-size:13px;margin-top:4px;letter-spacing:.1em; }
+  .opts{ display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+  .opt-btn{ padding:16px;background:white;border:2px solid var(--ink-faint);border-radius:10px;font:inherit;font-size:16px;font-weight:700;cursor:pointer;transition:all .1s; }
+  .opt-btn:hover:not(:disabled){ border-color:var(--accent);background:var(--accent-soft); }
+  .opt-btn.correct{ background:var(--green);color:white;border-color:var(--green-dark); }
+  .opt-btn.wrong{ background:var(--red);color:white;border-color:#a43232; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, shuffle, loadStats, recordBestScore, injectBackLink, shareToClipboard, mulberry32, randomSeed } = Brain;
+injectBackLink('../../');
+
+const VOCAB = [
+  { en:'apple', ko:'사과' }, { en:'book', ko:'책' }, { en:'water', ko:'물' },
+  { en:'house', ko:'집' }, { en:'friend', ko:'친구' }, { en:'teacher', ko:'선생님' },
+  { en:'morning', ko:'아침' }, { en:'evening', ko:'저녁' }, { en:'winter', ko:'겨울' },
+  { en:'summer', ko:'여름' }, { en:'dream', ko:'꿈' }, { en:'love', ko:'사랑' },
+  { en:'promise', ko:'약속' }, { en:'journey', ko:'여행' }, { en:'memory', ko:'기억' },
+  { en:'mountain', ko:'산' }, { en:'forest', ko:'숲' }, { en:'ocean', ko:'바다' },
+  { en:'sky', ko:'하늘' }, { en:'cloud', ko:'구름' }, { en:'wind', ko:'바람' },
+  { en:'silence', ko:'침묵' }, { en:'courage', ko:'용기' }, { en:'gratitude', ko:'감사' },
+  { en:'whisper', ko:'속삭임' }, { en:'garden', ko:'정원' }, { en:'mirror', ko:'거울' },
+  { en:'shadow', ko:'그림자' }, { en:'horizon', ko:'지평선' }, { en:'bridge', ko:'다리' }
+];
+const TOTAL = 10;
+const KEY = 'flash_vocab_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔤</div>
+    <h1 class="hero-title">영단어 <span style="color:var(--accent);">플래시</span></h1>
+    <div class="hero-sub">영단어의 올바른 한국어 뜻을<br>4지선다로 골라보세요. ${TOTAL}문제.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const qs = shuffle(VOCAB, rng).slice(0, TOTAL);
+  const state = { qs, i:0, correct:0, rng };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const q = state.qs[state.i];
+    const distractors = shuffle(VOCAB.filter(v => v.en !== q.en), state.rng).slice(0, 3).map(v => v.ko);
+    const opts = shuffle([q.ko, ...distractors], state.rng);
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="word-display">
+        <div class="word-big">${q.en}</div>
+        <div class="word-sub">이 단어의 뜻은?</div>
+      </div>
+      <div class="opts">
+        ${opts.map(o => `<button class="opt-btn" data-v="${o}">${o}</button>`).join('')}
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    card.querySelectorAll('.opt-btn').forEach(b => {
+      b.onclick = ()=>{
+        card.querySelectorAll('.opt-btn').forEach(x=>x.disabled=true);
+        const fb = document.getElementById('fb');
+        if(b.dataset.v === q.ko){
+          b.classList.add('correct');
+          fb.className='feedback right'; fb.textContent='✓';
+          state.correct++;
+        } else {
+          b.classList.add('wrong');
+          card.querySelector(`.opt-btn[data-v="${q.ko}"]`).classList.add('correct');
+          fb.className='feedback wrong'; fb.textContent='정답: '+q.ko;
+        }
+        setTimeout(()=>{ state.i++; next(); }, 900);
+      };
+    });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct>=9?'🏆':state.correct>=7?'🎉':'👏'}</div>
+      <div class="result-title">플래시 종료</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`영단어 플래시\n🔤 ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { VOCAB, TOTAL, KEY };
+</script>
+</body>
+</html>

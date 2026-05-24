@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>N-back · 2 | 5분 퍼즐</title>
+<meta property="og:title" content="N-back · 2">
+<meta property="og:description" content="2칸 전의 자극과 같으면 '일치' 버튼을 누르세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#7c7dc4; --accent-dark:#5a5b9b; --accent-soft:#c3c4e5; }
+  .stage{
+    aspect-ratio:1;max-width:320px;margin:0 auto 14px;
+    display:grid;grid-template-columns:repeat(3,1fr);gap:6px;
+    background:var(--bg-2);padding:10px;border-radius:14px;
+  }
+  .s-cell{ aspect-ratio:1;background:white;border-radius:8px;transition:all .15s; }
+  .s-cell.active{ background:var(--accent);box-shadow:inset 0 0 0 3px var(--accent-dark);transform:scale(0.97); }
+  .actions{ display:flex;gap:10px;justify-content:center;margin-bottom:10px; }
+  .actions button{
+    flex:1;max-width:180px;padding:14px;background:var(--card);border:2px solid var(--ink-faint);
+    border-radius:10px;font:inherit;font-weight:700;font-size:16px;cursor:pointer;
+    transition:all .12s;
+  }
+  .actions button.match{ border-color:var(--accent);color:var(--accent-dark); }
+  .actions button.match:hover{ background:var(--accent);color:white; }
+  .actions button.skip{ border-color:var(--ink-faint);color:var(--ink-dim); }
+  .actions button.skip:hover{ background:var(--ink-dim);color:white; }
+  .progress{ display:flex;gap:3px;justify-content:center;margin-bottom:8px; }
+  .p-dot{ width:14px;height:5px;border-radius:2px;background:var(--ink-faint); }
+  .p-dot.pass{ background:var(--green); }
+  .p-dot.fail{ background:var(--red); }
+  .p-dot.skip{ background:var(--ink-faint); }
+  .round-info{ text-align:center;color:var(--ink-dim);font-size:14px;margin-bottom:8px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script>
+</script>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const N = 2;
+const TRIALS = 20;
+const CELL_MS = 2000; // each stimulus shown for 2 seconds before next
+const KEY = 'nback_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0, recent:[] });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🧠</div>
+    <h1 class="hero-title">N-back <span style="color:var(--accent);">· ${N}</span></h1>
+    <div class="hero-sub">화면에 나온 칸이 <b>${N}개 전과 같은 위치</b>면 '일치', 아니면 '다름'을 눌러주세요.</div>
+    <div class="rule-card">
+      <h3>작업 기억력 훈련</h3>
+      한 번에 한 칸이 점멸합니다. 지금 칸이 ${N}번 전과 같은 위치인지 판단하세요.<br>
+      빠른 정확도가 핵심 · 처음 ${N}개 자극은 답 없음.<br>
+      총 ${TRIALS}라운드.
+      ${stats.bestScore > 0 ? `<div class="best">🌟 최고 ${stats.bestScore}/${TRIALS-N}</div>` : ''}
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  // Build sequence: ~40% of trials should be matches (position == sequence[i-N])
+  const seq = [];
+  for(let i=0;i<TRIALS;i++){
+    if(i >= N && Math.random() < 0.40){
+      seq.push(seq[i-N]);
+    } else {
+      let v;
+      do { v = Math.floor(Math.random()*9); } while(i >= N && v === seq[i-N]);
+      seq.push(v);
+    }
+  }
+  const state = { seq, i:-1, answers:[], timer:null };
+
+  clear(app);
+  const topbar = $el('div','topbar');
+  topbar.innerHTML = `<div class="stat" id="r-info">준비</div><div class="stat" id="score">0</div>`;
+  app.appendChild(topbar);
+  const prog = $el('div','progress');
+  prog.id = 'prog';
+  prog.innerHTML = Array.from({length:TRIALS},()=>'<div class="p-dot"></div>').join('');
+  app.appendChild(prog);
+  const info = $el('div','round-info');
+  info.id = 'info';
+  info.textContent = N+'개 전과 같은 위치인지 판단하세요.';
+  app.appendChild(info);
+  const stage = $el('div','stage');
+  stage.id = 'stage';
+  stage.innerHTML = Array.from({length:9},(_,i)=>`<div class="s-cell" data-i="${i}"></div>`).join('');
+  app.appendChild(stage);
+  const actions = $el('div','actions');
+  actions.innerHTML = `
+    <button class="skip" id="btn-skip">다름</button>
+    <button class="match" id="btn-match">일치</button>
+  `;
+  app.appendChild(actions);
+
+  document.getElementById('btn-match').onclick = ()=>answer(true);
+  document.getElementById('btn-skip').onclick = ()=>answer(false);
+
+  function answer(isMatch){
+    if(state.i < N) return; // first N trials have no answer
+    const actual = state.seq[state.i] === state.seq[state.i - N];
+    const correct = isMatch === actual;
+    state.answers.push(correct);
+    const dots = document.getElementById('prog').children;
+    dots[state.i].classList.add(correct ? 'pass' : 'fail');
+    const score = state.answers.filter(Boolean).length;
+    document.getElementById('score').textContent = score;
+  }
+  function showStimulus(){
+    state.i++;
+    if(state.i >= TRIALS){ return finish(); }
+    document.getElementById('r-info').textContent = (state.i+1)+' / '+TRIALS;
+    const cells = document.getElementById('stage').children;
+    [...cells].forEach(c => c.classList.remove('active'));
+    const activeIdx = state.seq[state.i];
+    cells[activeIdx].classList.add('active');
+    if(state.i < N){
+      const dots = document.getElementById('prog').children;
+      dots[state.i].classList.add('skip');
+    }
+    state.timer = setTimeout(()=>{
+      // If user didn't answer in time, mark as wrong when it's a match (miss)
+      if(state.i >= N && state.answers.length <= state.i - N){
+        const actual = state.seq[state.i] === state.seq[state.i - N];
+        const correct = !actual; // no answer == said "다름"
+        state.answers.push(correct);
+        const dots = document.getElementById('prog').children;
+        dots[state.i].classList.add(correct ? 'pass' : 'fail');
+        const score = state.answers.filter(Boolean).length;
+        document.getElementById('score').textContent = score;
+      }
+      showStimulus();
+    }, CELL_MS);
+  }
+  function finish(){
+    clearTimeout(state.timer);
+    const score = state.answers.filter(Boolean).length;
+    const total = TRIALS - N;
+    const pct = Math.round(score/total*100);
+    const stats = recordBestScore(KEY, score, { total });
+    const isBest = stats.bestScore === score;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = pct >= 90 ? '🏆' : pct >= 75 ? '🎉' : pct >= 60 ? '👏' : '🙂';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">N-back 종료</div>
+      <div class="result-big">${score} / ${total}</div>
+      <div class="result-sub">정답률 ${pct}%</div>
+      ${isBest ? '<div class="ribbon">🌟 개인 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="btn-share">공유</button>
+        <button class="btn secondary" id="btn-again">다시</button>
+        <button class="btn ghost" id="btn-home">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('btn-again').onclick = startGame;
+    document.getElementById('btn-home').onclick = showTitle;
+    document.getElementById('btn-share').onclick = (e)=>
+      shareToClipboard(`N-back · ${N}\n🧠 ${score}/${total} (${pct}%)${isBest?'  🌟':''}`, e.target);
+  }
+
+  setTimeout(showStimulus, 600);
+}
+
+showTitle();
+window.__GAME__ = { N, TRIALS, CELL_MS, KEY };
+</script>
+</body>
+</html>

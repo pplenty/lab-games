@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>기사와 악당 | 5분 퍼즐</title>
+<meta property="og:title" content="기사와 악당">
+<meta property="og:description" content="항상 진실을 말하는 기사와 항상 거짓을 말하는 악당을 구별하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#6c4b8e;--accent-dark:#4a3166;--accent-soft:#c9b3de; }
+  .intro{ background:#faf6fd;border-left:3px solid var(--accent);padding:12px 16px;border-radius:6px;margin-bottom:14px;font-size:13px;color:var(--ink-dim);line-height:1.7; }
+  .intro b{ color:var(--accent-dark); }
+  .statements{ display:flex;flex-direction:column;gap:8px;margin-bottom:16px; }
+  .stmt{ display:flex;gap:12px;align-items:center;background:var(--bg-2);padding:12px 14px;border-radius:10px; }
+  .stmt .who{ background:var(--accent);color:white;width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;flex-shrink:0; }
+  .buttons{ display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px; }
+  .btn-who{ padding:14px 6px;background:white;border:2px solid var(--ink-faint);border-radius:10px;font:inherit;font-size:16px;font-weight:700;cursor:pointer;transition:all .1s; }
+  .btn-who:hover:not(:disabled){ border-color:var(--accent);background:var(--accent-soft); }
+  .btn-who.correct{ background:var(--green);color:white;border-color:var(--green-dark); }
+  .btn-who.wrong{ background:var(--red);color:white; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, shuffle, mulberry32, randomSeed, escapeHtml } = Brain;
+injectBackLink('../../');
+
+// Each puzzle: 2-3 people, each is either Knight (K, always true) or Knave (V, always false)
+// Predicate takes (roles map) and returns truth value.
+// Question: "누가 기사인가?" — possible answers are subsets.
+const PUZZLES = [
+  {
+    desc:'A와 B 두 섬사람.',
+    people:['A','B'],
+    statements:[
+      { who:'A', text:'"B는 악당입니다."', truthWhen: r => r.B === 'V' }
+    ],
+    // Analysis:
+    // A=K: statement true → B=V. role: A=K, B=V
+    // A=V: statement false → B=K. role: A=V, B=K
+    // Both consistent! Need another clue. Add:
+    question:'A의 말만으로 단정할 수 있는 것은?',
+    options:['A는 기사, B는 악당','A는 악당, B는 기사','결정할 수 없음','둘 다 기사'],
+    answer:'결정할 수 없음'
+  },
+  {
+    desc:'A와 B 두 섬사람.',
+    people:['A','B'],
+    statements:[
+      { who:'A', text:'"우리 둘 다 악당입니다."', truthWhen: r => r.A === 'V' && r.B === 'V' }
+    ],
+    // A=K: statement true → A=V & B=V. 모순(A=K이자 V).
+    // A=V: statement false → NOT(A=V & B=V) → A=K or B=K. A=V라서 → B=K.
+    // 따라서 A=V, B=K.
+    question:'두 사람의 정체는?',
+    options:['A=기사, B=기사','A=기사, B=악당','A=악당, B=기사','A=악당, B=악당'],
+    answer:'A=악당, B=기사'
+  },
+  {
+    desc:'A, B, C 세 섬사람.',
+    people:['A','B','C'],
+    statements:[
+      { who:'A', text:'"B는 기사입니다."', truthWhen: r => r.B === 'K' },
+      { who:'B', text:'"A와 C는 같은 종류입니다."', truthWhen: r => r.A === r.C },
+      { who:'C', text:'"A는 악당입니다."', truthWhen: r => r.A === 'V' }
+    ],
+    // Brute force: only A=V, B=V, C=K satisfies all constraints. Only C is the knight.
+    question:'누가 기사인가요?',
+    options:['A만','B만','C만','A와 B','A와 C','B와 C','모두','아무도 아님'],
+    answer:'C만'
+  },
+  {
+    desc:'A, B, C 세 섬사람.',
+    people:['A','B','C'],
+    statements:[
+      { who:'A', text:'"B는 악당입니다."', truthWhen: r => r.B === 'V' },
+      { who:'B', text:'"C는 악당입니다."', truthWhen: r => r.C === 'V' },
+      { who:'C', text:'"A와 B는 서로 다른 종류입니다."', truthWhen: r => r.A !== r.B }
+    ],
+    // Unique solution: A=K, B=V, C=K. Answer: A와 C.
+    question:'누가 기사인가요?',
+    options:['A만','B만','C만','A와 B','A와 C','B와 C','모두','아무도 아님'],
+    answer:'A와 C'
+  },
+  {
+    desc:'A, B, C 세 섬사람.',
+    people:['A','B','C'],
+    statements:[
+      { who:'A', text:'"우리 셋 모두 기사입니다."', truthWhen: r => r.A==='K' && r.B==='K' && r.C==='K' },
+      { who:'B', text:'"A는 악당입니다."', truthWhen: r => r.A === 'V' },
+      { who:'C', text:'"B는 기사입니다."', truthWhen: r => r.B === 'K' }
+    ],
+    // Unique solution: A=V, B=K, C=K. Answer: B와 C.
+    question:'누가 기사인가요?',
+    options:['A만','B만','C만','A와 B','A와 C','B와 C','모두','아무도 아님'],
+    answer:'B와 C'
+  }
+];
+
+// Brute-force verify every multi-person puzzle has exactly one consistent role assignment.
+(function verify(){
+  const roles = ['K','V'];
+  PUZZLES.forEach((p, idx) => {
+    if(p.people.length < 2) return;
+    const solutions = [];
+    const n = p.people.length;
+    const total = 1 << n;
+    for(let bits=0; bits<total; bits++){
+      const r = {};
+      p.people.forEach((x, i) => { r[x] = (bits>>i)&1 ? 'K' : 'V'; });
+      const ok = p.statements.every(s => {
+        const actual = s.truthWhen(r);
+        return r[s.who] === 'K' ? actual : !actual;
+      });
+      if(ok){
+        const knights = p.people.filter(x => r[x] === 'K');
+        solutions.push(knights.length ? (knights.length===1 ? knights[0]+'만' : knights.join('와 ')) : '아무도 아님');
+      }
+    }
+    if(solutions.length === 0){
+      console.warn('knight-knave puzzle', idx+1, 'has NO solution');
+    } else if(solutions.length > 1 && p.answer !== '결정할 수 없음'){
+      console.warn('knight-knave puzzle', idx+1, 'ambiguous:', solutions);
+    }
+  });
+})();
+
+const TOTAL = PUZZLES.length;
+const KEY = 'knight_knave_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🛡️</div>
+    <h1 class="hero-title">기사와 <span style="color:var(--accent);">악당</span></h1>
+    <div class="hero-sub">기사는 <b>항상 진실</b>, 악당은 <b>항상 거짓</b>.<br>누가 기사이고 누가 악당인지 추론하세요.</div>
+    <div class="rule-card">
+      논리 퍼즐. 각 인물의 진술이 참일 경우와 거짓일 경우를 가정해 모순 없는 해를 찾으세요.
+      ${stats.bestScore > 0 ? `<div class="best">🌟 최고 ${stats.bestScore}/${TOTAL}</div>` : ''}
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = { i:0, correct:0 };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const p = PUZZLES[state.i];
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="intro"><b>기사</b>는 항상 진실, <b>악당</b>은 항상 거짓을 말합니다.<br>${escapeHtml(p.desc)}</div>
+      <div class="statements">
+        ${p.statements.map(s => `<div class="stmt"><div class="who">${escapeHtml(s.who)}</div><div>${escapeHtml(s.text)}</div></div>`).join('')}
+      </div>
+      <div style="text-align:center;font-weight:700;margin-bottom:12px;">${escapeHtml(p.question)}</div>
+      <div class="buttons">
+        ${p.options.map(o => `<button class="btn-who" data-v="${escapeHtml(o)}">${escapeHtml(o)}</button>`).join('')}
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    card.querySelectorAll('.btn-who').forEach(b=>{
+      b.onclick = ()=>{
+        card.querySelectorAll('.btn-who').forEach(x=>x.disabled=true);
+        const fb = document.getElementById('fb');
+        if(b.dataset.v === p.answer){
+          b.classList.add('correct');
+          fb.className='feedback right'; fb.textContent='✓';
+          state.correct++;
+        } else {
+          b.classList.add('wrong');
+          [...card.querySelectorAll('.btn-who')].find(x => x.dataset.v === p.answer).classList.add('correct');
+          fb.className='feedback wrong'; fb.textContent='정답: '+p.answer;
+        }
+        setTimeout(()=>{ state.i++; next(); }, 1400);
+      };
+    });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=2?'🎉':'👏'}</div>
+      <div class="result-title">추론 종료</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`기사와 악당\n🛡️ ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { PUZZLES, TOTAL, KEY };
+</script>
+</body>
+</html>

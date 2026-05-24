@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>24 게임 · 고난도 | 5분 퍼즐</title>
+<meta property="og:title" content="24 게임 · 고난도">
+<meta property="og:description" content="까다로운 숫자 4개로 24 만들기. 나눗셈·분수 필수.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#b85c2e;--accent-dark:#8e3e1a;--accent-soft:#e6baa0; }
+  .numbers-row{ display:flex;gap:10px;justify-content:center;margin-bottom:16px;flex-wrap:wrap; }
+  .num-chip{ background:var(--accent);color:white;padding:12px 22px;border-radius:12px;font-size:24px;font-weight:700;min-width:60px;text-align:center;box-shadow:var(--shadow); }
+  .expr-input{ width:100%;padding:16px 20px;border:2px solid var(--ink-faint);border-radius:12px;font:inherit;font-size:22px;font-family:"JetBrains Mono",monospace;text-align:center;background:white; }
+  .expr-input:focus{ outline:none;border-color:var(--accent); }
+  .expr-result{ text-align:center;font-size:18px;margin-top:14px;min-height:26px;font-weight:600; }
+  .op-buttons{ display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap; }
+  .op-btn{ background:var(--bg-2);color:var(--ink);border:0;border-radius:8px;padding:10px 16px;font:inherit;font-size:20px;font-weight:600;cursor:pointer;min-width:44px; }
+  .op-btn:hover{ background:var(--accent-soft); }
+  .q-index{ text-align:center;color:var(--ink-dim);font-size:13px;letter-spacing:.1em;margin-bottom:10px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, evalSafeExpr, mulberry32, randomSeed, shuffle } = Brain;
+injectBackLink('../../');
+
+const BANK = [
+  { numbers:[3,3,7,7], solution:'(3+3/7)*7' },
+  { numbers:[3,3,8,8], solution:'8/(3-8/3)' },
+  { numbers:[1,5,5,5], solution:'(5-1/5)*5' },
+  { numbers:[4,4,7,7], solution:'(4-4/7)*7' },
+  { numbers:[2,3,5,12], solution:'(3-5/12+2)*... ', alt:'4*6 with these... skip' }
+];
+// Keep only puzzles verified by evalSafeExpr
+const VERIFIED = BANK.filter(p => {
+  const r = Brain.evalSafeExpr(p.solution, p.numbers);
+  return r.ok && Math.abs(r.value - 24) < 1e-6;
+});
+const TOTAL = 4;
+const KEY = 'game24_hard_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">24</div>
+    <h1 class="hero-title">24 게임 <span style="color:var(--accent);">· 고난도</span></h1>
+    <div class="hero-sub">까다로운 숫자 4개로 24를 만드세요.<br>분수·나눗셈 필수. ${TOTAL}문제.</div>
+    <div class="rule-card">+ − × ÷ 와 괄호 사용.<br>숫자 4개를 각각 한 번씩 모두 써야 합니다.<br>${stats.bestScore>0?`<div class="best">🌟 최고 ${stats.bestScore}/${TOTAL}</div>`:''}</div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const qs = shuffle(VERIFIED, rng).slice(0, TOTAL);
+  const state = { qs, i:0, correct:0 };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const q = state.qs[state.i];
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="q-index">문제 ${state.i+1}</div>
+      <div class="numbers-row">${q.numbers.map(n=>`<div class="num-chip">${n}</div>`).join('')}</div>
+      <input class="expr-input" id="inp" placeholder="예: (3+3/7)*7" autocomplete="off" autofocus>
+      <div class="op-buttons">
+        ${['+','−','×','÷','(',')'].map(o=>`<button class="op-btn" data-op="${o}">${o}</button>`).join('')}
+        <button class="op-btn" data-op="back">⌫</button>
+      </div>
+      <div class="expr-result" id="res">= ?</div>
+      <div class="btn-row">
+        <button class="btn" id="sub">제출</button>
+        <button class="btn ghost" id="skip">포기 (정답 보기)</button>
+      </div>
+    `;
+    app.appendChild(card);
+    const input = document.getElementById('inp');
+    const res = document.getElementById('res');
+    const opMap = { '+':'+','−':'-','×':'*','÷':'/','(':'(',')':')' };
+    function preview(){
+      const r = evalSafeExpr(input.value, q.numbers);
+      if(!r.ok){ res.textContent='= ?'; res.style.color='var(--ink-dim)'; return; }
+      res.textContent = '= ' + Math.round(r.value*1000)/1000;
+      res.style.color = Math.abs(r.value-24)<1e-6 ? 'var(--green-dark)' : 'var(--ink-dim)';
+    }
+    document.querySelectorAll('.op-btn').forEach(b=>{
+      b.onclick=()=>{
+        if(b.dataset.op==='back') input.value = input.value.slice(0,-1);
+        else input.value += opMap[b.dataset.op] || b.dataset.op;
+        preview(); input.focus();
+      };
+    });
+    input.addEventListener('input', preview);
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('sub').click(); }});
+    input.focus();
+    document.getElementById('sub').onclick = ()=>{
+      const r = evalSafeExpr(input.value, q.numbers);
+      if(r.ok && Math.abs(r.value-24)<1e-6){
+        res.textContent = '✓ 정답!'; res.style.color='var(--green-dark)';
+        state.correct++;
+        setTimeout(()=>{ state.i++; next(); }, 900);
+      } else {
+        res.textContent = r.ok ? '= '+r.value+' (24가 아니에요)' : r.reason;
+        res.style.color = 'var(--red)';
+      }
+    };
+    document.getElementById('skip').onclick = ()=>{
+      res.textContent = '예시: '+q.solution; res.style.color='var(--accent-dark)';
+      setTimeout(()=>{ state.i++; next(); }, 1800);
+    };
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=2?'🎉':'👏'}</div>
+      <div class="result-title">고난도 24 종료</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest?'<div class="ribbon">🌟 최고</div>':''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick=startGame;
+    document.getElementById('h').onclick=showTitle;
+    document.getElementById('s').onclick=(e)=>shareToClipboard(`24 게임 고난도\n24 ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { VERIFIED, TOTAL, KEY };
+</script>
+</body>
+</html>

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>로마 숫자 변환 | 5분 퍼즐</title>
+<meta property="og:title" content="로마 숫자 변환">
+<meta property="og:description" content="아라비아 숫자와 로마 숫자를 변환하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#8b6c3f;--accent-dark:#654a22;--accent-soft:#d9c398; }
+  .q-display{ text-align:center;padding:28px 16px;background:var(--accent-soft);border-radius:14px;margin-bottom:14px; }
+  .q-big{ font-size:54px;font-weight:800;color:var(--accent-dark);font-family:"JetBrains Mono","Menlo",monospace;letter-spacing:.05em; }
+  .q-prompt{ color:var(--ink-dim);font-size:13px;margin-top:6px; }
+  .input-row{ background:var(--card);border-radius:10px;padding:12px;box-shadow:var(--shadow);display:flex;gap:8px; }
+  .input-row input{
+    flex:1;padding:12px;border:2px solid var(--ink-faint);border-radius:8px;
+    font:inherit;font-size:22px;font-weight:700;text-align:center;background:var(--bg);
+    text-transform:uppercase;letter-spacing:.1em;
+  }
+  .input-row button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, mulberry32, randomSeed } = Brain;
+injectBackLink('../../');
+const TOTAL = 8;
+const KEY = 'roman_stats';
+const app = document.getElementById('app');
+
+const ROMAN_MAP = [
+  [1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],
+  [100,'C'],[90,'XC'],[50,'L'],[40,'XL'],
+  [10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']
+];
+function toRoman(n){
+  let out = '';
+  for(const [v, s] of ROMAN_MAP){ while(n >= v){ out += s; n -= v; } }
+  return out;
+}
+function fromRoman(s){
+  const m = { I:1, V:5, X:10, L:50, C:100, D:500, M:1000 };
+  let total = 0;
+  for(let i=0;i<s.length;i++){
+    const cur = m[s[i]], nxt = m[s[i+1]];
+    if(cur == null) return NaN;
+    if(nxt && cur < nxt){ total -= cur; } else { total += cur; }
+  }
+  return total;
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">Ⅷ</div>
+    <h1 class="hero-title">로마 숫자 <span style="color:var(--accent);">변환</span></h1>
+    <div class="hero-sub">아라비아와 로마를 양방향으로.<br>${TOTAL}문제. I V X L C D M.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const state = { i:0, correct:0, rng };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const toRomanQ = state.rng() < 0.5;
+    const n = 1 + Math.floor(state.rng() * 3000);
+    const question = toRomanQ ? n.toString() : toRoman(n);
+    const answer = toRomanQ ? toRoman(n) : n.toString();
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="q-display">
+        <div class="q-big">${question}</div>
+        <div class="q-prompt">${toRomanQ ? '로마 숫자로?' : '아라비아 숫자로?'}</div>
+      </div>
+      <div class="input-row">
+        <input type="text" id="ans" placeholder="${toRomanQ?'MMXXV':'2025'}" autocomplete="off" autofocus>
+        <button id="sub">→</button>
+      </div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    const input = document.getElementById('ans');
+    const fb = document.getElementById('fb');
+    input.focus();
+    function check(){
+      const v = input.value.trim().toUpperCase();
+      if(!v) return;
+      if(v === answer){
+        fb.className='feedback right'; fb.textContent='✓ 정답';
+        state.correct++;
+      } else {
+        fb.className='feedback wrong'; fb.textContent='정답은 '+answer;
+      }
+      setTimeout(()=>{ state.i++; next(); }, 1000);
+    }
+    document.getElementById('sub').onclick = check;
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=5?'🎉':'👏'}</div>
+      <div class="result-title">로마 숫자 끝</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`로마 숫자\nⅧ ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { TOTAL, KEY, toRoman, fromRoman };
+</script>
+</body>
+</html>

@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>반응 속도 테스트 | 5분 퍼즐</title>
+<meta property="og:title" content="반응 속도 테스트">
+<meta property="og:description" content="초록 신호가 보이면 즉시 클릭, 빨강 신호는 함정.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#3db569; --accent-dark:#2b8a4e; --accent-soft:#bfe6cf; }
+  .arena{
+    aspect-ratio:1;max-width:360px;margin:0 auto 14px;
+    background:#d4dcd7;border-radius:var(--radius-lg);
+    display:flex;align-items:center;justify-content:center;
+    font-size:24px;font-weight:700;color:var(--ink-dim);
+    cursor:pointer;user-select:none;transition:background .1s;
+    box-shadow:var(--shadow);
+  }
+  .arena.wait{ background:#d4dcd7; color:var(--ink-dim); }
+  .arena.ready{ background:#e8d47a; color:#6d5510; }
+  .arena.go   { background:var(--accent); color:white; font-size:40px; }
+  .arena.trap { background:#d87575; color:white; font-size:40px; }
+  .arena.early{ background:#d87575; color:white; font-size:24px; }
+  .round-info{ text-align:center; color:var(--ink-dim); margin-bottom:12px; font-size:14px; }
+  .rounds-progress{ display:flex; justify-content:center; gap:4px; margin-top:10px; }
+  .rdot{ width:16px; height:6px; border-radius:3px; background:var(--ink-faint); }
+  .rdot.pass{ background:var(--accent); }
+  .rdot.fail{ background:#d87575; }
+  .rdot.current{ background:var(--accent-soft); animation:pulse 1s infinite; }
+  @keyframes pulse{ 0%,100%{opacity:.6;}50%{opacity:1;} }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestTime, shareToClipboard,
+        injectBackLink, clamp, formatMs, todayPretty } = Brain;
+injectBackLink('../../');
+
+const TOTAL = 5;       // 5 rounds: 4 real + 1 trap
+const KEY = 'reaction_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestMs:null, recent:[] });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">⚡</div>
+    <h1 class="hero-title">반응 속도 <span style="color:var(--accent);">테스트</span></h1>
+    <div class="hero-sub">다섯 번 중 네 번은 초록, 한 번은 빨강.<br>초록만 클릭, 빨강은 절대 클릭 금지!</div>
+    <div class="rule-card">
+      <h3>점수 규칙</h3>
+      초록 신호가 뜨면 <b>즉시 클릭</b> → 반응 시간 측정.<br>
+      빨강 신호는 <b>함정</b> — 클릭하면 +500ms 패널티.<br>
+      초록 전 미리 클릭 시에도 패널티.<br>
+      ${stats.bestMs ? `<div class="best">⚡ 최고 평균 ${formatMs(stats.bestMs)}</div>` : ''}
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = {
+    round: 0,
+    times: [],      // ms per round (null = trap success, +penalty = mistake)
+    phase: 'wait',  // wait | ready | go | trap
+    startedAt: 0,
+    timer: null,
+    trapRound: 1 + Math.floor(Math.random() * TOTAL) // 0-indexed already; use 0..TOTAL-1
+  };
+  state.trapRound = Math.floor(Math.random() * TOTAL);
+
+  clear(app);
+  const topbar = $el('div','topbar');
+  topbar.innerHTML = `<div>라운드 <span id="r-round">1</span>/${TOTAL}</div><div class="stat">반응 속도</div>`;
+  app.appendChild(topbar);
+  const arena = $el('div','arena wait');
+  arena.id = 'arena';
+  arena.textContent = '클릭해서 시작';
+  app.appendChild(arena);
+  const info = $el('div','round-info'); info.id='info';
+  info.textContent = '준비 화면을 클릭하면 시작합니다.';
+  app.appendChild(info);
+  const progress = $el('div','rounds-progress'); progress.id='prog';
+  progress.innerHTML = Array.from({length:TOTAL},(_,i)=>`<div class="rdot${i===0?' current':''}"></div>`).join('');
+  app.appendChild(progress);
+
+  function setPhase(p, text){
+    state.phase = p;
+    arena.className = 'arena ' + p;
+    arena.textContent = text;
+  }
+  function drawProgress(){
+    const dots = progress.querySelectorAll('.rdot');
+    dots.forEach((d,i)=>{
+      d.className = 'rdot' + (i < state.round ? (state.times[i] != null && state.times[i] < 2000 ? ' pass' : ' fail') : (i === state.round ? ' current' : ''));
+    });
+  }
+  function beginRound(){
+    document.getElementById('r-round').textContent = (state.round+1);
+    drawProgress();
+    setPhase('ready', '⏳  준비…');
+    info.textContent = '신호가 뜨면 즉시 클릭!';
+    const delay = 800 + Math.random() * 1800;
+    state.timer = setTimeout(()=>{
+      if(state.round === state.trapRound){
+        setPhase('trap', '⛔  멈춰!');
+        info.textContent = '빨강은 함정입니다. 클릭하면 안 돼요!';
+        state.startedAt = performance.now();
+        // auto-advance after 1.2s
+        state.timer = setTimeout(()=>{
+          state.times.push(null); // trap passed
+          info.textContent = '잘 참았어요!';
+          state.round++;
+          nextOrEnd();
+        }, 1200);
+      } else {
+        setPhase('go', '지금!');
+        info.textContent = '';
+        state.startedAt = performance.now();
+      }
+    }, delay);
+  }
+  function nextOrEnd(){
+    if(state.round >= TOTAL) return finish();
+    setTimeout(beginRound, 600);
+  }
+  function finish(){
+    if(state.timer) clearTimeout(state.timer);
+    drawProgress();
+    const realTimes = state.times.filter((t,i)=>i !== state.trapRound && t != null);
+    const trapPassed = state.times[state.trapRound] === null;
+    const avg = realTimes.length ? realTimes.reduce((a,b)=>a+b,0) / realTimes.length : 9999;
+    const penaltyMs = trapPassed ? 0 : 500;
+    const finalAvg = Math.round(avg + penaltyMs);
+    const stats = recordBestTime(KEY, finalAvg, { trapPassed });
+    const isBest = stats.bestMs === finalAvg;
+
+    const card = $el('div','result-card');
+    const emoji = finalAvg < 300 ? '⚡' : finalAvg < 450 ? '🎉' : finalAvg < 600 ? '👏' : '🙂';
+    const tier = finalAvg < 300 ? '전광석화' : finalAvg < 450 ? '빠른 반응' : finalAvg < 600 ? '평균' : '조금 느림';
+    card.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">${tier}</div>
+      <div class="result-big">${formatMs(finalAvg)}</div>
+      <div class="result-sub">평균 반응 ${Math.round(avg)}ms${!trapPassed?' · 함정 +500ms':''}</div>
+      ${isBest ? '<div class="ribbon">🌟 개인 최고 기록</div>' : ''}
+      <div class="history-list">
+        ${stats.recent.map((e,i)=>`<div class="entry${e.ms===stats.bestMs?' best':''}"><span>#${i+1}</span><span>${formatMs(e.ms)}</span></div>`).join('')}
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="btn-share">결과 공유</button>
+        <button class="btn secondary" id="btn-again">다시</button>
+        <button class="btn ghost" id="btn-home">홈</button>
+      </div>
+    `;
+    clear(app);
+    app.appendChild(card);
+    document.getElementById('btn-again').onclick = startGame;
+    document.getElementById('btn-home').onclick = showTitle;
+    document.getElementById('btn-share').onclick = (e) => {
+      const txt = `반응 속도 테스트\n⚡ 평균 ${formatMs(finalAvg)}${isBest?'  🌟 최고!':''}`;
+      shareToClipboard(txt, e.target);
+    };
+  }
+
+  // 터치와 클릭 양쪽 대응. touchstart 쪽이 더 빨라서 반응시간 측정에 유리.
+  let lastTapAt = 0;
+  function onTap(e){
+    if(e && e.type === 'touchstart'){ e.preventDefault(); }
+    // 중복 발화 방지 (touchstart 후 0.3s 내 click 무시)
+    const now = performance.now();
+    if(now - lastTapAt < 300 && e && e.type === 'click') return;
+    lastTapAt = now;
+    if(state.phase === 'wait'){
+      state.round = 0;
+      state.times = [];
+      beginRound();
+    } else if(state.phase === 'ready'){
+      // clicked too early
+      if(state.timer) clearTimeout(state.timer);
+      setPhase('early', '너무 빨라요!');
+      info.textContent = '신호가 나온 뒤에 클릭해주세요.';
+      state.times.push(2500); // penalty entry
+      setTimeout(()=>{
+        state.round++;
+        nextOrEnd();
+      }, 900);
+    } else if(state.phase === 'go'){
+      const elapsed = performance.now() - state.startedAt;
+      state.times.push(Math.round(elapsed));
+      info.textContent = '✓ ' + Math.round(elapsed) + 'ms';
+      state.round++;
+      setPhase('wait', '');
+      nextOrEnd();
+    } else if(state.phase === 'trap'){
+      if(state.timer) clearTimeout(state.timer);
+      state.times.push(2500); // penalty for touching trap
+      info.textContent = '빨강을 클릭했어요!';
+      state.round++;
+      setPhase('wait', '');
+      nextOrEnd();
+    }
+  }
+  arena.addEventListener('click', onTap);
+  arena.addEventListener('touchstart', onTap, { passive: false });
+}
+
+showTitle();
+
+/* test exposure */
+window.__GAME__ = { TOTAL, KEY };
+</script>
+</body>
+</html>

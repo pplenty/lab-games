@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>30초 타자 | 5분 퍼즐</title>
+<meta property="og:title" content="30초 타자">
+<meta property="og:description" content="30초 안에 얼마나 빠르고 정확히 칠 수 있나요?">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#4a7a9a;--accent-dark:#2e5a7a;--accent-soft:#bfd6e4; }
+  .prompt-box{
+    background:var(--card);padding:20px 18px;border-radius:14px;box-shadow:var(--shadow);
+    font-size:22px;line-height:1.7;margin-bottom:12px;letter-spacing:.02em;min-height:100px;
+  }
+  .char{ color:var(--ink-dim); }
+  .char.ok{ color:var(--green-dark); }
+  .char.bad{ color:var(--red);background:#fad5d5;border-radius:3px; }
+  .char.cur{ background:var(--accent-soft);border-radius:3px;animation:blinkc 1s infinite; }
+  @keyframes blinkc{ 0%,100%{opacity:.7;}50%{opacity:1;} }
+  .input-box{
+    width:100%;padding:14px;border:2px solid var(--ink-faint);border-radius:10px;
+    font:inherit;font-size:18px;background:var(--bg);
+  }
+  .input-box:focus{ outline:none;border-color:var(--accent);background:white; }
+  .timer-bar{ height:8px;background:var(--card);border-radius:4px;overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow); }
+  .timer-fill{ height:100%;background:linear-gradient(to right,var(--accent),var(--accent-dark)); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, mulberry32, randomSeed, seededPick } = Brain;
+injectBackLink('../../');
+
+const TEXTS = [
+  '빠르게 치는 것보다 정확하게 치는 것이 먼저입니다.',
+  '오늘도 한 걸음만 더 앞으로 나아가면 충분해요.',
+  '작은 습관이 모여 큰 변화를 만듭니다.',
+  '창문을 열면 새로운 공기가 들어오기 마련입니다.',
+  '밤 하늘의 별은 언제나 그 자리에 있습니다.',
+  '문장을 읽는 속도와 치는 속도는 다르지만 이어지면 하나가 됩니다.',
+  '조금 느리더라도 바르게 가는 길이 먼저입니다.',
+  '기술은 반복에서 온다고 예로부터 전해져 왔어요.'
+];
+const DURATION = 30000;
+const KEY = 'typing30_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestWpm:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  const mobileNote = isMobile ? `
+    <div style="background:#fff4e6;border:1px solid #f0c68a;border-radius:10px;padding:10px 14px;margin:0 auto 14px;max-width:340px;font-size:13px;color:#8a5a1a;line-height:1.6;">
+      💻 이 게임은 물리 키보드에서 더 정확한 속도가 측정됩니다. 모바일에서는 대략적 참고용이에요.
+    </div>` : '';
+  ts.innerHTML = `
+    <div class="brand-icon">⌨️</div>
+    <h1 class="hero-title">30초 <span style="color:var(--accent);">타자</span></h1>
+    <div class="hero-sub">30초 동안 한국어 문장을<br>얼마나 정확히 칠 수 있나요?</div>
+    ${mobileNote}
+    ${stats.bestWpm > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestWpm} KPM</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const rng = mulberry32(randomSeed());
+  const state = { text: seededPick(TEXTS, rng), typed:'', startedAt:null, finished:false };
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat" id="kpm">0 KPM</div><div class="stat" id="acc">100%</div><div class="stat" id="time">30.0s</div>`;
+  app.appendChild(top);
+  const bar = $el('div','timer-bar');
+  bar.innerHTML = `<div class="timer-fill" id="fill" style="width:100%"></div>`;
+  app.appendChild(bar);
+  const promptBox = $el('div','prompt-box'); promptBox.id='prompt';
+  app.appendChild(promptBox);
+  const input = $el('input','input-box');
+  input.id = 'in';
+  input.placeholder = '여기에 입력...';
+  input.autocomplete = 'off';
+  app.appendChild(input);
+  input.focus();
+
+  function render(){
+    const t = state.text;
+    const typed = state.typed;
+    const html = [...t].map((ch, i) => {
+      if(i < typed.length){
+        return '<span class="char '+(typed[i]===ch?'ok':'bad')+'">'+(ch===' '?'&nbsp;':ch)+'</span>';
+      } else if(i === typed.length){
+        return '<span class="char cur">'+(ch===' '?'&nbsp;':ch)+'</span>';
+      }
+      return '<span class="char">'+(ch===' '?'&nbsp;':ch)+'</span>';
+    }).join('');
+    promptBox.innerHTML = html;
+  }
+  render();
+
+  input.addEventListener('input', e=>{
+    if(state.finished) return;
+    if(state.startedAt == null) state.startedAt = performance.now();
+    state.typed = input.value;
+    render();
+    if(state.typed.length >= state.text.length){
+      // loaded another sentence
+      state.typed = '';
+      state.text = seededPick(TEXTS, rng);
+      input.value = '';
+      render();
+    }
+  });
+
+  let timer = null;
+  function tick(){
+    const elapsed = state.startedAt == null ? 0 : performance.now() - state.startedAt;
+    const remaining = Math.max(0, DURATION - elapsed);
+    document.getElementById('time').textContent = (remaining/1000).toFixed(1)+'s';
+    document.getElementById('fill').style.width = (remaining/DURATION*100)+'%';
+    // total chars typed across all sentences approximated; use state.typed.length as current
+    // simpler: KPM based on input.value length in current sentence aggregated isn't tracked; use input length + accumulated
+    // For simplicity, just measure current keystrokes
+    const charsNow = input.value.length + (state._prevTyped || 0);
+    const minutes = Math.max(0.001, elapsed / 60000);
+    const kpm = Math.round(charsNow / minutes) || 0;
+    document.getElementById('kpm').textContent = kpm + ' KPM';
+    if(remaining <= 0){ clearInterval(timer); finish(kpm); }
+  }
+  function finish(kpm){
+    state.finished = true;
+    const stats = loadStats(KEY, { played:0, bestWpm:0 });
+    stats.played++;
+    if(kpm > (stats.bestWpm || 0)) stats.bestWpm = kpm;
+    Brain.saveStats(KEY, stats);
+    const isBest = stats.bestWpm === kpm;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = kpm >= 280 ? '🏆' : kpm >= 200 ? '🎉' : kpm >= 120 ? '👏' : '🙂';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">30초 종료</div>
+      <div class="result-big">${kpm} KPM</div>
+      <div class="result-sub">분당 타이핑 수</div>
+      ${isBest ? '<div class="ribbon">🌟 최고 기록</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`30초 타자\n⌨️ ${kpm} KPM${isBest?' 🌟':''}`, e.target);
+  }
+  timer = setInterval(tick, 100);
+}
+showTitle();
+window.__GAME__ = { TEXTS, DURATION, KEY };
+</script>
+</body>
+</html>

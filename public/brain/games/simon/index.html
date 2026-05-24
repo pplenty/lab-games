@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>색 시퀀스 | 5분 퍼즐</title>
+<meta property="og:title" content="색 시퀀스">
+<meta property="og:description" content="점점 길어지는 색 순서를 그대로 재현하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#c96dad; --accent-dark:#a14a87; --accent-soft:#e5b8d6; }
+  .pad-grid{ display:grid;grid-template-columns:repeat(2,1fr);gap:10px;max-width:320px;margin:0 auto 16px; }
+  .pad{
+    aspect-ratio:1;border-radius:16px;cursor:pointer;transition:all .12s;
+    display:flex;align-items:center;justify-content:center;font-size:30px;user-select:none;
+    opacity:.5;box-shadow:var(--shadow);
+  }
+  .pad.active{ opacity:1;transform:scale(1.03); }
+  .pad.flash{ opacity:1;transform:scale(1.08);box-shadow:0 0 0 6px rgba(255,255,255,.6),var(--shadow-strong); }
+  .pad.red   { background:#e05656; color:white; }
+  .pad.yellow{ background:#daa520; color:white; }
+  .pad.green { background:#6ca02c; color:white; }
+  .pad.blue  { background:#4a7aa4; color:white; }
+  .status{ text-align:center;font-size:15px;color:var(--ink-dim);margin-bottom:10px;min-height:22px; }
+  .level-info{ text-align:center;font-size:18px;font-weight:700;color:var(--accent-dark);margin-bottom:12px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, saveStats, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const PADS = ['red','yellow','green','blue'];
+const EMOJI = { red:'🔴', yellow:'🟡', green:'🟢', blue:'🔵' };
+const KEY = 'simon_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestLevel:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🎵</div>
+    <h1 class="hero-title">색 <span style="color:var(--accent);">시퀀스</span></h1>
+    <div class="hero-sub">깜빡이는 색 순서를 그대로 눌러주세요.<br>성공할수록 한 칸씩 길어집니다.</div>
+    ${stats.bestLevel > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">레벨 ${stats.bestLevel}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = { sequence:[], input:[], level:0, phase:'idle' };
+
+  clear(app);
+  const levelInfo = $el('div','level-info'); levelInfo.id='level'; levelInfo.textContent='레벨 1';
+  app.appendChild(levelInfo);
+  const status = $el('div','status'); status.id='status'; status.textContent='잘 보세요…';
+  app.appendChild(status);
+  const grid = $el('div','pad-grid');
+  PADS.forEach(c=>{
+    const pad = $el('div', 'pad ' + c);
+    pad.dataset.c = c;
+    pad.textContent = EMOJI[c];
+    grid.appendChild(pad);
+  });
+  app.appendChild(grid);
+
+  function flash(color, duration){
+    return new Promise(res=>{
+      const pad = grid.querySelector('.pad[data-c="'+color+'"]');
+      pad.classList.add('flash');
+      setTimeout(()=>{ pad.classList.remove('flash'); setTimeout(res, 120); }, duration);
+    });
+  }
+  async function playSequence(){
+    state.phase = 'play';
+    status.textContent = '잘 보세요…';
+    await new Promise(r=>setTimeout(r, 500));
+    for(const c of state.sequence){
+      await flash(c, 440);
+    }
+    state.phase = 'input';
+    state.input = [];
+    status.textContent = '이제 따라해 보세요!';
+  }
+  function nextLevel(){
+    state.level++;
+    state.sequence.push(PADS[Math.floor(Math.random()*4)]);
+    levelInfo.textContent = '레벨 ' + state.level;
+    playSequence();
+  }
+
+  PADS.forEach(c=>{
+    const pad = grid.querySelector('.pad[data-c="'+c+'"]');
+    pad.onclick = ()=>{
+      if(state.phase !== 'input') return;
+      pad.classList.add('flash');
+      setTimeout(()=>pad.classList.remove('flash'), 200);
+      state.input.push(c);
+      const i = state.input.length - 1;
+      if(state.input[i] !== state.sequence[i]){
+        return finish(false);
+      }
+      if(state.input.length === state.sequence.length){
+        state.phase = 'idle';
+        status.textContent = '✓ 완벽!';
+        setTimeout(nextLevel, 700);
+      }
+    };
+  });
+
+  function finish(success){
+    state.phase = 'done';
+    const reached = state.level; // current level is the one they failed on (or final +1)
+    const stats = loadStats(KEY, { played:0, bestLevel:0 });
+    stats.played++;
+    if(reached > stats.bestLevel) stats.bestLevel = reached;
+    saveStats(KEY, stats);
+    const isBest = stats.bestLevel === reached;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = reached >= 10 ? '🏆' : reached >= 7 ? '🎉' : reached >= 4 ? '👏' : '🙂';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">${success ? '완주!' : '실패'}</div>
+      <div class="result-big">레벨 ${reached}</div>
+      <div class="result-sub">순서 길이 ${state.sequence.length}</div>
+      ${isBest ? '<div class="ribbon">🌟 개인 최고 레벨</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="btn-share">결과 공유</button>
+        <button class="btn secondary" id="btn-again">다시</button>
+        <button class="btn ghost" id="btn-home">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('btn-again').onclick = startGame;
+    document.getElementById('btn-home').onclick = showTitle;
+    document.getElementById('btn-share').onclick = (e)=>
+      shareToClipboard(`색 시퀀스\n🎵 레벨 ${reached} 도달${isBest?'\n🌟 개인 최고':''}`, e.target);
+  }
+
+  nextLevel();
+}
+
+showTitle();
+window.__GAME__ = { PADS, KEY };
+</script>
+</body>
+</html>

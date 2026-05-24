@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>미니 크로스워드 | 5분 퍼즐</title>
+<meta property="og:title" content="미니 크로스워드">
+<meta property="og:description" content="가로·세로 힌트로 3x3 크로스워드를 완성하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#516c8a;--accent-dark:#304d6e;--accent-soft:#bdcddc; }
+  .cross-grid{ display:grid;grid-template-columns:repeat(3,56px);gap:4px;margin:0 auto 14px;padding:6px;background:var(--accent-dark);border-radius:8px; }
+  .cell{ background:white;aspect-ratio:1;position:relative;border-radius:4px; }
+  .cell.blocked{ background:var(--accent-dark);border-radius:4px; }
+  .cell input{
+    width:100%;height:100%;border:0;background:transparent;text-align:center;
+    font:inherit;font-size:26px;font-weight:800;color:var(--accent-dark);
+    text-transform:uppercase;padding:0;
+  }
+  .cell input:focus{ outline:none;background:var(--accent-soft); }
+  .cell .n{ position:absolute;top:2px;left:4px;font-size:10px;color:var(--ink-dim);font-weight:700; }
+  .clues{ display:flex;flex-direction:column;gap:10px;margin-bottom:12px; }
+  .clue-block{ background:var(--bg-2);padding:10px 14px;border-radius:10px; }
+  .clue-block h4{ color:var(--accent-dark);font-size:12px;letter-spacing:.15em;margin-bottom:6px; }
+  .clue-block .c{ font-size:14px;padding:2px 0; }
+  .clue-block .c b{ color:var(--accent);margin-right:6px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestTime, injectBackLink, shareToClipboard, formatClock } = Brain;
+injectBackLink('../../');
+
+// 3x3 grid with one blocked corner. One across (row 0, 3 chars) and one down (col 0, 3 chars).
+// Simplest: every cell filled, 3 across + 3 down = 6 words. For Korean syllables, too hard.
+// Use Latin letters; common short words.
+const PUZZLES = [
+  {
+    grid:[
+      ['C','A','T'],
+      ['O','G','O'],
+      ['W','E','T']
+    ],
+    clues:{
+      across:['고양이','좋다(감탄)','젖은'],
+      down:['소','나이','지나가는 시간']
+    }
+  },
+  {
+    grid:[
+      ['S','U','N'],
+      ['E','S','E'],
+      ['A','A','W']
+    ],
+    // Actually let's use a simpler verified pair:
+    placeholder:true
+  }
+];
+
+// Simpler puzzle bank — 3 rows 3 cols, words are real and valid letter-by-letter
+const SIMPLE = [
+  {
+    // SUN / ARE / TEA (across)
+    // SAT / URE / NET (down)  — NET and URE etc.
+    // Row-by-row:
+    //   S U N
+    //   A R E
+    //   T E A
+    // down cols:
+    //   SAT / URE / NEA  — "NEA" invalid.
+    // Let's try:
+    //   C A T
+    //   A S H
+    //   T H E
+    // cols: CAT / ASH / THE — all valid. Fun!
+    grid:[
+      ['C','A','T'],
+      ['A','S','H'],
+      ['T','H','E']
+    ],
+    clues:{
+      across:['고양이','재','그 (정관사)'],
+      down:['고양이','재','그']
+    }
+  },
+  {
+    grid:[
+      ['M','A','P'],
+      ['O','R','E'],
+      ['T','E','A']
+    ],
+    // cols: MOT / ARE / PEA — MOT means "단어(불어)", but too obscure. Let's try:
+    // DOG / ORE / GET
+    placeholder:true
+  }
+];
+
+// Final working puzzle only
+const PUZZLE = {
+  grid:[
+    ['C','A','T'],
+    ['A','S','H'],
+    ['T','H','E']
+  ],
+  clues:{
+    across:[
+      '1  고양이 (C___)',
+      '2  재, 잿더미 (A___)',
+      '3  영어 정관사 (T___)'
+    ],
+    down:[
+      '1  고양이 (C___)',
+      '2  재, 잿더미 (A___)',
+      '3  영어 정관사 (T___)'
+    ]
+  }
+};
+
+const KEY = 'crossword_mini_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestMs:null });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔡</div>
+    <h1 class="hero-title">미니 <span style="color:var(--accent);">크로스워드</span></h1>
+    <div class="hero-sub">3×3 작은 크로스워드.<br>영어 단어 9글자.</div>
+    ${stats.bestMs ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${formatClock(stats.bestMs)}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const startedAt = performance.now();
+  let timer = null;
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat" id="t">0:00</div><div class="stat">3×3</div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="cross-grid" id="grid"></div>
+    <div class="clues">
+      <div class="clue-block">
+        <h4>ACROSS (가로)</h4>
+        ${PUZZLE.clues.across.map(c => `<div class="c"><b>${c.slice(0,2)}</b> ${c.slice(3)}</div>`).join('')}
+      </div>
+      <div class="clue-block">
+        <h4>DOWN (세로)</h4>
+        ${PUZZLE.clues.down.map(c => `<div class="c"><b>${c.slice(0,2)}</b> ${c.slice(3)}</div>`).join('')}
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="check">채점</button>
+      <button class="btn ghost" id="hint">힌트 표시</button>
+    </div>
+    <div class="feedback" id="fb"></div>
+  `;
+  app.appendChild(card);
+
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  for(let r=0;r<3;r++) for(let c=0;c<3;c++){
+    const cell = $el('div','cell');
+    const n = (r===0 ? (c+1) : (c===0 ? (r+1) : null));
+    cell.innerHTML = `${n?`<span class="n">${n}</span>`:''}<input maxlength="1" data-r="${r}" data-c="${c}">`;
+    grid.appendChild(cell);
+  }
+
+  const inputs = grid.querySelectorAll('input');
+  inputs.forEach((inp, i) => {
+    inp.addEventListener('input', e => {
+      inp.value = inp.value.toUpperCase();
+      if(inp.value && i+1 < inputs.length) inputs[i+1].focus();
+    });
+    inp.addEventListener('keydown', e => {
+      if(e.key === 'Backspace' && !inp.value && i > 0){
+        inputs[i-1].focus();
+      }
+    });
+  });
+
+  document.getElementById('check').onclick = check;
+  document.getElementById('hint').onclick = ()=>{
+    inputs.forEach(inp => {
+      const r = +inp.dataset.r, c = +inp.dataset.c;
+      if(!inp.value) inp.value = PUZZLE.grid[r][c];
+    });
+  };
+
+  function check(){
+    let correct = true;
+    inputs.forEach(inp => {
+      const r = +inp.dataset.r, c = +inp.dataset.c;
+      if(inp.value !== PUZZLE.grid[r][c]) correct = false;
+    });
+    const fb = document.getElementById('fb');
+    if(correct){
+      fb.className='feedback right'; fb.textContent='✓ 완성!';
+      finish();
+    } else {
+      fb.className='feedback wrong'; fb.textContent='아직 틀린 글자가 있어요.';
+    }
+  }
+  function tick(){
+    document.getElementById('t').textContent = formatClock(performance.now() - startedAt);
+  }
+  function finish(){
+    clearInterval(timer);
+    const elapsed = performance.now() - startedAt;
+    const stats = recordBestTime(KEY, Math.round(elapsed), {});
+    const isBest = stats.bestMs === Math.round(elapsed);
+    setTimeout(()=>{
+      clear(app);
+      const r = $el('div','result-card');
+      r.innerHTML = `
+        <div class="result-emoji">${elapsed<90000?'🏆':'🎉'}</div>
+        <div class="result-title">크로스워드 완성</div>
+        <div class="result-big">${formatClock(elapsed)}</div>
+        ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+        <div class="btn-row">
+          <button class="btn" id="s">공유</button>
+          <button class="btn secondary" id="a">다시</button>
+          <button class="btn ghost" id="h">홈</button>
+        </div>
+      `;
+      app.appendChild(r);
+      document.getElementById('a').onclick = startGame;
+      document.getElementById('h').onclick = showTitle;
+      document.getElementById('s').onclick = (e)=>shareToClipboard(`미니 크로스워드\n🔡 ${formatClock(elapsed)}${isBest?' 🌟':''}`, e.target);
+    }, 700);
+  }
+  timer = setInterval(tick, 250);
+}
+showTitle();
+window.__GAME__ = { PUZZLE, KEY };
+</script>
+</body>
+</html>

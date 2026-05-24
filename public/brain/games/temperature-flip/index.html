@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>섭씨 ↔ 화씨 | 5분 퍼즐</title>
+<meta property="og:title" content="섭씨 ↔ 화씨 변환">
+<meta property="og:description" content="섭씨와 화씨를 빠르게 변환하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#e05555;--accent-dark:#a33a3a;--accent-soft:#f4b9b9; }
+  .q-display{ text-align:center;padding:30px 16px;background:var(--accent-soft);border-radius:14px;margin-bottom:14px; }
+  .q-big{ font-size:46px;font-weight:800;color:var(--accent-dark);font-variant-numeric:tabular-nums; }
+  .q-sub{ color:var(--ink-dim);font-size:13px;margin-top:6px; }
+  .input-row{ background:var(--card);border-radius:10px;padding:12px;box-shadow:var(--shadow);display:flex;gap:8px; }
+  .input-row input{ flex:1;padding:12px;border:2px solid var(--ink-faint);border-radius:8px;font:inherit;font-size:26px;font-weight:700;text-align:center;background:var(--bg); }
+  .input-row button{ background:var(--accent);color:white;border:0;border-radius:8px;padding:12px 18px;font:inherit;font-weight:700;cursor:pointer; }
+  .tolerance{ text-align:center;color:var(--ink-dim);font-size:12px;margin-top:6px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const TOTAL = 8;
+const KEY = 'temp_flip_stats';
+const app = document.getElementById('app');
+
+function genQ(){
+  const toF = Math.random() < 0.5;
+  if(toF){
+    const c = -10 + Math.floor(Math.random() * 55); // -10 to 44
+    const f = c * 9/5 + 32;
+    return { from:'C', val:c, to:'F', answer: Math.round(f) };
+  } else {
+    const f = 20 + Math.floor(Math.random() * 100);
+    const c = (f - 32) * 5/9;
+    return { from:'F', val:f, to:'C', answer: Math.round(c) };
+  }
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🌡️</div>
+    <h1 class="hero-title">섭씨 <span style="color:var(--accent);">↔ 화씨</span></h1>
+    <div class="hero-sub">C → F: ×9/5 +32<br>F → C: (−32) ×5/9</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}/${TOTAL}</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const state = { i:0, correct:0 };
+  next();
+  function next(){
+    if(state.i >= TOTAL) return finish();
+    const q = genQ();
+    clear(app);
+    const top = $el('div','topbar');
+    top.innerHTML = `<div class="stat">${state.i+1}/${TOTAL}</div><div class="stat">✓ ${state.correct}</div>`;
+    app.appendChild(top);
+    const card = $el('div','card');
+    card.innerHTML = `
+      <div class="q-display">
+        <div class="q-big">${q.val}°${q.from}</div>
+        <div class="q-sub">이 값을 °${q.to}로 바꾸면?</div>
+      </div>
+      <div class="input-row">
+        <input type="number" id="ans" placeholder="°${q.to}" autocomplete="off" autofocus>
+        <button id="sub">→</button>
+      </div>
+      <div class="tolerance">(±1° 이내 허용)</div>
+      <div class="feedback" id="fb"></div>
+    `;
+    app.appendChild(card);
+    const input = document.getElementById('ans');
+    input.focus();
+    function check(){
+      const v = parseInt(input.value, 10);
+      if(isNaN(v)) return;
+      const fb = document.getElementById('fb');
+      if(Math.abs(v - q.answer) <= 1){
+        fb.className='feedback right'; fb.textContent='✓ 정답 근사값 '+q.answer+'°'+q.to;
+        state.correct++;
+      } else {
+        fb.className='feedback wrong'; fb.textContent='정답 근사값 '+q.answer+'°'+q.to;
+      }
+      setTimeout(()=>{ state.i++; next(); }, 1100);
+    }
+    document.getElementById('sub').onclick = check;
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); check(); } });
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.correct, { total:TOTAL });
+    const isBest = stats.bestScore === state.correct;
+    clear(app);
+    const r = $el('div','result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${state.correct===TOTAL?'🏆':state.correct>=6?'🎉':'👏'}</div>
+      <div class="result-title">변환 끝</div>
+      <div class="result-big">${state.correct}/${TOTAL}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`섭씨↔화씨\n🌡️ ${state.correct}/${TOTAL}${isBest?' 🌟':''}`, e.target);
+  }
+}
+showTitle();
+window.__GAME__ = { TOTAL, KEY, genQ };
+</script>
+</body>
+</html>

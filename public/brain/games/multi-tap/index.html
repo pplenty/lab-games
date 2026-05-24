@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1→10 순서 탭 | 5분 퍼즐</title>
+<meta property="og:title" content="1→10 순서 탭">
+<meta property="og:description" content="흩어진 숫자 1부터 10까지 빠르게 순서대로 탭하세요.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#da5d3c;--accent-dark:#a63e1f;--accent-soft:#f0bca9; }
+  .field{ position:relative;width:100%;max-width:400px;aspect-ratio:1;background:var(--accent-soft);border-radius:14px;margin:0 auto 12px;box-shadow:var(--shadow);overflow:hidden; }
+  .num-dot{ position:absolute;width:52px;height:52px;border-radius:50%;background:white;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;color:var(--accent-dark);cursor:pointer;transform:translate(-50%,-50%);user-select:none;transition:transform .12s,opacity .3s; }
+  .num-dot:hover{ transform:translate(-50%,-50%) scale(1.08); }
+  .num-dot.done{ opacity:0;pointer-events:none; }
+  .num-dot.wrong{ background:var(--red);color:white;animation:shake .25s; }
+  .next-info{ text-align:center;color:var(--accent-dark);font-weight:700;font-size:16px;margin-bottom:10px; }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestTime, injectBackLink, shareToClipboard, formatMs, shuffle } = Brain;
+injectBackLink('../../');
+const N = 10;
+const KEY = 'multi_tap_stats';
+const app = document.getElementById('app');
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestMs:null });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">1️⃣</div>
+    <h1 class="hero-title">1 → ${N} <span style="color:var(--accent);">순서 탭</span></h1>
+    <div class="hero-sub">흩어진 숫자를 1부터 ${N}까지<br>빠르게 순서대로 탭하세요.</div>
+    ${stats.bestMs?`<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${formatMs(stats.bestMs)}</div></div>`:''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const positions = [];
+  // Random non-overlapping positions
+  for(let n=1;n<=N;n++){
+    let x, y, ok;
+    let tries = 0;
+    do {
+      x = 10 + Math.random()*80;
+      y = 10 + Math.random()*80;
+      ok = positions.every(p => Math.hypot(p.x-x, p.y-y) > 22);
+      tries++;
+    } while(!ok && tries < 80);
+    positions.push({ n, x, y });
+  }
+  const state = { next:1, startedAt:null, finished:false, misses:0 };
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat" id="t">0.00s</div><div class="stat">오답 <span id="m">0</span></div>`;
+  app.appendChild(top);
+  const card = $el('div','card');
+  card.innerHTML = `<div class="next-info">다음: <span id="nx">1</span></div><div class="field" id="field"></div>`;
+  app.appendChild(card);
+  const field = document.getElementById('field');
+  positions.forEach(p => {
+    const d = $el('div','num-dot');
+    d.textContent = p.n;
+    d.style.left = p.x + '%';
+    d.style.top = p.y + '%';
+    d.dataset.n = p.n;
+    d.onclick = ()=>{
+      if(state.finished) return;
+      if(state.startedAt === null) state.startedAt = performance.now();
+      if(p.n === state.next){
+        d.classList.add('done');
+        state.next++;
+        document.getElementById('nx').textContent = state.next > N ? '✓' : state.next;
+        if(state.next > N){ finish(); }
+      } else {
+        d.classList.add('wrong');
+        setTimeout(()=>d.classList.remove('wrong'), 250);
+        state.misses++;
+        document.getElementById('m').textContent = state.misses;
+      }
+    };
+    field.appendChild(d);
+  });
+  let tickHandle = null;
+  function tick(){
+    if(state.finished || state.startedAt === null) return;
+    document.getElementById('t').textContent = formatMs(performance.now() - state.startedAt);
+  }
+  tickHandle = setInterval(tick, 50);
+  function finish(){
+    state.finished = true;
+    clearInterval(tickHandle);
+    const elapsed = performance.now() - state.startedAt;
+    const final = Math.round(elapsed + state.misses * 500);
+    const stats = recordBestTime(KEY, final, { misses: state.misses });
+    const isBest = stats.bestMs === final;
+    setTimeout(()=>{
+      clear(app);
+      const r = $el('div','result-card');
+      r.innerHTML = `
+        <div class="result-emoji">${final<6000?'🏆':final<10000?'🎉':'👏'}</div>
+        <div class="result-title">완주!</div>
+        <div class="result-big">${formatMs(final)}</div>
+        <div class="result-sub">오답 ${state.misses}회${state.misses>0?` (+${(state.misses*0.5).toFixed(1)}s)`:''}</div>
+        ${isBest?'<div class="ribbon">🌟 최단 기록</div>':''}
+        <div class="btn-row">
+          <button class="btn" id="s">공유</button>
+          <button class="btn secondary" id="a">다시</button>
+          <button class="btn ghost" id="h">홈</button>
+        </div>
+      `;
+      app.appendChild(r);
+      document.getElementById('a').onclick = startGame;
+      document.getElementById('h').onclick = showTitle;
+      document.getElementById('s').onclick = (e)=>shareToClipboard(`1→${N} 순서 탭\n⚡ ${formatMs(final)}${isBest?' 🌟':''}`, e.target);
+    }, 400);
+  }
+}
+showTitle();
+window.__GAME__ = { N, KEY };
+</script>
+</body>
+</html>

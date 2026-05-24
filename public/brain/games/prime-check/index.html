@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>소수 판별 | 5분 퍼즐</title>
+<meta property="og:title" content="소수 판별">
+<meta property="og:description" content="이 숫자는 소수인가요? 60초 스프린트.">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#7a6bc4;--accent-dark:#554798;--accent-soft:#c9c1e3; }
+  .num-display{
+    text-align:center;padding:40px 20px;background:var(--accent-soft);border-radius:14px;margin-bottom:16px;
+  }
+  .num{ font-size:72px;font-weight:800;color:var(--accent-dark);line-height:1;font-variant-numeric:tabular-nums; }
+  .prompt{ color:var(--ink-dim);font-size:13px;margin-top:8px;letter-spacing:.1em; }
+  .yn{ display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px; }
+  .yn button{
+    padding:22px;background:white;border:2px solid var(--ink-faint);border-radius:14px;
+    font:inherit;font-size:24px;font-weight:800;cursor:pointer;transition:all .12s;
+  }
+  .yn button.yes{ color:var(--green-dark);border-color:var(--green); }
+  .yn button.no{ color:var(--red);border-color:var(--red); }
+  .yn button:hover{ transform:translateY(-2px);box-shadow:var(--shadow); }
+  .timer-bar{ height:8px;background:var(--card);border-radius:4px;overflow:hidden;margin-bottom:14px;box-shadow:var(--shadow); }
+  .timer-fill{ height:100%;background:linear-gradient(to right,var(--accent),var(--accent-dark)); }
+</style>
+</head>
+<body>
+<main><div id="app"></div></main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+const DURATION = 60000;
+const KEY = 'prime_check_stats';
+const app = document.getElementById('app');
+
+function isPrime(n){
+  if(n < 2) return false;
+  if(n < 4) return true;
+  if(n % 2 === 0) return false;
+  for(let i=3;i*i<=n;i+=2) if(n%i===0) return false;
+  return true;
+}
+function randomNumber(){
+  // bias so ~40% are prime; pick 2..150
+  if(Math.random() < 0.4){
+    const primes = [2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73,79,83,89,97,101,103,107,109,113,127,131,137,139,149];
+    return primes[Math.floor(Math.random()*primes.length)];
+  }
+  let n;
+  do { n = 4 + Math.floor(Math.random()*147); } while(isPrime(n) && Math.random() < 0.5);
+  return n;
+}
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id='title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🔢</div>
+    <h1 class="hero-title">소수 <span style="color:var(--accent);">판별</span></h1>
+    <div class="hero-sub">제시된 숫자가 소수인지 아닌지<br>60초 동안 최대한 많이 맞혀보세요.</div>
+    ${stats.bestScore > 0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}점</div></div>` : ''}
+    <div class="btn-row"><button class="btn" id="btn-start">시 작 하 기</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  const started = performance.now();
+  const state = { score:0, correct:0, wrong:0, n:randomNumber() };
+  let timer = null;
+
+  clear(app);
+  const top = $el('div','topbar');
+  top.innerHTML = `<div class="stat">🎯 <span id="score">0</span></div><div class="stat">✓ <span id="correct">0</span></div><div class="stat" id="time">60.0s</div>`;
+  app.appendChild(top);
+  const bar = $el('div','timer-bar');
+  bar.innerHTML = `<div class="timer-fill" id="fill" style="width:100%"></div>`;
+  app.appendChild(bar);
+  const card = $el('div','card');
+  card.innerHTML = `
+    <div class="num-display">
+      <div class="num" id="num">${state.n}</div>
+      <div class="prompt">이 숫자는 소수일까요?</div>
+    </div>
+    <div class="yn">
+      <button class="no" id="no">아니요</button>
+      <button class="yes" id="yes">예</button>
+    </div>
+    <div class="feedback" id="fb" style="min-height:18px"></div>
+  `;
+  app.appendChild(card);
+
+  function answer(isYes){
+    const actual = isPrime(state.n);
+    const fb = document.getElementById('fb');
+    if(isYes === actual){
+      state.score++;
+      state.correct++;
+      fb.className = 'feedback right'; fb.textContent = '✓';
+    } else {
+      state.score = Math.max(0, state.score - 1);
+      state.wrong++;
+      fb.className = 'feedback wrong';
+      fb.textContent = actual ? state.n + '는 소수예요' : state.n + '는 소수가 아니에요';
+    }
+    document.getElementById('score').textContent = state.score;
+    document.getElementById('correct').textContent = state.correct;
+    state.n = randomNumber();
+    document.getElementById('num').textContent = state.n;
+  }
+  document.getElementById('yes').onclick = ()=>answer(true);
+  document.getElementById('no').onclick = ()=>answer(false);
+  document.addEventListener('keydown', keyHandler);
+  function keyHandler(e){
+    if(performance.now() - started > DURATION) return;
+    if(e.key === 'ArrowRight' || e.key === 'y') answer(true);
+    if(e.key === 'ArrowLeft' || e.key === 'n') answer(false);
+  }
+  function tick(){
+    const elapsed = performance.now() - started;
+    const remaining = Math.max(0, DURATION - elapsed);
+    document.getElementById('time').textContent = (remaining/1000).toFixed(1)+'s';
+    document.getElementById('fill').style.width = (remaining/DURATION*100)+'%';
+    if(remaining <= 0){ clearInterval(timer); document.removeEventListener('keydown', keyHandler); finish(); }
+  }
+  function finish(){
+    const stats = recordBestScore(KEY, state.score, {});
+    const isBest = stats.bestScore === state.score && state.score > 0;
+    clear(app);
+    const r = $el('div','result-card');
+    const emoji = state.score >= 30 ? '🏆' : state.score >= 18 ? '🎉' : '👏';
+    r.innerHTML = `
+      <div class="result-emoji">${emoji}</div>
+      <div class="result-title">60초 종료</div>
+      <div class="result-big">${state.score}점</div>
+      <div class="result-sub">정답 ${state.correct} · 오답 ${state.wrong}</div>
+      ${isBest ? '<div class="ribbon">🌟 최고 기록</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(`소수 판별\n🔢 ${state.score}점${isBest?' 🌟':''}`, e.target);
+  }
+  timer = setInterval(tick, 80);
+}
+showTitle();
+window.__GAME__ = { isPrime, DURATION, KEY, randomNumber };
+</script>
+</body>
+</html>
