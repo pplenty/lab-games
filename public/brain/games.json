@@ -1277,6 +1277,26 @@
       "path": "games/falling-sand/"
     },
     {
+      "id": "paper-claim",
+      "title": "영역 점유",
+      "short": "트레일로 영역을 둘러싸 점령, AI는 내 선을 자른다",
+      "icon": "🟦",
+      "tags": [
+        "strategy",
+        "arcade",
+        "space"
+      ],
+      "tagLabels": [
+        "전략",
+        "아케이드",
+        "공간"
+      ],
+      "accent": "#5cd6ea",
+      "duration": "3~5분",
+      "slug": "paper-claim",
+      "path": "games/paper-claim/"
+    },
+    {
       "id": "mirror-match",
       "title": "거울상 찾기",
       "short": "좌우 반전 도형 고르기",

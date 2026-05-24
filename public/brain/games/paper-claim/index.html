@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영역 점유 | 5분 퍼즐</title>
+<meta name="description" content="트레일로 영역을 둘러싸 점령, AI는 내 선을 자른다">
+<meta property="og:title" content="영역 점유">
+<meta property="og:description" content="트레일로 영역을 둘러싸 점령, AI는 내 선을 자른다">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/paper-claim/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#5cd6ea; --accent-dark:#2a9aae; --accent-soft:#bff0f7; }
+  main{ max-width: 520px; }
+  .arena-wrap{ position:relative; margin: 0 auto; max-width: 480px; }
+  canvas#stage{
+    display:block;
+    width: 100%;
+    height: auto;
+    background: #050a18;
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(20,40,80,.4), 0 4px 14px rgba(0,0,0,.45);
+    touch-action: none;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+  }
+  .hud{ display:flex; gap:8px; margin-bottom:10px; }
+  .hud .stat{
+    background:var(--card); padding:8px 10px; border-radius:20px;
+    box-shadow:var(--shadow); flex:1; text-align:center;
+    font-variant-numeric:tabular-nums;
+  }
+  .hud .stat .label{ color:var(--ink-faint); font-size:10px; letter-spacing:.18em; display:block; font-weight:700; }
+  .hud .stat .value{ font-size:18px; font-weight:800; line-height:1.1; }
+  .hud .stat.you .value{ color:#2a9aae; }
+  .hud .stat.foe .value{ color:#c14b7e; }
+  .hud .stat.target .value{ color:var(--ink); }
+  .controls{
+    display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-top:10px;
+    max-width: 280px; margin-left: auto; margin-right: auto;
+  }
+  .controls .ctrl{
+    padding: 14px 0;
+    background: var(--card);
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: var(--shadow);
+    font-weight: 800; font-size: 18px;
+    user-select: none; cursor: pointer;
+    color: var(--accent-dark);
+  }
+  .controls .ctrl:active{ background: var(--accent-soft); }
+  .controls .ctrl.spacer{ visibility: hidden; }
+  .hint{ text-align:center; color:var(--ink-dim); font-size:13px; margin-top:10px; }
+  .overlay{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background: rgba(5,10,24,.65); color: white; border-radius: 12px;
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    text-align:center; padding: 18px; pointer-events: none;
+  }
+  .overlay:empty{ display: none; }
+  .overlay.interactive{ pointer-events: auto; }
+  .overlay h2{ font-size:22px; margin-bottom: 6px; }
+  .overlay p{ opacity:.85; font-size:14px; margin-bottom: 12px; line-height: 1.6; }
+  .quit-row{ display:flex; gap:8px; justify-content:center; margin-top:8px; }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+'use strict';
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const KEY = 'paper_claim_stats';
+const app = document.getElementById('app');
+
+const W = 480, H = 640;
+const CELL = 8;
+const CW = W / CELL; // 60
+const CH = H / CELL; // 80
+const TOTAL = CW * CH;
+const STEP_FRAMES = 6;          // 한 셀 이동에 N프레임
+const WIN_PCT = 65;             // 클리어 조건 %
+
+const N = 0, E = 1, S = 2, WD = 3;
+const DX = [0, 1, 0, -1];
+const DY = [-1, 0, 1, 0];
+
+const PLAYER_ID = 1;
+const FOE_ID = 2;
+
+const COLORS = {
+  bg:       [10, 18, 40],
+  grid:     [25, 35, 60],
+  pTerr:    [42, 154, 174],
+  pTerrFill:[60, 200, 226],
+  pTrail:   [188, 240, 250],
+  fTerr:    [120, 50, 90],
+  fTerrFill:[200, 80, 130],
+  fTrail:   [255, 175, 210],
+};
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id = 'title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🟦</div>
+    <h1 class="hero-title">영역 <span style="color:var(--accent);">점유</span></h1>
+    <div class="hero-sub">내 영역에서 나가 트레일을 그리고,<br>다시 내 영역에 닿으면 그 안쪽이 모두 내 땅.</div>
+    ${stats.bestScore>0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}점</div></div>` : ''}
+    <div class="rule-card">
+      <h3>R U L E S</h3>
+      <div>· 화살표/WASD/하단 ⬆️⬇️⬅️➡️ 버튼으로 방향 전환.</div>
+      <div>· 영역 안에서는 자유 이동(트레일 안 생김).</div>
+      <div>· 영역 밖으로 나가면 트레일 시작 → 다시 내 영역 닿으면 내부 캡처.</div>
+      <div>· 내 트레일이 잘리면(스스로/적이 밟음) 죽음.</div>
+      <div>· 적 트레일을 내가 자르면 적 죽음 + 영역 보너스.</div>
+      <div>· 영역 ${WIN_PCT}% 점령 시 클리어.</div>
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">출 발</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  clear(app);
+
+  const hud = $el('div', 'hud');
+  hud.innerHTML = `
+    <div class="stat you"><span class="label">YOU</span><span class="value" id="hud-you">0%</span></div>
+    <div class="stat foe"><span class="label">FOE</span><span class="value" id="hud-foe">0%</span></div>
+    <div class="stat target"><span class="label">TARGET</span><span class="value">${WIN_PCT}%</span></div>
+  `;
+  app.appendChild(hud);
+
+  const arenaWrap = $el('div', 'arena-wrap');
+  arenaWrap.innerHTML = `
+    <canvas id="stage" width="${W}" height="${H}"></canvas>
+    <div class="overlay" id="overlay"></div>
+  `;
+  app.appendChild(arenaWrap);
+
+  const controls = $el('div', 'controls');
+  controls.innerHTML = `
+    <div class="ctrl spacer"></div>
+    <div class="ctrl" data-dir="0">▲</div>
+    <div class="ctrl spacer"></div>
+    <div class="ctrl" data-dir="3">◀</div>
+    <div class="ctrl" data-dir="2">▼</div>
+    <div class="ctrl" data-dir="1">▶</div>
+  `;
+  app.appendChild(controls);
+
+  const quitRow = $el('div', 'quit-row');
+  quitRow.innerHTML = `<button class="btn ghost" id="btn-quit">그 만</button>`;
+  app.appendChild(quitRow);
+
+  const hint = $el('div', 'hint', '← → ↑ ↓ / W A S D / 하단 버튼 · 반대 방향 즉시 회전 불가');
+  app.appendChild(hint);
+
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.imageSmoothingEnabled = false;
+
+  const off = document.createElement('canvas');
+  off.width = CW; off.height = CH;
+  const offCtx = off.getContext('2d');
+  const imageData = offCtx.createImageData(CW, CH);
+  const pixels = imageData.data;
+
+  const territory = new Uint8Array(TOTAL);
+  const trail = new Uint8Array(TOTAL);
+
+  const player = {
+    id: PLAYER_ID,
+    x: 30, y: 40,
+    startX: 30, startY: 40,
+    dir: N,
+    queued: null,
+    alive: true,
+    trailLen: 0,
+    kills: 0
+  };
+  const foe = {
+    id: FOE_ID,
+    x: 15, y: 20,
+    startX: 15, startY: 20,
+    dir: S,
+    alive: true,
+    trailLen: 0,
+    cooldown: 0
+  };
+
+  seedSquare(territory, player.startX, player.startY, 2, PLAYER_ID);
+  seedSquare(territory, foe.startX, foe.startY, 2, FOE_ID);
+
+  const hudYou = document.getElementById('hud-you');
+  const hudFoe = document.getElementById('hud-foe');
+  const overlay = document.getElementById('overlay');
+
+  function updateHUD(){
+    let pCount = 0, fCount = 0;
+    for (let i = 0; i < TOTAL; i++){
+      if (territory[i] === PLAYER_ID) pCount++;
+      else if (territory[i] === FOE_ID) fCount++;
+    }
+    const pPct = (pCount / TOTAL * 100).toFixed(1);
+    const fPct = (fCount / TOTAL * 100).toFixed(1);
+    hudYou.textContent = pPct + '%';
+    hudFoe.textContent = fPct + '%';
+    return { pCount, fCount, pPct: parseFloat(pPct), fPct: parseFloat(fPct) };
+  }
+  updateHUD();
+
+  let frameCount = 0;
+  let stepCounter = 0;
+  let running = true;
+  let gameState = 'play'; // 'play' | 'won' | 'lost'
+
+  function onKey(e){
+    let d = -1;
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') d = N;
+    else if (e.code === 'ArrowDown' || e.code === 'KeyS') d = S;
+    else if (e.code === 'ArrowLeft' || e.code === 'KeyA') d = WD;
+    else if (e.code === 'ArrowRight' || e.code === 'KeyD') d = E;
+    if (d === -1) return;
+    e.preventDefault();
+    queueDir(d);
+  }
+  function queueDir(d){
+    if (gameState !== 'play') return;
+    // 반대 방향 즉시 전환 차단 (자기 trail 자기방지)
+    if ((d + 2) % 4 === player.dir) return;
+    player.queued = d;
+  }
+  document.addEventListener('keydown', onKey);
+
+  controls.querySelectorAll('.ctrl').forEach(b => {
+    if (b.classList.contains('spacer')) return;
+    const d = parseInt(b.dataset.dir, 10);
+    const fire = (e)=>{ e.preventDefault(); queueDir(d); };
+    b.addEventListener('mousedown', fire);
+    b.addEventListener('touchstart', fire, { passive: false });
+  });
+
+  // 스와이프 입력 (캔버스 위에서)
+  let swipeStart = null;
+  canvas.addEventListener('touchstart', (e)=>{
+    if (!e.touches[0]) return;
+    swipeStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  canvas.addEventListener('touchmove', (e)=>{
+    if (!swipeStart || !e.touches[0]) return;
+    const dx = e.touches[0].clientX - swipeStart.x;
+    const dy = e.touches[0].clientY - swipeStart.y;
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
+    if (Math.abs(dx) > Math.abs(dy)){
+      queueDir(dx > 0 ? E : WD);
+    } else {
+      queueDir(dy > 0 ? S : N);
+    }
+    swipeStart = null;
+  }, { passive: true });
+  canvas.addEventListener('touchend', ()=>{ swipeStart = null; });
+
+  let raf = null;
+  document.getElementById('btn-quit').onclick = ()=>{
+    running = false;
+    cancelAnimationFrame(raf);
+    document.removeEventListener('keydown', onKey);
+    showTitle();
+  };
+
+  function loop(){
+    if (!running) return;
+    frameCount += 1;
+    stepCounter += 1;
+    if (stepCounter >= STEP_FRAMES){
+      stepCounter = 0;
+      tick();
+    }
+    render();
+    raf = requestAnimationFrame(loop);
+  }
+
+  function tick(){
+    if (gameState !== 'play') return;
+
+    // 플레이어 방향 적용
+    if (player.queued !== null){
+      player.dir = player.queued;
+      player.queued = null;
+    }
+    // AI 의사결정
+    decideFoe();
+
+    // 이동
+    movePlayer();
+    if (gameState !== 'play') return;
+    moveFoe();
+
+    const stats = updateHUD();
+    if (stats.pPct >= WIN_PCT){
+      gameState = 'won';
+      finishUI(true, stats);
+    } else if (!foe.alive){
+      // 적 처치 시 보너스: 적 영역 → 비움
+      for (let i = 0; i < TOTAL; i++){
+        if (territory[i] === FOE_ID) territory[i] = 0;
+      }
+      // 영구 클리어가 아니라면 적 재출현 (조금 텀)
+      respawnFoeAfter(180);
+    }
+  }
+
+  function respawnFoeAfter(framesDelay){
+    // foe 부활은 임시로 frameCount 비교
+    const target = frameCount + framesDelay;
+    function check(){
+      if (gameState !== 'play') return;
+      if (frameCount >= target){
+        // 빈 공간에 적 재배치
+        for (let tries = 0; tries < 80; tries++){
+          const x = 4 + Math.floor(Math.random() * (CW - 8));
+          const y = 4 + Math.floor(Math.random() * (CH - 8));
+          if (territory[y*CW + x] === 0){
+            // 작은 영역 형성
+            seedSquare(territory, x, y, 1, FOE_ID);
+            foe.x = x; foe.y = y;
+            foe.startX = x; foe.startY = y;
+            foe.dir = Math.floor(Math.random() * 4);
+            foe.alive = true;
+            foe.trailLen = 0;
+            foe.cooldown = 0;
+            return;
+          }
+        }
+      }
+      requestAnimationFrame(check);
+    }
+    requestAnimationFrame(check);
+  }
+
+  function movePlayer(){
+    const nx = player.x + DX[player.dir];
+    const ny = player.y + DY[player.dir];
+    if (nx < 0 || nx >= CW || ny < 0 || ny >= CH){
+      // 벽 충돌 → 죽음
+      die('player');
+      return;
+    }
+    const ni = ny * CW + nx;
+    // 자기 트레일 위 → 죽음
+    if (trail[ni] === PLAYER_ID){
+      die('player');
+      return;
+    }
+    // 적 트레일 위 → 적 죽음
+    if (trail[ni] === FOE_ID){
+      foe.alive = false;
+      clearTrail(FOE_ID);
+      player.kills += 1;
+    }
+    // 영역 안인지 확인
+    const wasInTerr = territory[player.y * CW + player.x] === PLAYER_ID;
+    const intoTerr = territory[ni] === PLAYER_ID;
+
+    player.x = nx; player.y = ny;
+
+    if (intoTerr){
+      // 영역 안으로 들어옴 → trail이 있었으면 캡처
+      if (player.trailLen > 0){
+        captureArea(PLAYER_ID);
+        player.trailLen = 0;
+      }
+    } else {
+      // 영역 밖에서 이동 → trail 마크
+      // (단, 적 영역도 trail로 마킹 가능)
+      trail[ni] = PLAYER_ID;
+      player.trailLen += 1;
+    }
+  }
+
+  function decideFoe(){
+    if (!foe.alive) return;
+    foe.cooldown -= 1;
+    const inTerr = territory[foe.y * CW + foe.x] === FOE_ID;
+    if (inTerr){
+      // 영역 안: 영역 밖으로 나갈 방향 선택
+      const candidates = [];
+      for (let d = 0; d < 4; d++){
+        if ((d + 2) % 4 === foe.dir) continue;
+        const nx = foe.x + DX[d];
+        const ny = foe.y + DY[d];
+        if (nx < 0 || nx >= CW || ny < 0 || ny >= CH) continue;
+        const ni = ny * CW + nx;
+        // 자기 trail은 못 가
+        if (trail[ni] === FOE_ID) continue;
+        candidates.push(d);
+      }
+      // 일정 확률로 직진, 아니면 무작위
+      if (Math.random() < 0.6 && candidates.includes(foe.dir)){
+        // 직진
+      } else if (candidates.length > 0){
+        foe.dir = candidates[Math.floor(Math.random() * candidates.length)];
+      }
+    } else {
+      // 영역 밖: trail 길이가 길면 회귀
+      if (foe.trailLen >= 14 + Math.floor(Math.random() * 6)){
+        // 회귀 모드: 자기 영역 가까이 가는 방향
+        let bestDir = foe.dir;
+        let bestDist = Infinity;
+        for (let d = 0; d < 4; d++){
+          if ((d + 2) % 4 === foe.dir) continue;
+          const nx = foe.x + DX[d];
+          const ny = foe.y + DY[d];
+          if (nx < 0 || nx >= CW || ny < 0 || ny >= CH) continue;
+          const ni = ny * CW + nx;
+          if (trail[ni] === FOE_ID) continue;
+          // 시작점까지의 맨해튼 거리
+          const dist = Math.abs(nx - foe.startX) + Math.abs(ny - foe.startY);
+          if (dist < bestDist){ bestDist = dist; bestDir = d; }
+        }
+        foe.dir = bestDir;
+      } else {
+        // 가끔 회전
+        if (Math.random() < 0.12){
+          const turn = Math.random() < 0.5 ? -1 : 1;
+          const newDir = ((foe.dir + turn) % 4 + 4) % 4;
+          const nx = foe.x + DX[newDir];
+          const ny = foe.y + DY[newDir];
+          if (nx >= 0 && nx < CW && ny >= 0 && ny < CH){
+            const ni = ny * CW + nx;
+            if (trail[ni] !== FOE_ID) foe.dir = newDir;
+          }
+        }
+      }
+    }
+  }
+
+  function moveFoe(){
+    if (!foe.alive) return;
+    const nx = foe.x + DX[foe.dir];
+    const ny = foe.y + DY[foe.dir];
+    if (nx < 0 || nx >= CW || ny < 0 || ny >= CH){
+      foe.alive = false;
+      clearTrail(FOE_ID);
+      return;
+    }
+    const ni = ny * CW + nx;
+    if (trail[ni] === FOE_ID){
+      // 자기 trail 자살
+      foe.alive = false;
+      clearTrail(FOE_ID);
+      return;
+    }
+    if (trail[ni] === PLAYER_ID){
+      // 적이 내 trail을 자름 → 나 죽음
+      die('player');
+      return;
+    }
+    const intoTerr = territory[ni] === FOE_ID;
+    foe.x = nx; foe.y = ny;
+    if (intoTerr){
+      if (foe.trailLen > 0){
+        captureArea(FOE_ID);
+        foe.trailLen = 0;
+      }
+    } else {
+      trail[ni] = FOE_ID;
+      foe.trailLen += 1;
+    }
+  }
+
+  function clearTrail(id){
+    for (let i = 0; i < TOTAL; i++) if (trail[i] === id) trail[i] = 0;
+  }
+
+  function captureArea(id){
+    const isOutside = new Uint8Array(TOTAL);
+    const queue = [];
+    function push(x, y){
+      const i = y * CW + x;
+      if (territory[i] === id) return;
+      if (trail[i] === id) return;
+      if (isOutside[i]) return;
+      isOutside[i] = 1;
+      queue.push(i);
+    }
+    for (let x = 0; x < CW; x++){
+      push(x, 0);
+      push(x, CH - 1);
+    }
+    for (let y = 0; y < CH; y++){
+      push(0, y);
+      push(CW - 1, y);
+    }
+    // BFS
+    let head = 0;
+    while (head < queue.length){
+      const i = queue[head++];
+      const x = i % CW, y = (i / CW) | 0;
+      if (x > 0) push(x - 1, y);
+      if (x < CW - 1) push(x + 1, y);
+      if (y > 0) push(x, y - 1);
+      if (y < CH - 1) push(x, y + 1);
+    }
+    // 안쪽 셀(외부로 도달 못한 셀) + 내 trail → 모두 내 영역
+    for (let i = 0; i < TOTAL; i++){
+      if (!isOutside[i] || trail[i] === id){
+        if (territory[i] === id){
+          // 그대로
+        } else {
+          // 다른 사람 영역이라면 빼앗음
+          territory[i] = id;
+        }
+        if (trail[i] === id) trail[i] = 0;
+      }
+    }
+    // 만약 캡처 안에 적이 갇히면 적 사망
+    if (id === PLAYER_ID && foe.alive && territory[foe.y * CW + foe.x] === PLAYER_ID){
+      foe.alive = false;
+      clearTrail(FOE_ID);
+      player.kills += 1;
+    }
+  }
+
+  function die(who){
+    gameState = 'lost';
+    finishUI(false, updateHUD());
+  }
+
+  function finishUI(won, stats){
+    cancelAnimationFrame(raf);
+    document.removeEventListener('keydown', onKey);
+    // 점수: 점령률 + 적 처치 보너스
+    const score = Math.round(stats.pPct * 10) + player.kills * 100 + (won ? 500 : 0);
+    const sv = recordBestScore(KEY, score);
+    const isBest = sv.bestScore === score && score > 0;
+    setTimeout(()=>{
+      clear(app);
+      const r = $el('div', 'result-card');
+      r.innerHTML = `
+        <div class="result-emoji">${won ? '🏆' : '💥'}</div>
+        <div class="result-title">${won ? '클리어!' : '게임 오버'}</div>
+        <div class="result-big">${score}점</div>
+        <div class="result-sub">점령 ${stats.pPct.toFixed(1)}% · 적 ${player.kills}회 처치${isBest ? ' · 🌟 최고 기록' : ''}</div>
+        ${isBest ? '<div class="ribbon">NEW BEST</div>' : ''}
+        <div class="btn-row">
+          <button class="btn" id="s">공유</button>
+          <button class="btn secondary" id="a">다시</button>
+          <button class="btn ghost" id="h">홈</button>
+        </div>
+      `;
+      app.appendChild(r);
+      document.getElementById('a').onclick = startGame;
+      document.getElementById('h').onclick = showTitle;
+      document.getElementById('s').onclick = (e)=>shareToClipboard(
+        '영역 점유\n🟦 ' + score + '점 · ' + stats.pPct.toFixed(1) + '% 점령' + (isBest ? ' 🌟' : '') +
+        '\nhttps://games.jdgrid.com/brain/games/paper-claim/',
+        e.target
+      );
+    }, 400);
+  }
+
+  function render(){
+    // 픽셀 그리기
+    for (let i = 0; i < TOTAL; i++){
+      const p = i * 4;
+      const t = territory[i];
+      const tr = trail[i];
+      let r, g, b;
+      if (tr === PLAYER_ID){ [r, g, b] = COLORS.pTrail; }
+      else if (tr === FOE_ID){ [r, g, b] = COLORS.fTrail; }
+      else if (t === PLAYER_ID){ [r, g, b] = COLORS.pTerrFill; }
+      else if (t === FOE_ID){ [r, g, b] = COLORS.fTerrFill; }
+      else {
+        // 살짝의 그리드 패턴
+        const x = i % CW, y = (i / CW) | 0;
+        const isGrid = (x % 6 === 0) || (y % 6 === 0);
+        [r, g, b] = isGrid ? COLORS.grid : COLORS.bg;
+      }
+      pixels[p] = r; pixels[p+1] = g; pixels[p+2] = b; pixels[p+3] = 255;
+    }
+    // 플레이어/적 자체 셀에 강조
+    function markCell(x, y, rgb){
+      const p = (y * CW + x) * 4;
+      pixels[p] = rgb[0]; pixels[p+1] = rgb[1]; pixels[p+2] = rgb[2]; pixels[p+3] = 255;
+    }
+    markCell(player.x, player.y, [255, 255, 255]);
+    if (foe.alive) markCell(foe.x, foe.y, [255, 230, 230]);
+
+    offCtx.putImageData(imageData, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(off, 0, 0, W, H);
+
+    // 글로우 캐릭터 (캔버스 위에 별도)
+    ctx.save();
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(player.x * CELL + CELL/2, player.y * CELL + CELL/2, CELL * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    if (foe.alive){
+      ctx.save();
+      ctx.shadowColor = '#ff8fb1';
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = '#ff8fb1';
+      ctx.beginPath();
+      ctx.arc(foe.x * CELL + CELL/2, foe.y * CELL + CELL/2, CELL * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  raf = requestAnimationFrame(loop);
+}
+
+function seedSquare(territory, cx, cy, radius, id){
+  for (let dy = -radius; dy <= radius; dy++){
+    for (let dx = -radius; dx <= radius; dx++){
+      const x = cx + dx, y = cy + dy;
+      if (x < 0 || x >= CW || y < 0 || y >= CH) continue;
+      territory[y * CW + x] = id;
+    }
+  }
+}
+
+showTitle();
+window.__GAME__ = { KEY };
+</script>
+</body>
+</html>
