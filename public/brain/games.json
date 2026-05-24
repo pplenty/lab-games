@@ -1297,6 +1297,26 @@
       "path": "games/paper-claim/"
     },
     {
+      "id": "spin-gravity",
+      "title": "회전 그라비티",
+      "short": "화면을 돌려 공을 별까지 굴리는 회전 퍼즐",
+      "icon": "🌀",
+      "tags": [
+        "logic",
+        "space",
+        "focus"
+      ],
+      "tagLabels": [
+        "논리",
+        "공간",
+        "집중"
+      ],
+      "accent": "#c98aff",
+      "duration": "5~8분",
+      "slug": "spin-gravity",
+      "path": "games/spin-gravity/"
+    },
+    {
       "id": "mirror-match",
       "title": "거울상 찾기",
       "short": "좌우 반전 도형 고르기",

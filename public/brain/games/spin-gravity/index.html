@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>회전 그라비티 | 5분 퍼즐</title>
+<meta name="description" content="화면을 돌려 공을 별까지 굴리는 회전 퍼즐">
+<meta property="og:title" content="회전 그라비티">
+<meta property="og:description" content="화면을 돌려 공을 별까지 굴리는 회전 퍼즐">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/spin-gravity/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#c98aff; --accent-dark:#7e4ec2; --accent-soft:#e4ccff; }
+  main{ max-width: 520px; }
+  .arena-wrap{ position:relative; margin: 0 auto; max-width: 480px; }
+  canvas#stage{
+    display:block;
+    width: 100%;
+    height: auto;
+    background: #0a0418;
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(60,30,120,.35), 0 4px 14px rgba(0,0,0,.45);
+    touch-action: none;
+  }
+  .hud{ display:flex; gap:8px; margin-bottom:10px; }
+  .hud .stat{
+    background:var(--card); padding:8px 10px; border-radius:20px;
+    box-shadow:var(--shadow); flex:1; text-align:center;
+    font-variant-numeric:tabular-nums;
+  }
+  .hud .stat .label{ color:var(--ink-faint); font-size:10px; letter-spacing:.18em; display:block; font-weight:700; }
+  .hud .stat .value{ color:var(--accent-dark); font-size:18px; font-weight:800; line-height:1.1; }
+  .controls{ display:flex; gap:8px; justify-content:center; margin-top:10px; }
+  .controls .btn{ padding:10px 18px; }
+  .tap-zone{ position:absolute; top:0; bottom:0; width:50%; pointer-events:auto; }
+  .hint{ text-align:center; color:var(--ink-dim); font-size:13px; margin-top:10px; }
+  .overlay{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background: rgba(10,4,24,.65); color: white; border-radius: 12px;
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    text-align:center; padding: 18px; pointer-events: none;
+  }
+  .overlay:empty{ display: none; }
+  .overlay.interactive{ pointer-events: auto; }
+  .overlay h2{ font-size:22px; margin-bottom: 6px; }
+  .overlay p{ opacity:.85; font-size:14px; margin-bottom: 12px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+'use strict';
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const KEY = 'spin_gravity_stats';
+const app = document.getElementById('app');
+
+const W = 480, H = 640;
+const CX = W / 2, CY = H / 2;
+const BALL_R = 8;
+const GRAVITY = 0.36;
+const SPEED_CAP = 9;
+const BOUNCE = 0.32;
+const FRICTION_TAN = 0.86; // 접선 마찰 (벽 따라 굴러갈 때)
+const AIR_FRICTION = 0.998;
+const ROT_SPEED = 0.026; // rad/frame
+const GOAL_R = 16;
+
+const LEVELS = [
+  {
+    title: '입문',
+    ball: { x: 100, y: 130 },
+    walls: [
+      { x: 40,  y: 560, w: 400, h: 16 },
+      { x: 40,  y: 80,  w: 16,  h: 496 },
+      { x: 424, y: 80,  w: 16,  h: 496 },
+    ],
+    goal: { x: 400, y: 530 }
+  },
+  {
+    title: '벽 너머',
+    ball: { x: 100, y: 130 },
+    walls: [
+      { x: 40,  y: 560, w: 400, h: 16 },
+      { x: 40,  y: 80,  w: 16,  h: 496 },
+      { x: 424, y: 80,  w: 16,  h: 496 },
+      { x: 220, y: 350, w: 220, h: 14 },
+    ],
+    goal: { x: 100, y: 530 }
+  },
+  {
+    title: '지그재그',
+    ball: { x: 100, y: 110 },
+    walls: [
+      { x: 40,  y: 80,  w: 16,  h: 500 },
+      { x: 424, y: 80,  w: 16,  h: 500 },
+      { x: 40,  y: 580, w: 400, h: 16 },
+      { x: 56,  y: 220, w: 260, h: 14 },
+      { x: 164, y: 350, w: 260, h: 14 },
+      { x: 56,  y: 480, w: 260, h: 14 },
+    ],
+    goal: { x: 400, y: 550 }
+  },
+  {
+    title: '코너 미궁',
+    ball: { x: 80, y: 80 },
+    walls: [
+      { x: 30, y: 30, w: 420, h: 12 },
+      { x: 30, y: 598, w: 420, h: 12 },
+      { x: 30, y: 30, w: 12, h: 580 },
+      { x: 438, y: 30, w: 12, h: 580 },
+      { x: 180, y: 130, w: 250, h: 12 },
+      { x: 60, y: 230, w: 250, h: 12 },
+      { x: 180, y: 330, w: 250, h: 12 },
+      { x: 60, y: 430, w: 250, h: 12 },
+      { x: 180, y: 530, w: 250, h: 12 },
+    ],
+    goal: { x: 400, y: 570 }
+  },
+  {
+    title: '종합',
+    ball: { x: 80, y: 80 },
+    walls: [
+      { x: 30, y: 30, w: 420, h: 12 },
+      { x: 30, y: 598, w: 420, h: 12 },
+      { x: 30, y: 30, w: 12, h: 580 },
+      { x: 438, y: 30, w: 12, h: 580 },
+      { x: 180, y: 120, w: 12, h: 220 },
+      { x: 300, y: 270, w: 12, h: 240 },
+      { x: 80, y: 410, w: 200, h: 12 },
+      { x: 180, y: 510, w: 180, h: 12 },
+    ],
+    goal: { x: 400, y: 570 }
+  }
+];
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id = 'title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🌀</div>
+    <h1 class="hero-title">회전 <span style="color:var(--accent);">그라비티</span></h1>
+    <div class="hero-sub">화면을 좌우로 돌려 공을 별까지 굴리세요.<br>중력은 항상 화면 아래쪽으로 작용합니다.</div>
+    ${stats.bestScore>0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}점</div></div>` : ''}
+    <div class="rule-card">
+      <h3>R U L E S</h3>
+      <div>· ← → / A D / 화면 좌·우 누름으로 레벨을 회전.</div>
+      <div>· 공은 항상 캔버스 아래쪽으로 떨어집니다.</div>
+      <div>· 별에 닿으면 다음 레벨, 5개 레벨 완주.</div>
+      <div>· 빠를수록 + 회전 적게 쓸수록 점수 상승.</div>
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">출 발</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = ()=>startRun();
+}
+
+function startRun(){
+  clear(app);
+
+  let levelIdx = 0;
+  let totalScore = 0;
+  let levelStartFrame = 0;
+  let rotationTotal = 0;
+
+  const hud = $el('div', 'hud');
+  hud.innerHTML = `
+    <div class="stat"><span class="label">LEVEL</span><span class="value" id="hud-level">1/5</span></div>
+    <div class="stat"><span class="label">TIME</span><span class="value" id="hud-time">0.0</span></div>
+    <div class="stat"><span class="label">SCORE</span><span class="value" id="hud-score">0</span></div>
+  `;
+  app.appendChild(hud);
+
+  const arenaWrap = $el('div', 'arena-wrap');
+  arenaWrap.innerHTML = `
+    <canvas id="stage" width="${W}" height="${H}"></canvas>
+    <div class="tap-zone" id="zone-l" style="left:0"></div>
+    <div class="tap-zone" id="zone-r" style="right:0"></div>
+    <div class="overlay" id="overlay"></div>
+  `;
+  app.appendChild(arenaWrap);
+
+  const controls = $el('div', 'controls');
+  controls.innerHTML = `
+    <button class="btn ghost" id="btn-reset">레 벨 재 시 작</button>
+    <button class="btn ghost" id="btn-quit">홈</button>
+  `;
+  app.appendChild(controls);
+
+  const hint = $el('div', 'hint', '← → / A D / 화면 좌·우 누름 · R = 레벨 재시작');
+  app.appendChild(hint);
+
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+
+  const overlay = document.getElementById('overlay');
+  const hudLevel = document.getElementById('hud-level');
+  const hudTime = document.getElementById('hud-time');
+  const hudScore = document.getElementById('hud-score');
+
+  const state = {
+    theta: 0,
+    ball: { x: 0, y: 0, vx: 0, vy: 0 },
+    trail: [],
+    particles: [],
+    frame: 0,
+    keyL: false, keyR: false,
+    tapL: false, tapR: false,
+    cleared: false,
+    running: true,
+    stars: makeStars(70)
+  };
+
+  function loadLevel(){
+    const lvl = LEVELS[levelIdx];
+    state.ball.x = lvl.ball.x;
+    state.ball.y = lvl.ball.y;
+    state.ball.vx = 0; state.ball.vy = 0;
+    state.theta = 0;
+    state.trail = [];
+    state.particles = [];
+    state.cleared = false;
+    levelStartFrame = state.frame;
+    rotationTotal = 0;
+    hudLevel.textContent = (levelIdx + 1) + '/5';
+    overlay.classList.remove('interactive');
+    overlay.innerHTML = '';
+  }
+  loadLevel();
+
+  function onKey(e){
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA'){ state.keyL = true; e.preventDefault(); }
+    else if (e.code === 'ArrowRight' || e.code === 'KeyD'){ state.keyR = true; e.preventDefault(); }
+    else if (e.code === 'KeyR'){ loadLevel(); e.preventDefault(); }
+  }
+  function onKeyUp(e){
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') state.keyL = false;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keyR = false;
+  }
+  document.addEventListener('keydown', onKey);
+  document.addEventListener('keyup', onKeyUp);
+
+  function press(side, on){
+    if (side === 'l') state.tapL = on;
+    else state.tapR = on;
+  }
+  const zL = document.getElementById('zone-l');
+  const zR = document.getElementById('zone-r');
+  zL.addEventListener('touchstart', (e)=>{ e.preventDefault(); press('l', true); }, { passive: false });
+  zL.addEventListener('touchend', (e)=>{ e.preventDefault(); press('l', false); }, { passive: false });
+  zL.addEventListener('touchcancel', ()=> press('l', false));
+  zR.addEventListener('touchstart', (e)=>{ e.preventDefault(); press('r', true); }, { passive: false });
+  zR.addEventListener('touchend', (e)=>{ e.preventDefault(); press('r', false); }, { passive: false });
+  zR.addEventListener('touchcancel', ()=> press('r', false));
+  zL.addEventListener('mousedown', ()=> press('l', true));
+  zL.addEventListener('mouseup', ()=> press('l', false));
+  zL.addEventListener('mouseleave', ()=> press('l', false));
+  zR.addEventListener('mousedown', ()=> press('r', true));
+  zR.addEventListener('mouseup', ()=> press('r', false));
+  zR.addEventListener('mouseleave', ()=> press('r', false));
+
+  let raf = null;
+  document.getElementById('btn-reset').onclick = loadLevel;
+  document.getElementById('btn-quit').onclick = ()=>{
+    state.running = false;
+    cancelAnimationFrame(raf);
+    document.removeEventListener('keydown', onKey);
+    document.removeEventListener('keyup', onKeyUp);
+    showTitle();
+  };
+
+  function step(){
+    state.frame += 1;
+    // 회전 입력
+    const leftHeld = state.keyL || state.tapL;
+    const rightHeld = state.keyR || state.tapR;
+    let dTheta = 0;
+    if (leftHeld && !rightHeld) dTheta = -ROT_SPEED;
+    else if (rightHeld && !leftHeld) dTheta = ROT_SPEED;
+    state.theta += dTheta;
+    rotationTotal += Math.abs(dTheta);
+
+    if (state.cleared) return;
+
+    // 중력 (레벨 좌표계 기준)
+    const gx = Math.sin(state.theta) * GRAVITY;
+    const gy = Math.cos(state.theta) * GRAVITY;
+    state.ball.vx += gx;
+    state.ball.vy += gy;
+    state.ball.vx *= AIR_FRICTION;
+    state.ball.vy *= AIR_FRICTION;
+    const sp = Math.hypot(state.ball.vx, state.ball.vy);
+    if (sp > SPEED_CAP){
+      state.ball.vx *= SPEED_CAP / sp;
+      state.ball.vy *= SPEED_CAP / sp;
+    }
+    state.ball.x += state.ball.vx;
+    state.ball.y += state.ball.vy;
+
+    // 벽 충돌
+    const lvl = LEVELS[levelIdx];
+    for (const w of lvl.walls){
+      const closestX = Math.max(w.x, Math.min(state.ball.x, w.x + w.w));
+      const closestY = Math.max(w.y, Math.min(state.ball.y, w.y + w.h));
+      const dx = state.ball.x - closestX;
+      const dy = state.ball.y - closestY;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < BALL_R * BALL_R){
+        const d = Math.sqrt(d2) || 0.0001;
+        const nx = dx / d, ny = dy / d;
+        // 위치 보정
+        state.ball.x = closestX + nx * BALL_R;
+        state.ball.y = closestY + ny * BALL_R;
+        // 속도 반사 + 접선 마찰
+        const dot = state.ball.vx * nx + state.ball.vy * ny;
+        if (dot < 0){
+          state.ball.vx -= (1 + BOUNCE) * dot * nx;
+          state.ball.vy -= (1 + BOUNCE) * dot * ny;
+        }
+        const tx = -ny, ty = nx;
+        const tdot = state.ball.vx * tx + state.ball.vy * ty;
+        state.ball.vx -= (1 - FRICTION_TAN) * tdot * tx;
+        state.ball.vy -= (1 - FRICTION_TAN) * tdot * ty;
+      }
+    }
+
+    // 화면 밖 안전망 (회전에 따라 공이 캔버스 한참 밖으로 나갈 일은 적지만 안전)
+    if (state.ball.x < -100 || state.ball.x > W + 100 || state.ball.y < -100 || state.ball.y > H + 100){
+      loadLevel();
+      return;
+    }
+
+    // 트레일
+    state.trail.push({ x: state.ball.x, y: state.ball.y });
+    if (state.trail.length > 30) state.trail.shift();
+
+    // 목표
+    const gx2 = state.ball.x - lvl.goal.x;
+    const gy2 = state.ball.y - lvl.goal.y;
+    if (gx2*gx2 + gy2*gy2 < (GOAL_R + BALL_R) * (GOAL_R + BALL_R)){
+      return clearLevel();
+    }
+
+    // 시간 HUD
+    const elapsedSec = (state.frame - levelStartFrame) / 60;
+    hudTime.textContent = elapsedSec.toFixed(1);
+  }
+
+  function clearLevel(){
+    state.cleared = true;
+    const elapsedSec = (state.frame - levelStartFrame) / 60;
+    // 점수: 시간 빠를수록, 회전 적게 쓸수록 높음
+    const timeBonus = Math.max(0, 400 - Math.floor(elapsedSec * 8));
+    const rotBonus = Math.max(0, 300 - Math.floor(rotationTotal * 50));
+    const base = 200;
+    const earned = base + timeBonus + rotBonus;
+    totalScore += earned;
+    hudScore.textContent = totalScore;
+    // 목표 폭발
+    for (let i = 0; i < 50; i++){
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1.5 + Math.random() * 4;
+      state.particles.push({
+        x: LEVELS[levelIdx].goal.x,
+        y: LEVELS[levelIdx].goal.y,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        size: 2 + Math.random() * 3,
+        hue: 40 + Math.random() * 60,
+        life: 40 + Math.random() * 20,
+        maxLife: 60
+      });
+    }
+    overlay.classList.add('interactive');
+    overlay.innerHTML = `
+      <h2>⭐ 클리어</h2>
+      <p>${LEVELS[levelIdx].title} · +${earned}점<br>(시간 ${elapsedSec.toFixed(1)}s · 보너스 +${timeBonus} / 회전 +${rotBonus})</p>
+      <button class="btn" id="ov-next">${levelIdx === LEVELS.length - 1 ? '결과 보기' : '다음 레벨'}</button>
+    `;
+    document.getElementById('ov-next').onclick = ()=>{
+      if (levelIdx === LEVELS.length - 1){
+        finishRun();
+      } else {
+        levelIdx += 1;
+        loadLevel();
+      }
+    };
+  }
+
+  function finishRun(){
+    state.running = false;
+    cancelAnimationFrame(raf);
+    document.removeEventListener('keydown', onKey);
+    document.removeEventListener('keyup', onKeyUp);
+    const stats = recordBestScore(KEY, totalScore);
+    const isBest = stats.bestScore === totalScore && totalScore > 0;
+    clear(app);
+    const r = $el('div', 'result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${totalScore >= 3500 ? '🏆' : totalScore >= 2200 ? '🎉' : '👏'}</div>
+      <div class="result-title">5레벨 완주</div>
+      <div class="result-big">${totalScore}점</div>
+      <div class="result-sub">${isBest ? '🌟 최고 기록' : '잘했어요'}</div>
+      ${isBest ? '<div class="ribbon">NEW BEST</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startRun;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(
+      '회전 그라비티\n🌀 ' + totalScore + '점' + (isBest ? ' 🌟' : '') +
+      '\nhttps://games.jdgrid.com/brain/games/spin-gravity/',
+      e.target
+    );
+  }
+
+  function render(){
+    // 배경 (회전 없음)
+    const bg = ctx.createRadialGradient(CX, CY, 20, CX, CY, 380);
+    bg.addColorStop(0, '#1e0e3a');
+    bg.addColorStop(0.6, '#0a0418');
+    bg.addColorStop(1, '#05020c');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // 별 (회전 없음, 트윙클)
+    for (const s of state.stars){
+      const tw = 0.5 + 0.5 * Math.sin(state.frame * 0.04 + s.tw);
+      ctx.fillStyle = `rgba(255,255,255,${0.25 + tw * 0.45})`;
+      ctx.fillRect(s.x, s.y, s.r, s.r);
+    }
+
+    // 캔버스 회전 적용
+    ctx.save();
+    ctx.translate(CX, CY);
+    ctx.rotate(state.theta);
+    ctx.translate(-CX, -CY);
+
+    const lvl = LEVELS[levelIdx];
+    // 벽
+    for (const w of lvl.walls){
+      drawWall(ctx, w);
+    }
+    // 목표 별
+    drawGoal(ctx, lvl.goal, state.frame);
+    // 트레일
+    if (state.trail.length > 1){
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,200,255,.8)';
+      ctx.shadowBlur = 10;
+      ctx.strokeStyle = 'rgba(255,200,255,.6)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(state.trail[0].x, state.trail[0].y);
+      for (let i = 1; i < state.trail.length; i++) ctx.lineTo(state.trail[i].x, state.trail[i].y);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // 공
+    drawBall(ctx, state.ball);
+    // 파티클
+    for (const p of state.particles){
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.06;
+      p.life -= 1;
+      const a = Math.max(0, p.life / p.maxLife);
+      ctx.fillStyle = `hsla(${p.hue}, 95%, 65%, ${a})`;
+      ctx.shadowColor = `hsla(${p.hue}, 100%, 70%, ${a})`;
+      ctx.shadowBlur = 10;
+      ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
+    }
+    state.particles = state.particles.filter(p => p.life > 0);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // 회전 인디케이터 (캔버스 좌상단, 회전 안 함)
+    drawCompass(ctx, 38, 38, 22, state.theta);
+  }
+
+  function loop(){
+    if (!state.running) return;
+    step();
+    render();
+    raf = requestAnimationFrame(loop);
+  }
+  raf = requestAnimationFrame(loop);
+}
+
+function makeStars(n){
+  const arr = [];
+  for (let i = 0; i < n; i++){
+    arr.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: Math.random() < 0.6 ? 1 : 2,
+      tw: Math.random() * Math.PI * 2
+    });
+  }
+  return arr;
+}
+
+function drawWall(ctx, w){
+  ctx.save();
+  ctx.shadowColor = '#c98aff';
+  ctx.shadowBlur = 8;
+  const grad = ctx.createLinearGradient(w.x, w.y, w.x, w.y + w.h);
+  grad.addColorStop(0, '#e4ccff');
+  grad.addColorStop(1, '#7e4ec2');
+  ctx.fillStyle = grad;
+  roundRect(ctx, w.x, w.y, w.w, w.h, Math.min(w.w, w.h) / 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = 'rgba(255,255,255,.25)';
+  if (w.w > w.h){
+    ctx.fillRect(w.x + 3, w.y + 2, w.w - 6, 1);
+  } else {
+    ctx.fillRect(w.x + 2, w.y + 3, 1, w.h - 6);
+  }
+}
+
+function drawGoal(ctx, goal, frame){
+  const pulse = 1 + Math.sin(frame * 0.08) * 0.14;
+  const r = GOAL_R * pulse;
+  ctx.save();
+  const halo = ctx.createRadialGradient(goal.x, goal.y, r * 0.3, goal.x, goal.y, r * 3);
+  halo.addColorStop(0, 'rgba(255,255,200,.55)');
+  halo.addColorStop(1, 'rgba(255,255,200,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(goal.x, goal.y, r * 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(goal.x, goal.y);
+  ctx.rotate(frame * 0.005);
+  ctx.fillStyle = '#ffea7d';
+  ctx.shadowColor = '#fff5b8';
+  ctx.shadowBlur = 24;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++){
+    const ang = (i / 10) * Math.PI * 2 - Math.PI / 2;
+    const rr = i % 2 === 0 ? r : r * 0.45;
+    const x = Math.cos(ang) * rr;
+    const y = Math.sin(ang) * rr;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBall(ctx, b){
+  ctx.save();
+  ctx.shadowColor = '#fff';
+  ctx.shadowBlur = 16;
+  const grad = ctx.createRadialGradient(b.x - 2, b.y - 2, 1, b.x, b.y, BALL_R);
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(1, '#c98aff');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, BALL_R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawCompass(ctx, cx, cy, r, theta){
+  ctx.save();
+  // 외곽 원
+  ctx.strokeStyle = 'rgba(255,255,255,.4)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  // 중력 화살표 (항상 캔버스 아래)
+  ctx.fillStyle = 'rgba(255,255,255,.85)';
+  ctx.strokeStyle = 'rgba(255,255,255,.85)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx, cy + r - 4);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + r);
+  ctx.lineTo(cx - 4, cy + r - 6);
+  ctx.lineTo(cx + 4, cy + r - 6);
+  ctx.closePath();
+  ctx.fill();
+  // 레벨 위쪽 표시 (theta 반영, 작은 점)
+  const ux = cx + Math.sin(-theta) * (r - 4);
+  const uy = cy - Math.cos(-theta) * (r - 4);
+  ctx.fillStyle = '#c98aff';
+  ctx.beginPath();
+  ctx.arc(ux, uy, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r){
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+showTitle();
+window.__GAME__ = { KEY };
+</script>
+</body>
+</html>
