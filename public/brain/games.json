@@ -1317,6 +1317,26 @@
       "path": "games/spin-gravity/"
     },
     {
+      "id": "boid-hunt",
+      "title": "보이드 사냥",
+      "short": "군집 움직이는 적을 자동발사로 사냥하며 회피",
+      "icon": "🛸",
+      "tags": [
+        "arcade",
+        "reflex",
+        "space"
+      ],
+      "tagLabels": [
+        "아케이드",
+        "순발",
+        "공간"
+      ],
+      "accent": "#ff5b9c",
+      "duration": "2~4분",
+      "slug": "boid-hunt",
+      "path": "games/boid-hunt/"
+    },
+    {
       "id": "mirror-match",
       "title": "거울상 찾기",
       "short": "좌우 반전 도형 고르기",

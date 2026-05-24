@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>보이드 사냥 | 5분 퍼즐</title>
+<meta name="description" content="군집 움직이는 적을 자동발사로 사냥하며 회피">
+<meta property="og:title" content="보이드 사냥">
+<meta property="og:description" content="군집 움직이는 적을 자동발사로 사냥하며 회피">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/boid-hunt/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#ff5b9c; --accent-dark:#c14376; --accent-soft:#ffc1d6; }
+  main{ max-width: 520px; }
+  .arena-wrap{ position:relative; margin: 0 auto; max-width: 480px; }
+  canvas#stage{
+    display:block;
+    width: 100%;
+    height: auto;
+    background: #06031a;
+    border-radius: 12px;
+    box-shadow: 0 12px 30px rgba(80,20,60,.4), 0 4px 14px rgba(0,0,0,.45);
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .hud{ display:flex; gap:8px; margin-bottom:10px; }
+  .hud .stat{
+    background:var(--card); padding:8px 10px; border-radius:20px;
+    box-shadow:var(--shadow); flex:1; text-align:center;
+    font-variant-numeric:tabular-nums;
+  }
+  .hud .stat .label{ color:var(--ink-faint); font-size:10px; letter-spacing:.18em; display:block; font-weight:700; }
+  .hud .stat .value{ color:var(--accent-dark); font-size:18px; font-weight:800; line-height:1.1; }
+  .hint{ text-align:center; color:var(--ink-dim); font-size:13px; margin-top:10px; }
+  .controls{ display:flex; gap:8px; justify-content:center; margin-top:10px; }
+  .overlay{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background: rgba(6,3,26,.65); color: white; border-radius: 12px;
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    text-align:center; padding: 18px; pointer-events: none;
+  }
+  .overlay:empty{ display: none; }
+  .overlay.interactive{ pointer-events: auto; }
+  .overlay h2{ font-size:22px; margin-bottom: 6px; }
+  .overlay p{ opacity:.85; font-size:14px; margin-bottom: 12px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+'use strict';
+const { $el, clear, loadStats, recordBestScore, injectBackLink, shareToClipboard } = Brain;
+injectBackLink('../../');
+
+const KEY = 'boid_hunt_stats';
+const app = document.getElementById('app');
+
+const W = 480, H = 640;
+const PLAYER_R = 9;
+const PLAYER_SPEED = 5.5;
+const PLAYER_LERP = 0.18;
+const BULLET_R = 3;
+const BULLET_SPEED = 9.2;
+const SHOT_INTERVAL = 6;
+const BOID_R = 6.5;
+const BOID_MAX_SPEED = 2.6;
+const BOID_INITIAL = 18;
+const BOID_CAP = 70;
+const NEIGHBOR_R = 38;
+const SEPARATION_R = 17;
+const SEP_W = 0.34;
+const ALI_W = 0.10;
+const COH_W = 0.045;
+const PURSUE_W = 0.022;
+const KILL_RANGE = 240;
+
+function showTitle(){
+  clear(app);
+  const stats = loadStats(KEY, { played:0, bestScore:0 });
+  const ts = $el('div'); ts.id = 'title-screen';
+  ts.innerHTML = `
+    <div class="brand-icon">🛸</div>
+    <h1 class="hero-title">보이드 <span style="color:var(--accent);">사냥</span></h1>
+    <div class="hero-sub">마우스/손가락으로 우주선을 움직이세요.<br>가장 가까운 적에게 자동 발사됩니다.</div>
+    ${stats.bestScore>0 ? `<div class="today-card"><div class="today-label">B E S T</div><div class="today-date">${stats.bestScore}점</div></div>` : ''}
+    <div class="rule-card">
+      <h3>R U L E S</h3>
+      <div>· 보이드(적)는 분리·정렬·응집 알고리즘으로 군집 이동.</div>
+      <div>· 군집의 응집 중심은 당신을 향합니다(약한 추적).</div>
+      <div>· 닿으면 즉사. 시간이 지나면 적이 늘어납니다.</div>
+      <div>· 점수 = 처치 × 10 + 생존 초.</div>
+    </div>
+    <div class="btn-row"><button class="btn" id="btn-start">출 발</button></div>
+    <div class="credits">5분 퍼즐 · 2026</div>
+  `;
+  app.appendChild(ts);
+  document.getElementById('btn-start').onclick = startGame;
+}
+
+function startGame(){
+  clear(app);
+
+  const hud = $el('div', 'hud');
+  hud.innerHTML = `
+    <div class="stat"><span class="label">SCORE</span><span class="value" id="hud-score">0</span></div>
+    <div class="stat"><span class="label">KILLS</span><span class="value" id="hud-kills">0</span></div>
+    <div class="stat"><span class="label">TIME</span><span class="value" id="hud-time">0.0</span></div>
+  `;
+  app.appendChild(hud);
+
+  const arenaWrap = $el('div', 'arena-wrap');
+  arenaWrap.innerHTML = `
+    <canvas id="stage" width="${W}" height="${H}"></canvas>
+    <div class="overlay" id="overlay"></div>
+  `;
+  app.appendChild(arenaWrap);
+
+  const controls = $el('div', 'controls');
+  controls.innerHTML = `<button class="btn ghost" id="btn-quit">그 만</button>`;
+  app.appendChild(controls);
+
+  const hint = $el('div', 'hint', '마우스 / 손가락으로 이동 · 자동 발사 · WASD/방향키 보조');
+  app.appendChild(hint);
+
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+
+  const overlay = document.getElementById('overlay');
+  const hudScore = document.getElementById('hud-score');
+  const hudKills = document.getElementById('hud-kills');
+  const hudTime = document.getElementById('hud-time');
+
+  const state = {
+    player: { x: W/2, y: H * 0.7, vx: 0, vy: 0, hue: 330, aim: 0 },
+    target: { x: W/2, y: H * 0.7 },
+    boids: [],
+    bullets: [],
+    particles: [],
+    keys: { l:false, r:false, u:false, d:false },
+    frame: 0,
+    shotCd: 0,
+    spawnCd: 480,
+    kills: 0,
+    score: 0,
+    alive: true,
+    grid: makeGridDots()
+  };
+
+  for (let i = 0; i < BOID_INITIAL; i++) spawnBoid(state);
+
+  function setTargetFromClient(clientX, clientY){
+    const r = canvas.getBoundingClientRect();
+    state.target.x = (clientX - r.left) * (W / r.width);
+    state.target.y = (clientY - r.top) * (H / r.height);
+  }
+  canvas.addEventListener('mousemove', (e)=> setTargetFromClient(e.clientX, e.clientY));
+  canvas.addEventListener('touchstart', (e)=>{
+    if (!e.touches[0]) return;
+    e.preventDefault();
+    setTargetFromClient(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e)=>{
+    if (!e.touches[0]) return;
+    e.preventDefault();
+    setTargetFromClient(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: false });
+
+  function onKey(e){
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA'){ state.keys.l = true; e.preventDefault(); }
+    else if (e.code === 'ArrowRight' || e.code === 'KeyD'){ state.keys.r = true; e.preventDefault(); }
+    else if (e.code === 'ArrowUp' || e.code === 'KeyW'){ state.keys.u = true; e.preventDefault(); }
+    else if (e.code === 'ArrowDown' || e.code === 'KeyS'){ state.keys.d = true; e.preventDefault(); }
+  }
+  function onKeyUp(e){
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') state.keys.l = false;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') state.keys.r = false;
+    if (e.code === 'ArrowUp' || e.code === 'KeyW') state.keys.u = false;
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') state.keys.d = false;
+  }
+  document.addEventListener('keydown', onKey);
+  document.addEventListener('keyup', onKeyUp);
+
+  let raf = null;
+  document.getElementById('btn-quit').onclick = ()=>{
+    state.alive = false;
+    cancelAnimationFrame(raf);
+    document.removeEventListener('keydown', onKey);
+    document.removeEventListener('keyup', onKeyUp);
+    showTitle();
+  };
+
+  function loop(){
+    if (!state.alive) return;
+    step();
+    render();
+    raf = requestAnimationFrame(loop);
+  }
+
+  function step(){
+    state.frame += 1;
+    const p = state.player;
+
+    // 이동: 키보드 우선, 없으면 마우스/터치 target 추적
+    const kvx = (state.keys.r ? 1 : 0) - (state.keys.l ? 1 : 0);
+    const kvy = (state.keys.d ? 1 : 0) - (state.keys.u ? 1 : 0);
+    if (kvx !== 0 || kvy !== 0){
+      const m = Math.hypot(kvx, kvy);
+      p.x += (kvx / m) * PLAYER_SPEED;
+      p.y += (kvy / m) * PLAYER_SPEED;
+    } else {
+      // lerp toward target
+      p.x += (state.target.x - p.x) * PLAYER_LERP;
+      p.y += (state.target.y - p.y) * PLAYER_LERP;
+    }
+    p.x = Math.max(PLAYER_R, Math.min(W - PLAYER_R, p.x));
+    p.y = Math.max(PLAYER_R, Math.min(H - PLAYER_R, p.y));
+
+    // boids
+    updateBoids(state);
+
+    // 자동 발사 (가장 가까운 적 중 사거리 내)
+    state.shotCd -= 1;
+    if (state.shotCd <= 0){
+      const nearest = findNearestBoid(state);
+      if (nearest){
+        const dx = nearest.x - p.x, dy = nearest.y - p.y;
+        const d = Math.hypot(dx, dy) || 0.001;
+        p.aim = Math.atan2(dy, dx);
+        state.bullets.push({
+          x: p.x, y: p.y,
+          vx: (dx / d) * BULLET_SPEED,
+          vy: (dy / d) * BULLET_SPEED,
+          life: 70
+        });
+        state.shotCd = SHOT_INTERVAL;
+      }
+    }
+
+    // 탄 이동 + 충돌
+    for (const b of state.bullets){
+      b.x += b.vx;
+      b.y += b.vy;
+      b.life -= 1;
+    }
+    state.bullets = state.bullets.filter(b => {
+      if (b.life <= 0) return false;
+      if (b.x < -10 || b.x > W + 10 || b.y < -10 || b.y > H + 10) return false;
+      // 보이드 충돌
+      for (let i = 0; i < state.boids.length; i++){
+        const o = state.boids[i];
+        const dx = b.x - o.x, dy = b.y - o.y;
+        if (dx*dx + dy*dy < (BOID_R + BULLET_R) * (BOID_R + BULLET_R)){
+          // kill
+          spawnKillParticles(state, o);
+          state.boids.splice(i, 1);
+          state.kills += 1;
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // 플레이어-보이드 충돌
+    for (const o of state.boids){
+      const dx = o.x - p.x, dy = o.y - p.y;
+      if (dx*dx + dy*dy < (BOID_R + PLAYER_R) * (BOID_R + PLAYER_R)){
+        return die();
+      }
+    }
+
+    // 파티클
+    for (const pa of state.particles){
+      pa.x += pa.vx;
+      pa.y += pa.vy;
+      pa.vx *= 0.96;
+      pa.vy *= 0.96;
+      pa.life -= 1;
+    }
+    state.particles = state.particles.filter(pa => pa.life > 0);
+
+    // 새 보이드 스폰
+    state.spawnCd -= 1;
+    if (state.spawnCd <= 0 && state.boids.length < BOID_CAP){
+      const burst = Math.min(BOID_CAP - state.boids.length, 4);
+      for (let i = 0; i < burst; i++) spawnBoid(state);
+      state.spawnCd = Math.max(120, 480 - state.frame * 0.05);
+    }
+
+    // 점수
+    const seconds = state.frame / 60;
+    state.score = state.kills * 10 + Math.floor(seconds);
+    hudScore.textContent = state.score;
+    hudKills.textContent = state.kills;
+    hudTime.textContent = seconds.toFixed(1);
+  }
+
+  function findNearestBoid(state){
+    let best = null;
+    let bd = KILL_RANGE * KILL_RANGE;
+    for (const o of state.boids){
+      const dx = o.x - state.player.x;
+      const dy = o.y - state.player.y;
+      const d2 = dx*dx + dy*dy;
+      if (d2 < bd){ bd = d2; best = o; }
+    }
+    return best;
+  }
+
+  function die(){
+    state.alive = false;
+    // 폭발
+    const p = state.player;
+    for (let i = 0; i < 70; i++){
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1.5 + Math.random() * 5;
+      state.particles.push({
+        x: p.x, y: p.y,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        size: 2 + Math.random() * 3,
+        hue: 320 + Math.random() * 60,
+        life: 40 + Math.random() * 24,
+        maxLife: 64
+      });
+    }
+    // 짧은 잔재
+    let frames = 36;
+    function fade(){
+      step_particles();
+      render_dead();
+      frames -= 1;
+      if (frames > 0) requestAnimationFrame(fade);
+      else finishUI();
+    }
+    fade();
+
+    function step_particles(){
+      for (const pa of state.particles){
+        pa.x += pa.vx;
+        pa.y += pa.vy;
+        pa.vx *= 0.96;
+        pa.vy *= 0.96;
+        pa.life -= 1;
+      }
+      state.particles = state.particles.filter(p => p.life > 0);
+    }
+    function render_dead(){
+      ctx.fillStyle = 'rgba(6,3,26,.12)';
+      ctx.fillRect(0, 0, W, H);
+      for (const pa of state.particles){
+        const a = Math.max(0, pa.life / pa.maxLife);
+        ctx.fillStyle = `hsla(${pa.hue}, 95%, 65%, ${a})`;
+        ctx.shadowColor = `hsla(${pa.hue}, 100%, 70%, ${a})`;
+        ctx.shadowBlur = 10;
+        ctx.fillRect(pa.x - pa.size/2, pa.y - pa.size/2, pa.size, pa.size);
+      }
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  function finishUI(){
+    cancelAnimationFrame(raf);
+    document.removeEventListener('keydown', onKey);
+    document.removeEventListener('keyup', onKeyUp);
+    const final = state.score;
+    const stats = recordBestScore(KEY, final);
+    const isBest = stats.bestScore === final && final > 0;
+    clear(app);
+    const r = $el('div', 'result-card');
+    r.innerHTML = `
+      <div class="result-emoji">${final >= 800 ? '🏆' : final >= 300 ? '🎉' : '👏'}</div>
+      <div class="result-title">격추됨</div>
+      <div class="result-big">${final}점</div>
+      <div class="result-sub">처치 ${state.kills} · 생존 ${(state.frame/60).toFixed(1)}s${isBest ? ' · 🌟 최고 기록' : ''}</div>
+      ${isBest ? '<div class="ribbon">NEW BEST</div>' : ''}
+      <div class="btn-row">
+        <button class="btn" id="s">공유</button>
+        <button class="btn secondary" id="a">다시</button>
+        <button class="btn ghost" id="h">홈</button>
+      </div>
+    `;
+    app.appendChild(r);
+    document.getElementById('a').onclick = startGame;
+    document.getElementById('h').onclick = showTitle;
+    document.getElementById('s').onclick = (e)=>shareToClipboard(
+      '보이드 사냥\n🛸 ' + final + '점 · 처치 ' + state.kills + (isBest ? ' 🌟' : '') +
+      '\nhttps://games.jdgrid.com/brain/games/boid-hunt/',
+      e.target
+    );
+  }
+
+  function render(){
+    // BG
+    const bg = ctx.createRadialGradient(W/2, H/2, 40, W/2, H/2, 400);
+    bg.addColorStop(0, '#0e0628');
+    bg.addColorStop(0.55, '#08031b');
+    bg.addColorStop(1, '#04010f');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // 격자 점 (Geometry Wars 풍)
+    drawGridDots(ctx, state.grid, state.frame, state.player);
+
+    // 보이드
+    for (const o of state.boids){
+      drawBoid(ctx, o, state.frame);
+    }
+
+    // 탄
+    for (const b of state.bullets){
+      drawBullet(ctx, b);
+    }
+
+    // 플레이어
+    drawPlayer(ctx, state.player, state.frame);
+
+    // 파티클
+    for (const pa of state.particles){
+      const a = Math.max(0, pa.life / pa.maxLife);
+      ctx.fillStyle = `hsla(${pa.hue}, 95%, 65%, ${a})`;
+      ctx.shadowColor = `hsla(${pa.hue}, 100%, 70%, ${a})`;
+      ctx.shadowBlur = 10;
+      ctx.fillRect(pa.x - pa.size/2, pa.y - pa.size/2, pa.size, pa.size);
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  raf = requestAnimationFrame(loop);
+}
+
+function updateBoids(state){
+  const p = state.player;
+  // 각 보이드의 새 가속도 계산
+  for (let i = 0; i < state.boids.length; i++){
+    const b = state.boids[i];
+    let sepX = 0, sepY = 0;
+    let aliX = 0, aliY = 0;
+    let cohX = 0, cohY = 0;
+    let neighborCount = 0;
+    const sepR2 = SEPARATION_R * SEPARATION_R;
+    const ngR2 = NEIGHBOR_R * NEIGHBOR_R;
+    for (let j = 0; j < state.boids.length; j++){
+      if (i === j) continue;
+      const o = state.boids[j];
+      const dx = o.x - b.x, dy = o.y - b.y;
+      const d2 = dx*dx + dy*dy;
+      if (d2 > ngR2) continue;
+      if (d2 < sepR2 && d2 > 0.01){
+        const d = Math.sqrt(d2);
+        sepX -= dx / d;
+        sepY -= dy / d;
+      }
+      aliX += o.vx; aliY += o.vy;
+      cohX += o.x; cohY += o.y;
+      neighborCount += 1;
+    }
+    if (neighborCount > 0){
+      aliX /= neighborCount; aliY /= neighborCount;
+      const am = Math.hypot(aliX, aliY) || 0.0001;
+      aliX = aliX / am - b.vx / Math.max(0.0001, Math.hypot(b.vx, b.vy));
+      aliY = aliY / am - b.vy / Math.max(0.0001, Math.hypot(b.vx, b.vy));
+      cohX = cohX / neighborCount - b.x;
+      cohY = cohY / neighborCount - b.y;
+      const cm = Math.hypot(cohX, cohY) || 0.0001;
+      cohX /= cm; cohY /= cm;
+    }
+    // 플레이어 추적 (약하게)
+    const pdx = p.x - b.x, pdy = p.y - b.y;
+    const pd = Math.hypot(pdx, pdy) || 0.0001;
+    const pursX = pdx / pd;
+    const pursY = pdy / pd;
+
+    b.vx += sepX * SEP_W + aliX * ALI_W + cohX * COH_W + pursX * PURSUE_W;
+    b.vy += sepY * SEP_W + aliY * ALI_W + cohY * COH_W + pursY * PURSUE_W;
+
+    // 경계 회피 (부드러운 회전)
+    const margin = 30;
+    if (b.x < margin) b.vx += 0.08;
+    else if (b.x > W - margin) b.vx -= 0.08;
+    if (b.y < margin) b.vy += 0.08;
+    else if (b.y > H - margin) b.vy -= 0.08;
+
+    // 속도 캡
+    const sp = Math.hypot(b.vx, b.vy);
+    if (sp > BOID_MAX_SPEED){
+      b.vx *= BOID_MAX_SPEED / sp;
+      b.vy *= BOID_MAX_SPEED / sp;
+    }
+    b.x += b.vx;
+    b.y += b.vy;
+  }
+}
+
+function spawnBoid(state){
+  // 화면 가장자리에서 출현
+  const side = Math.floor(Math.random() * 4);
+  let x, y;
+  if (side === 0){ x = Math.random() * W; y = -10; }
+  else if (side === 1){ x = W + 10; y = Math.random() * H; }
+  else if (side === 2){ x = Math.random() * W; y = H + 10; }
+  else { x = -10; y = Math.random() * H; }
+  state.boids.push({
+    x, y,
+    vx: (Math.random() - 0.5) * 1.6,
+    vy: (Math.random() - 0.5) * 1.6,
+    hue: (state.frame * 0.5 + Math.random() * 40) % 360
+  });
+}
+
+function spawnKillParticles(state, b){
+  for (let i = 0; i < 10; i++){
+    const a = Math.random() * Math.PI * 2;
+    const sp = 1.2 + Math.random() * 3;
+    state.particles.push({
+      x: b.x, y: b.y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      size: 1.5 + Math.random() * 2.5,
+      hue: (b.hue + 40 + Math.random() * 60) % 360,
+      life: 24 + Math.random() * 14,
+      maxLife: 38
+    });
+  }
+}
+
+function makeGridDots(){
+  const arr = [];
+  const SP = 32;
+  for (let y = SP / 2; y < H; y += SP){
+    for (let x = SP / 2; x < W; x += SP){
+      arr.push({ x, y, ox: x, oy: y });
+    }
+  }
+  return arr;
+}
+
+function drawGridDots(ctx, dots, frame, player){
+  // 플레이어 가까운 점들은 살짝 색이 변하고 더 밝음
+  for (const d of dots){
+    const dx = d.x - player.x, dy = d.y - player.y;
+    const d2 = dx*dx + dy*dy;
+    const k = Math.max(0, 1 - d2 / (180 * 180));
+    const a = 0.13 + k * 0.55;
+    ctx.fillStyle = `hsla(${(330 + frame * 0.3) % 360}, ${50 + k * 50}%, ${30 + k * 50}%, ${a})`;
+    ctx.fillRect(d.x - 1, d.y - 1, 2, 2);
+  }
+}
+
+function drawBoid(ctx, b, frame){
+  const ang = Math.atan2(b.vy, b.vx);
+  const hue = (b.hue + frame * 0.5) % 360;
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(ang);
+  ctx.shadowColor = `hsl(${hue}, 100%, 65%)`;
+  ctx.shadowBlur = 12;
+  const grad = ctx.createLinearGradient(-BOID_R, 0, BOID_R, 0);
+  grad.addColorStop(0, `hsl(${(hue + 30) % 360}, 100%, 50%)`);
+  grad.addColorStop(1, `hsl(${hue}, 100%, 75%)`);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(BOID_R, 0);
+  ctx.lineTo(-BOID_R * 0.8, BOID_R * 0.7);
+  ctx.lineTo(-BOID_R * 0.4, 0);
+  ctx.lineTo(-BOID_R * 0.8, -BOID_R * 0.7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawBullet(ctx, b){
+  ctx.save();
+  ctx.shadowColor = '#fff';
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, BULLET_R, 0, Math.PI * 2);
+  ctx.fill();
+  // 짧은 트레일
+  ctx.strokeStyle = 'rgba(255,255,255,.45)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(b.x, b.y);
+  ctx.lineTo(b.x - b.vx * 1.5, b.y - b.vy * 1.5);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPlayer(ctx, p, frame){
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.aim);
+  // 본체
+  ctx.shadowColor = '#ff5b9c';
+  ctx.shadowBlur = 18;
+  const grad = ctx.createLinearGradient(-PLAYER_R, 0, PLAYER_R, 0);
+  grad.addColorStop(0, '#ff8fb1');
+  grad.addColorStop(1, '#ffffff');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(PLAYER_R * 1.4, 0);
+  ctx.lineTo(-PLAYER_R, PLAYER_R);
+  ctx.lineTo(-PLAYER_R * 0.5, 0);
+  ctx.lineTo(-PLAYER_R, -PLAYER_R);
+  ctx.closePath();
+  ctx.fill();
+  // 작은 코어
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+showTitle();
+window.__GAME__ = { KEY };
+</script>
+</body>
+</html>

@@ -341,6 +341,11 @@
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>https://games.jdgrid.com/brain/games/boid-hunt/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://games.jdgrid.com/brain/games/mirror-match/</loc>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
