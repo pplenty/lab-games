@@ -1217,6 +1217,26 @@
       "path": "games/tunnel/"
     },
     {
+      "id": "gravity-slingshot",
+      "title": "그라비티 슬링샷",
+      "short": "행성 중력을 이용해 우주선을 별까지 보내기",
+      "icon": "🪐",
+      "tags": [
+        "logic",
+        "space",
+        "arcade"
+      ],
+      "tagLabels": [
+        "논리",
+        "공간",
+        "아케이드"
+      ],
+      "accent": "#ffb84d",
+      "duration": "5~8분",
+      "slug": "gravity-slingshot",
+      "path": "games/gravity-slingshot/"
+    },
+    {
       "id": "mirror-match",
       "title": "거울상 찾기",
       "short": "좌우 반전 도형 고르기",
