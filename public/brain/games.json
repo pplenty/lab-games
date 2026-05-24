@@ -1197,6 +1197,26 @@
       "path": "games/breakout/"
     },
     {
+      "id": "tunnel",
+      "title": "터널 런",
+      "short": "회전하는 가짜 3D 터널을 달려 장애물 피하기",
+      "icon": "🌀",
+      "tags": [
+        "arcade",
+        "reflex",
+        "space"
+      ],
+      "tagLabels": [
+        "아케이드",
+        "순발",
+        "공간"
+      ],
+      "accent": "#9c5cff",
+      "duration": "3~5분",
+      "slug": "tunnel",
+      "path": "games/tunnel/"
+    },
+    {
       "id": "mirror-match",
       "title": "거울상 찾기",
       "short": "좌우 반전 도형 고르기",
