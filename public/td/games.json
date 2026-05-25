@@ -1,0 +1,28 @@
+{
+  "site": {
+    "title": "전략 디펜스",
+    "subtitle": "Tower Defense",
+    "description": "네온 격자 위에서 타워를 세워 적의 흐름을 막는 본격 타워 디펜스 컬렉션.",
+    "url": "https://games.jdgrid.com/td",
+    "author": "JD Grid Games"
+  },
+  "categories": {
+    "strategy": { "label": "전략", "emoji": "St" },
+    "focus":    { "label": "집중", "emoji": "Fo" },
+    "arcade":   { "label": "아케이드", "emoji": "Ac" }
+  },
+  "games": [
+    {
+      "id": "neon-defense",
+      "title": "네온 디펜스",
+      "short": "타워 4종 · 15웨이브 · 격자 위 본격 디펜스",
+      "icon": "T",
+      "tags": ["strategy", "focus", "arcade"],
+      "tagLabels": ["전략", "집중", "아케이드"],
+      "accent": "#5cd6ea",
+      "duration": "10-15분",
+      "slug": "neon-defense",
+      "path": "games/neon-defense/"
+    }
+  ]
+}

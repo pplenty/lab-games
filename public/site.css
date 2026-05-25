@@ -125,6 +125,10 @@ a {
   background: var(--rust);
 }
 
+.collection-card-td::before {
+  background: #6a4ec4;
+}
+
 .status {
   position: absolute;
   top: 22px;
@@ -156,6 +160,16 @@ a {
 .collection-card-narrative .collection-icon {
   background: var(--rust-soft);
   color: var(--rust);
+}
+
+.collection-card-td .collection-icon {
+  background: #ede5f7;
+  color: #5b3aaf;
+}
+
+.collection-card-td .status {
+  background: #ede5f7;
+  color: #5b3aaf;
 }
 
 .collection-card h2,

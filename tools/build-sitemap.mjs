@@ -27,6 +27,7 @@ function renderUrlset(urls) {
 }
 
 const brain = JSON.parse(await readFile('public/brain/games.json', 'utf8'));
+const td = JSON.parse(await readFile('public/td/games.json', 'utf8'));
 
 const rootUrls = [
   { loc: `${baseUrl}/`, changefreq: 'weekly', priority: '1.0' },
@@ -39,7 +40,13 @@ const rootUrls = [
   })),
   { loc: `${baseUrl}/narrative/`, changefreq: 'monthly', priority: '0.6' },
   { loc: `${baseUrl}/narrative/mailbox/`, changefreq: 'monthly', priority: '0.5' },
-  { loc: `${baseUrl}/narrative/phone-call/`, changefreq: 'monthly', priority: '0.5' }
+  { loc: `${baseUrl}/narrative/phone-call/`, changefreq: 'monthly', priority: '0.5' },
+  { loc: `${baseUrl}/td/`, changefreq: 'weekly', priority: '0.7' },
+  ...td.games.map((game) => ({
+    loc: `${baseUrl}/td/${game.path}`,
+    changefreq: 'weekly',
+    priority: '0.6'
+  }))
 ];
 
 const brainUrls = [
@@ -51,7 +58,17 @@ const brainUrls = [
   }))
 ];
 
+const tdUrls = [
+  { loc: `${baseUrl}/td/`, changefreq: 'weekly', priority: '1.0' },
+  ...td.games.map((game) => ({
+    loc: `${baseUrl}/td/${game.path}`,
+    changefreq: 'weekly',
+    priority: '0.8'
+  }))
+];
+
 await writeFile('public/sitemap.xml', renderUrlset(rootUrls));
 await writeFile('public/brain/sitemap.xml', renderUrlset(brainUrls));
+await writeFile('public/td/sitemap.xml', renderUrlset(tdUrls));
 
 console.log(`sitemap generated: ${rootUrls.length} URLs`);
