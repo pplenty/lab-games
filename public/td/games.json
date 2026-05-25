@@ -23,6 +23,18 @@
       "duration": "10-15분",
       "slug": "neon-defense",
       "path": "games/neon-defense/"
+    },
+    {
+      "id": "roll-defense",
+      "title": "롤 디펜스",
+      "short": "랜덤 뽑기 · 3→1 합성 · 8×8 슬롯 · 15웨이브",
+      "icon": "R",
+      "tags": ["strategy", "arcade", "focus"],
+      "tagLabels": ["전략", "아케이드", "집중"],
+      "accent": "#c98aff",
+      "duration": "15-25분",
+      "slug": "roll-defense",
+      "path": "games/roll-defense/"
     }
   ]
 }
