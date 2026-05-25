@@ -1337,6 +1337,26 @@
       "path": "games/boid-hunt/"
     },
     {
+      "id": "bullet-hell",
+      "title": "탄막 지옥",
+      "short": "원형·나선·명중탄을 피하며 보스에 반격",
+      "icon": "💫",
+      "tags": [
+        "arcade",
+        "reflex",
+        "focus"
+      ],
+      "tagLabels": [
+        "아케이드",
+        "순발",
+        "집중"
+      ],
+      "accent": "#ff6b35",
+      "duration": "3~6분",
+      "slug": "bullet-hell",
+      "path": "games/bullet-hell/"
+    },
+    {
       "id": "mirror-match",
       "title": "거울상 찾기",
       "short": "좌우 반전 도형 고르기",

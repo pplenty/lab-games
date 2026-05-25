@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>탄막 지옥 | 5분 퍼즐</title>
+<meta name="description" content="원형탄, 나선탄, 조준탄을 피하면서 보스에 반격하는 Canvas 탄막 회피 게임.">
+<meta property="og:title" content="탄막 지옥">
+<meta property="og:description" content="탄막을 피하며 보스에 반격.">
+<link rel="canonical" href="https://games.jdgrid.com/brain/games/bullet-hell/">
+<link rel="stylesheet" href="../../shared/core.css">
+<style>
+  :root{ --accent:#ff6b35; --accent-dark:#b64218; --accent-soft:#ffc3aa; }
+  main{ max-width:640px; }
+  .hud-grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:8px;
+    margin-bottom:12px;
+  }
+  .hud-box{
+    background:var(--card);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    padding:8px 10px;
+    text-align:center;
+  }
+  .hud-label{
+    color:var(--ink-dim);
+    font-size:11px;
+    font-weight:800;
+  }
+  .hud-value{
+    color:var(--accent-dark);
+    font-size:19px;
+    font-variant-numeric:tabular-nums;
+    font-weight:900;
+  }
+  .game-stage{
+    background:var(--card);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    margin-bottom:14px;
+    padding:12px;
+  }
+  .hell-canvas{
+    aspect-ratio:4 / 5;
+    background:#120f18;
+    border-radius:8px;
+    cursor:none;
+    display:block;
+    touch-action:none;
+    width:100%;
+  }
+  .hint-line{
+    color:var(--ink-dim);
+    font-size:13px;
+    line-height:1.6;
+    text-align:center;
+  }
+  .score-hero{
+    color:var(--accent-dark);
+    font-size:54px;
+    font-weight:900;
+    line-height:1;
+    margin:18px 0 8px;
+    text-align:center;
+  }
+  .result-stats{
+    display:grid;
+    gap:8px;
+    grid-template-columns:repeat(3,1fr);
+    margin:16px 0;
+  }
+  .result-stats .hud-box{
+    border:1px solid #e6ddcf;
+    box-shadow:none;
+  }
+  @media(max-width:520px){
+    main{ padding-inline:14px; }
+    .hud-grid{ grid-template-columns:repeat(2,1fr); }
+    .result-stats{ grid-template-columns:1fr; }
+    .score-hero{ font-size:46px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+</main>
+<script src="../../shared/engine.js"></script>
+<script>
+const { clear, loadStats, recordBestScore, injectBackLink, shareToClipboard, formatClock } = Brain;
+injectBackLink('../../');
+
+const GAME_ID = 'bullet-hell';
+const STORAGE_KEY = GAME_ID + '_stats';
+const TAU = Math.PI * 2;
+const TIME_LIMIT = 90;
+const PLAYER_R = 8;
+const BOSS_HP = 1500;
+
+let canvas = null;
+let ctx = null;
+let rafId = 0;
+let state = null;
+let view = { w:360, h:450, dpr:1 };
+const keys = {};
+
+function clamp(n, lo, hi){
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function rand(lo, hi){
+  return lo + Math.random() * (hi - lo);
+}
+
+function dist(a, b, c, d){
+  return Math.hypot(a - c, b - d);
+}
+
+function setCanvasSize(){
+  if (!canvas || !ctx) return;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(300, Math.floor(rect.width));
+  const h = Math.max(360, Math.floor(rect.height || w * 1.25));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  view = { w, h, dpr };
+}
+
+function resetState(){
+  state = {
+    running:true,
+    elapsed:0,
+    timeLeft:TIME_LIMIT,
+    score:0,
+    lives:4,
+    graze:0,
+    player:{ x:0.5, y:0.82, targetX:0.5, targetY:0.82, cooldown:0, invuln:0 },
+    boss:{ x:0.5, y:0.17, hp:BOSS_HP, maxHp:BOSS_HP, shotTimer:0, pattern:0 },
+    bullets:[],
+    shots:[],
+    particles:[],
+    message:'탄막 개시',
+    lastAt:0
+  };
+}
+
+function playerPx(){
+  return { x:state.player.x * view.w, y:state.player.y * view.h };
+}
+
+function bossPx(){
+  return { x:state.boss.x * view.w, y:state.boss.y * view.h };
+}
+
+function addParticles(x, y, color, count, power){
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * TAU;
+    const life = rand(0.22, 0.68);
+    const speed = rand(power * 0.3, power);
+    state.particles.push({
+      x,
+      y,
+      vx:Math.cos(a) * speed,
+      vy:Math.sin(a) * speed,
+      life,
+      maxLife:life,
+      size:rand(2, 5),
+      color
+    });
+  }
+}
+
+function polygonPath(x, y, radius, sides, rotation){
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const a = rotation + TAU * i / sides;
+    const px = x + Math.cos(a) * radius;
+    const py = y + Math.sin(a) * radius;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+function pushBullet(angle, speed, radius, color, shape){
+  const b = bossPx();
+  state.bullets.push({
+    x:b.x,
+    y:b.y + view.w * 0.04,
+    vx:Math.cos(angle) * speed,
+    vy:Math.sin(angle) * speed,
+    r:radius,
+    color,
+    shape,
+    spin:Math.random() * TAU,
+    grazed:false
+  });
+}
+
+function emitRing(count, speed, offset){
+  for (let i = 0; i < count; i++) {
+    const a = offset + TAU * i / count;
+    pushBullet(a, speed, 5.5, '#ff8c72', 'circle');
+  }
+}
+
+function emitSpiral(speed){
+  const a = state.elapsed * 2.35;
+  pushBullet(a, speed, 5, '#ffd166', 'diamond');
+  pushBullet(a + Math.PI, speed, 5, '#ffd166', 'diamond');
+}
+
+function emitAimed(count, speed, spread){
+  const b = bossPx();
+  const p = playerPx();
+  const base = Math.atan2(p.y - b.y, p.x - b.x);
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0 : i / (count - 1) - 0.5;
+    pushBullet(base + t * spread, speed, 6, '#bf9cff', 'needle');
+  }
+}
+
+function updateBoss(dt){
+  state.boss.x = 0.5 + Math.sin(state.elapsed * 1.25) * 0.24;
+  state.boss.pattern = Math.floor(state.elapsed / 8) % 3;
+  state.boss.shotTimer -= dt;
+  if (state.boss.shotTimer > 0) return;
+  if (state.boss.pattern === 0) {
+    emitRing(18, view.w * 0.19, state.elapsed * 0.85);
+    state.boss.shotTimer = 0.72;
+    state.message = '원형탄';
+  } else if (state.boss.pattern === 1) {
+    emitSpiral(view.w * 0.26);
+    state.boss.shotTimer = 0.09;
+    state.message = '나선탄';
+  } else {
+    emitAimed(5, view.w * 0.31, 0.62);
+    state.boss.shotTimer = 0.58;
+    state.message = '조준탄';
+  }
+}
+
+function updatePlayer(dt){
+  const p = state.player;
+  let dx = 0;
+  let dy = 0;
+  if (keys.ArrowLeft || keys.KeyA) dx -= 1;
+  if (keys.ArrowRight || keys.KeyD) dx += 1;
+  if (keys.ArrowUp || keys.KeyW) dy -= 1;
+  if (keys.ArrowDown || keys.KeyS) dy += 1;
+  if (dx || dy) {
+    const len = Math.hypot(dx, dy) || 1;
+    p.targetX = p.x + dx / len * 0.08;
+    p.targetY = p.y + dy / len * 0.08;
+  }
+  const px = p.x * view.w;
+  const py = p.y * view.h;
+  const tx = clamp(p.targetX, 0.06, 0.94) * view.w;
+  const ty = clamp(p.targetY, 0.28, 0.94) * view.h;
+  const d = dist(px, py, tx, ty);
+  const speed = view.w * 0.54;
+  if (d > 2) {
+    const step = Math.min(d, speed * dt);
+    p.x = (px + (tx - px) / d * step) / view.w;
+    p.y = (py + (ty - py) / d * step) / view.h;
+  }
+  p.invuln = Math.max(0, p.invuln - dt);
+  p.cooldown -= dt;
+  if (p.cooldown <= 0) {
+    const pp = playerPx();
+    state.shots.push({ x:pp.x - 5, y:pp.y - 10, vy:-view.w * 0.78 });
+    state.shots.push({ x:pp.x + 5, y:pp.y - 10, vy:-view.w * 0.78 });
+    p.cooldown = 0.13;
+  }
+}
+
+function hitPlayer(){
+  if (state.player.invuln > 0) return;
+  state.lives -= 1;
+  state.player.invuln = 1.4;
+  state.message = '피격';
+  const p = playerPx();
+  addParticles(p.x, p.y, '#ff6d6d', 34, 170);
+  if (state.lives <= 0) finish(false);
+}
+
+function updateBullets(dt){
+  const p = playerPx();
+  const next = [];
+  for (const bullet of state.bullets) {
+    bullet.x += bullet.vx * dt;
+    bullet.y += bullet.vy * dt;
+    bullet.spin += dt * 5;
+    if (bullet.x < -30 || bullet.x > view.w + 30 || bullet.y < -30 || bullet.y > view.h + 30) continue;
+    const d = dist(p.x, p.y, bullet.x, bullet.y);
+    if (d < PLAYER_R + bullet.r) {
+      hitPlayer();
+      continue;
+    }
+    if (!bullet.grazed && d < PLAYER_R + bullet.r + 16) {
+      bullet.grazed = true;
+      state.graze += 1;
+      state.score += 8;
+    }
+    next.push(bullet);
+  }
+  state.bullets = next;
+}
+
+function updateShots(dt){
+  const b = bossPx();
+  const next = [];
+  for (const shot of state.shots) {
+    shot.y += shot.vy * dt;
+    if (shot.y < -20) continue;
+    if (dist(shot.x, shot.y, b.x, b.y) < 38) {
+      state.boss.hp -= 5;
+      state.score += 6;
+      if (Math.random() < 0.35) addParticles(shot.x, shot.y, '#ffe38d', 3, 55);
+      if (state.boss.hp <= 0) {
+        finish(true);
+        return;
+      }
+      continue;
+    }
+    next.push(shot);
+  }
+  state.shots = next;
+}
+
+function updateParticles(dt){
+  const next = [];
+  for (const p of state.particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.985;
+    p.vy *= 0.985;
+    p.life -= dt;
+    if (p.life > 0) next.push(p);
+  }
+  state.particles = next;
+}
+
+function updateHud(){
+  const timeEl = document.getElementById('hud-time');
+  if (!timeEl || !state) return;
+  timeEl.textContent = formatClock(state.timeLeft * 1000);
+  document.getElementById('hud-life').textContent = state.lives;
+  document.getElementById('hud-boss').textContent = Math.max(0, Math.ceil(state.boss.hp / state.boss.maxHp * 100)) + '%';
+  document.getElementById('hud-score').textContent = state.score;
+}
+
+function update(dt){
+  state.elapsed += dt;
+  state.timeLeft = Math.max(0, TIME_LIMIT - state.elapsed);
+  updateBoss(dt);
+  updatePlayer(dt);
+  updateBullets(dt);
+  if (!state.running) return;
+  updateShots(dt);
+  if (!state.running) return;
+  updateParticles(dt);
+  updateHud();
+  if (state.timeLeft <= 0) finish(false);
+}
+
+function drawBackground(){
+  const g = ctx.createRadialGradient(view.w * 0.5, view.h * 0.25, 20, view.w * 0.5, view.h * 0.5, view.h);
+  g.addColorStop(0, '#261326');
+  g.addColorStop(0.54, '#17111d');
+  g.addColorStop(1, '#0b0a12');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, view.w, view.h);
+  ctx.save();
+  ctx.globalAlpha = 0.16;
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 1;
+  for (let y = 0; y < view.h; y += 34) {
+    ctx.beginPath();
+    ctx.moveTo(0, y + Math.sin(state.elapsed + y * 0.02) * 8);
+    ctx.lineTo(view.w, y + Math.cos(state.elapsed + y * 0.02) * 8);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawBoss(){
+  const b = bossPx();
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.shadowBlur = 22;
+  ctx.shadowColor = '#ff6b35';
+  ctx.fillStyle = '#ff6b35';
+  polygonPath(0, 0, 34, 8, state.elapsed * 0.7);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#1a1018';
+  polygonPath(0, 0, 18, 4, Math.PI / 4 - state.elapsed);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,.65)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, 34, 0, TAU);
+  ctx.stroke();
+  ctx.restore();
+
+  const w = view.w * 0.62;
+  const x = (view.w - w) / 2;
+  const y = 12;
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.fillRect(x, y, w, 7);
+  ctx.fillStyle = '#ff6b35';
+  ctx.fillRect(x, y, w * Math.max(0, state.boss.hp / state.boss.maxHp), 7);
+}
+
+function drawBullets(){
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const bullet of state.bullets) {
+    ctx.save();
+    ctx.translate(bullet.x, bullet.y);
+    ctx.rotate(bullet.spin);
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = bullet.color;
+    ctx.fillStyle = bullet.color;
+    if (bullet.shape === 'diamond') {
+      polygonPath(0, 0, bullet.r * 1.35, 4, Math.PI / 4);
+      ctx.fill();
+    } else if (bullet.shape === 'needle') {
+      ctx.beginPath();
+      ctx.moveTo(bullet.r * 1.9, 0);
+      ctx.lineTo(-bullet.r, -bullet.r * 0.7);
+      ctx.lineTo(-bullet.r, bullet.r * 0.7);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(0, 0, bullet.r, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawShots(){
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  ctx.fillStyle = '#9ee8ff';
+  ctx.shadowBlur = 12;
+  ctx.shadowColor = '#9ee8ff';
+  for (const shot of state.shots) {
+    ctx.beginPath();
+    ctx.ellipse(shot.x, shot.y, 3, 10, 0, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawPlayer(){
+  const p = playerPx();
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.globalAlpha = state.player.invuln > 0 && Math.floor(state.elapsed * 16) % 2 === 0 ? 0.45 : 1;
+  ctx.shadowBlur = 16;
+  ctx.shadowColor = '#9ee8ff';
+  ctx.fillStyle = '#9ee8ff';
+  ctx.beginPath();
+  ctx.moveTo(0, -16);
+  ctx.lineTo(-11, 11);
+  ctx.lineTo(0, 6);
+  ctx.lineTo(11, 11);
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#15111d';
+  ctx.beginPath();
+  ctx.arc(0, 0, 3.2, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawParticles(){
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const p of state.particles) {
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * (0.75 + alpha), 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawOverlay(){
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,.8)';
+  ctx.font = '900 13px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(state.message, view.w / 2, view.h - 18);
+  ctx.restore();
+}
+
+function draw(){
+  if (!ctx || !state) return;
+  drawBackground();
+  drawBoss();
+  drawShots();
+  drawBullets();
+  drawPlayer();
+  drawParticles();
+  drawOverlay();
+}
+
+function loop(now){
+  if (!state || !state.running) return;
+  if (!state.lastAt) state.lastAt = now;
+  const dt = Math.min(0.035, (now - state.lastAt) / 1000);
+  state.lastAt = now;
+  update(dt);
+  if (!state.running) return;
+  draw();
+  rafId = requestAnimationFrame(loop);
+}
+
+function setPointer(event){
+  if (!state || !state.running) return;
+  const rect = canvas.getBoundingClientRect();
+  state.player.targetX = clamp((event.clientX - rect.left) / rect.width, 0.06, 0.94);
+  state.player.targetY = clamp((event.clientY - rect.top) / rect.height, 0.28, 0.94);
+}
+
+function renderHome(){
+  cancelAnimationFrame(rafId);
+  clear();
+  const stats = loadStats(STORAGE_KEY, { played:0, bestScore:0 });
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div id="title-screen">' +
+      '<div class="brand-icon">💫</div>' +
+      '<h1 class="hero-title">탄막 지옥</h1>' +
+      '<p class="hero-sub">원형탄, 나선탄, 조준탄을 피해 움직이며 자동 사격으로 보스를 압박하는 Canvas 회피 게임.</p>' +
+      '<div class="today-card"><div class="today-label">BEST</div><div class="today-date">' + (stats.bestScore || 0) + '점</div></div>' +
+      '<div class="rule-card">' +
+        '<h3>규칙</h3>' +
+        '<p>작은 중앙 히트박스를 지키며 탄막 사이를 통과하세요. 가까스로 스치면 점수가 오르고, 피격되면 라이프가 줄어듭니다.</p>' +
+      '</div>' +
+      '<div class="btn-row"><button class="btn" id="start-btn">시작</button></div>' +
+      '<div class="credits">5분 퍼즐 · 2026</div>' +
+    '</div>';
+  document.getElementById('start-btn').onclick = start;
+}
+
+function renderPlaying(){
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<div class="hud-grid">' +
+      '<div class="hud-box"><div class="hud-label">TIME</div><div class="hud-value" id="hud-time">1:30</div></div>' +
+      '<div class="hud-box"><div class="hud-label">LIFE</div><div class="hud-value" id="hud-life">4</div></div>' +
+      '<div class="hud-box"><div class="hud-label">BOSS</div><div class="hud-value" id="hud-boss">100%</div></div>' +
+      '<div class="hud-box"><div class="hud-label">SCORE</div><div class="hud-value" id="hud-score">0</div></div>' +
+    '</div>' +
+    '<div class="game-stage"><canvas class="hell-canvas" id="hell-canvas" aria-label="탄막 지옥 게임 화면"></canvas></div>' +
+    '<p class="hint-line">마우스나 터치로 기체를 이동하세요. 키보드는 방향키와 WASD를 지원합니다.</p>';
+  canvas = document.getElementById('hell-canvas');
+  ctx = canvas.getContext('2d');
+  setCanvasSize();
+  canvas.addEventListener('pointerdown', function(event){
+    event.preventDefault();
+    canvas.setPointerCapture(event.pointerId);
+    setPointer(event);
+  });
+  canvas.addEventListener('pointermove', function(event){
+    if (event.buttons || event.pointerType === 'touch') {
+      event.preventDefault();
+      setPointer(event);
+    }
+  });
+}
+
+function start(){
+  cancelAnimationFrame(rafId);
+  resetState();
+  renderPlaying();
+  updateHud();
+  draw();
+  rafId = requestAnimationFrame(loop);
+}
+
+function finish(cleared){
+  if (!state || !state.running) return;
+  state.running = false;
+  cancelAnimationFrame(rafId);
+  const clearBonus = cleared ? 1800 : 0;
+  const finalScore = Math.max(0, Math.round(state.score + clearBonus + state.lives * 220 + state.graze * 5 + (BOSS_HP - Math.max(0, state.boss.hp)) * 0.35));
+  const stats = recordBestScore(STORAGE_KEY, finalScore, {
+    cleared:!!cleared,
+    graze:state.graze,
+    lives:state.lives,
+    date:Brain.todayDateString()
+  });
+  clear();
+  const root = document.getElementById('app');
+  root.innerHTML =
+    '<section class="card">' +
+      '<h1 class="title">탄막 지옥 결과</h1>' +
+      '<div class="score-hero">' + finalScore + '</div>' +
+      '<p class="puzzle-desc" style="text-align:center;">최고 기록 ' + (stats.bestScore || finalScore) + '점</p>' +
+      '<div class="result-stats">' +
+        '<div class="hud-box"><div class="hud-label">GRAZE</div><div class="hud-value">' + state.graze + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">LIFE</div><div class="hud-value">' + Math.max(0, state.lives) + '</div></div>' +
+        '<div class="hud-box"><div class="hud-label">BOSS</div><div class="hud-value">' + Math.max(0, Math.ceil(state.boss.hp / state.boss.maxHp * 100)) + '%</div></div>' +
+      '</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn" id="again-btn">다시</button>' +
+        '<button class="btn secondary" id="share-btn">공유</button>' +
+      '</div>' +
+    '</section>';
+  document.getElementById('again-btn').onclick = start;
+  document.getElementById('share-btn').onclick = function(event){
+    const text = '탄막 지옥 ' + finalScore + '점 · Graze ' + state.graze + ' · Life ' + Math.max(0, state.lives) + '\\nhttps://games.jdgrid.com/brain/games/bullet-hell/';
+    shareToClipboard(text, event.currentTarget);
+  };
+}
+
+document.addEventListener('keydown', function(event){
+  if (/^(ArrowUp|ArrowDown|ArrowLeft|ArrowRight|KeyW|KeyA|KeyS|KeyD)$/.test(event.code)) {
+    keys[event.code] = true;
+    if (state && state.running) event.preventDefault();
+  }
+});
+
+document.addEventListener('keyup', function(event){
+  if (/^(ArrowUp|ArrowDown|ArrowLeft|ArrowRight|KeyW|KeyA|KeyS|KeyD)$/.test(event.code)) {
+    keys[event.code] = false;
+  }
+});
+
+window.addEventListener('resize', function(){
+  setCanvasSize();
+  draw();
+});
+
+renderHome();
+</script>
+</body>
+</html>
