@@ -323,7 +323,7 @@ const ECONOMY = {
 const TIER_ROLL_PROB = [0.94, 0.05, 0.01, 0.00];
 
 // 종류 출현 가중치 (합 자동 정규화)
-const KIND_WEIGHT = { pulse: 22, burst: 18, frost: 18, rail: 14, blade: 16, rocket: 12 };
+const KIND_WEIGHT = { pulse: 22, burst: 18, frost: 18, rail: 14, guard: 16, rocket: 12 };
 
 /* ---------- Tower stats: kind × tier (1..4) ---------- */
 const TOWER_STATS = {
@@ -367,14 +367,16 @@ const TOWER_STATS = {
       { dmg:190, range: 222, cd: 0.92 }
     ]
   },
-  blade: {
-    name: 'BLADE', color: '#ff5577', fire: 'melee',
+  guard: {
+    name: 'GUARD', color: '#ff5577', fire: 'sweep',
+    // 격자 외곽 셀 → 트랙 최단거리가 46px이므로 1성도 56부터 시작.
+    // 사거리 안의 모든 적 동시 sweep + 빠른 cd. 외곽 1~2줄 전용 타워.
     tiers: [
       null,
-      { dmg:  5, range: 40, cd: 0.28 },
-      { dmg: 13, range: 46, cd: 0.24 },
-      { dmg: 32, range: 54, cd: 0.20 },
-      { dmg: 78, range: 64, cd: 0.16 }
+      { dmg:  6, range: 56, cd: 0.28 },
+      { dmg: 15, range: 70, cd: 0.24 },
+      { dmg: 36, range: 86, cd: 0.20 },
+      { dmg: 88, range:104, cd: 0.16 }
     ]
   },
   rocket: {
@@ -388,7 +390,7 @@ const TOWER_STATS = {
     ]
   }
 };
-const KIND_ORDER = ['pulse', 'burst', 'frost', 'rail', 'blade', 'rocket'];
+const KIND_ORDER = ['pulse', 'burst', 'frost', 'rail', 'guard', 'rocket'];
 
 /* ---------- Enemy stats ---------- */
 const ENEMY_STATS = {
@@ -513,7 +515,7 @@ function showTitle(){
         <div class="row"><span class="sw" style="background:#ff5b9c"></span>
           <div><b>RAIL</b> · 관통 라인 (긴 사거리)</div></div>
         <div class="row"><span class="sw" style="background:#ff5577"></span>
-          <div><b>BLADE</b> · 근접 sweep (사거리 작지만 모든 적 동시)</div></div>
+          <div><b>GUARD</b> · 고속 외곽 sweep · <i>격자 외곽 1~2줄 전용 (가운데에 두면 트랙 못 침)</i></div></div>
         <div class="row"><span class="sw" style="background:#ffd96b"></span>
           <div><b>ROCKET</b> · 추적 미사일 (날아가서 폭발)</div></div>
       </div>
@@ -1044,8 +1046,8 @@ function fireTower(t, target){
         applyDamage(e, t.dmg);
       }
     }
-  } else if (t.fire === 'melee'){
-    // 사거리 내 모든 적에게 즉시 데미지 + sweep 시각
+  } else if (t.fire === 'sweep'){
+    // 사거리 내 모든 적에게 즉시 데미지 + sweep 확장 링
     for (const e of state.enemies){
       if (e.dead) continue;
       const dx = e.x - t.x, dy = e.y - t.y;
@@ -1465,7 +1467,7 @@ function render(){
     ctx.restore();
   }
 
-  // melee sweeps (확장 링)
+  // sweep 링 (GUARD)
   for (const s of state.sweeps){
     const a = s.life / s.maxLife;
     const r = s.r * (1 - a) + 6;
@@ -1632,7 +1634,7 @@ function drawTowerBody(c, t){
   else if (t.kind === 'burst')  drawBurstBody(c, t);
   else if (t.kind === 'frost')  drawFrostBody(c, t);
   else if (t.kind === 'rail')   drawRailBody(c, t);
-  else if (t.kind === 'blade')  drawBladeBody(c, t);
+  else if (t.kind === 'guard')  drawGuardBody(c, t);
   else if (t.kind === 'rocket') drawRocketBody(c, t);
 }
 
@@ -1745,7 +1747,7 @@ function drawRailBody(ctx, t){
   ctx.stroke();
 }
 
-function drawBladeBody(c, t){
+function drawGuardBody(c, t){
   // 본체 (어두운 원) + 회전하는 두 칼날
   c.fillStyle = '#1a0b30';
   c.beginPath();
@@ -2047,7 +2049,7 @@ function describeFire(f){
     aoe: '광역 폭발',
     slow: '단일 + 슬로우',
     pierce: '관통 라인',
-    melee: '근접 sweep',
+    sweep: '고속 외곽 sweep',
     missile: '추적 미사일'
   })[f] || f;
 }
@@ -2066,7 +2068,7 @@ function buildCodexHTML(){
       const extra = def.fire === 'aoe' && s.aoeRadius ? `<br>aoe ${s.aoeRadius}` :
                      def.fire === 'slow' ? `<br>${Math.round((1 - s.slowFactor)*100)}% ${s.slowDur}s` :
                      def.fire === 'missile' ? `<br>aoe ${s.aoeRadius}` :
-                     def.fire === 'melee' ? `<br>sweep` : '';
+                     def.fire === 'sweep' ? `<br>sweep all` : '';
       html += `<div class="tower-card-mini">
         <canvas data-tower="${kind}-${tier}"></canvas>
         <div class="lbl">${'★'.repeat(tier)}</div>
