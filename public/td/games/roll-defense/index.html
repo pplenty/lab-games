@@ -307,13 +307,15 @@ const TRACK_SEG_LEN = TRACK_SEGS.map(s => Math.hypot(s.x2 - s.x1, s.y2 - s.y1));
 
 /* ---------- Economy ---------- */
 const ECONOMY = {
-  startGold: 60,
-  maxAlive: 45,             // 화면에 동시 N마리 초과 시 게임 오버
-  warnAlive: 35,            // HUD 경고 색 임계
-  rollBaseCost: 12,
-  rollCostInc: 0,           // 매 뽑기마다 증가량 (0 = 고정)
-  waveBonusGold: 25,
-  betweenWaveSec: 4         // 웨이브 사이 자동 대기 시간 (sec)
+  startGold: 70,
+  maxAlive: 38,             // 화면에 동시 N마리 초과 시 게임 오버
+  warnAlive: 28,            // HUD 경고 색 임계
+  rollBaseCost: 14,
+  rollCostInc: 0.4,         // 매 뽑기마다 증가 (점진 압박)
+  rollCostMax: 40,          // 상한
+  mergeBonusGold: 4,        // 합성 1회당 환급
+  waveBonusGold: 22,
+  betweenWaveSec: 4
 };
 
 /* ---------- Tower roll probability ---------- */
@@ -321,7 +323,7 @@ const ECONOMY = {
 const TIER_ROLL_PROB = [0.94, 0.05, 0.01, 0.00];
 
 // 종류 출현 가중치 (합 자동 정규화)
-const KIND_WEIGHT = { pulse: 32, burst: 24, frost: 24, rail: 20 };
+const KIND_WEIGHT = { pulse: 22, burst: 18, frost: 18, rail: 14, blade: 16, rocket: 12 };
 
 /* ---------- Tower stats: kind × tier (1..4) ---------- */
 const TOWER_STATS = {
@@ -364,19 +366,39 @@ const TOWER_STATS = {
       { dmg: 84, range: 196, cd: 1.05 },
       { dmg:190, range: 222, cd: 0.92 }
     ]
+  },
+  blade: {
+    name: 'BLADE', color: '#ff5577', fire: 'melee',
+    tiers: [
+      null,
+      { dmg:  5, range: 40, cd: 0.28 },
+      { dmg: 13, range: 46, cd: 0.24 },
+      { dmg: 32, range: 54, cd: 0.20 },
+      { dmg: 78, range: 64, cd: 0.16 }
+    ]
+  },
+  rocket: {
+    name: 'ROCKET', color: '#ffd96b', fire: 'missile',
+    tiers: [
+      null,
+      { dmg: 26, range: 150, cd: 1.6,  missileSpeed: 280, aoeRadius: 38 },
+      { dmg: 64, range: 170, cd: 1.45, missileSpeed: 320, aoeRadius: 46 },
+      { dmg:148, range: 192, cd: 1.30, missileSpeed: 360, aoeRadius: 56 },
+      { dmg:335, range: 220, cd: 1.15, missileSpeed: 400, aoeRadius: 70 }
+    ]
   }
 };
-const KIND_ORDER = ['pulse', 'burst', 'frost', 'rail'];
+const KIND_ORDER = ['pulse', 'burst', 'frost', 'rail', 'blade', 'rocket'];
 
 /* ---------- Enemy stats ---------- */
 const ENEMY_STATS = {
-  grunt:    { hp:  30, speed: 46, gold:  5, r:  9, color:'#86d6a8', name:'GRUNT',  desc:'기본 적' },
-  runner:   { hp:  20, speed: 88, gold:  8, r:  7, color:'#ffd96b', name:'RUNNER', desc:'빠르고 약함' },
-  tank:     { hp: 160, speed: 30, gold: 22, r: 13, color:'#ff7799', name:'TANK',   desc:'느리지만 단단함' },
-  swift:    { hp:  80, speed: 70, gold: 14, r: 10, color:'#a4ff5c', name:'SWIFT',  desc:'중간 균형' },
-  splitter: { hp:  90, speed: 42, gold: 16, r: 11, color:'#c98aff', name:'SPLIT',  desc:'죽으면 그런트 2마리로 분열', split:2 },
-  shielded: { hp:  60, speed: 36, gold: 18, r: 12, color:'#bcc6ff', name:'SHIELD', desc:'쉴드 60을 먼저 깎아야 본체 데미지', shield:60 },
-  boss:     { hp: 800, speed: 26, gold: 95, r: 17, color:'#ff5577', name:'BOSS',   desc:'매우 두꺼움' }
+  grunt:    { hp:  42, speed: 46, gold:  5, r:  9, color:'#86d6a8', name:'GRUNT',  desc:'기본 적' },
+  runner:   { hp:  28, speed: 92, gold:  8, r:  7, color:'#ffd96b', name:'RUNNER', desc:'빠르고 약함' },
+  tank:     { hp: 220, speed: 30, gold: 24, r: 13, color:'#ff7799', name:'TANK',   desc:'느리지만 단단함' },
+  swift:    { hp: 110, speed: 72, gold: 15, r: 10, color:'#a4ff5c', name:'SWIFT',  desc:'중간 균형' },
+  splitter: { hp: 120, speed: 42, gold: 17, r: 11, color:'#c98aff', name:'SPLIT',  desc:'죽으면 그런트 2마리로 분열', split:2 },
+  shielded: { hp:  80, speed: 36, gold: 20, r: 12, color:'#bcc6ff', name:'SHIELD', desc:'쉴드 80을 먼저 깎아야 본체 데미지', shield:80 },
+  boss:     { hp:1100, speed: 28, gold:120, r: 17, color:'#ff5577', name:'BOSS',   desc:'매우 두꺼움' }
 };
 
 /* ---------- Waves ---------- */
@@ -481,7 +503,7 @@ function showTitle(){
       <p>스타2 랜덤 타워 디펜스 풍.<br>뽑기로 받은 타워를 합성해 더 강한 등급으로.</p>
       ${best.bestScore > 0 ? `<div class="ribbon">B E S T &nbsp; ${best.bestScore} (W${best.bestWave})</div>` : ''}
       <div class="rules">
-        <h3>T O W E R S</h3>
+        <h3>T O W E R S &nbsp;·&nbsp; 6 K I N D S</h3>
         <div class="row"><span class="sw" style="background:#5cd6ea"></span>
           <div><b>PULSE</b> · 단일 빔 / 균형</div></div>
         <div class="row"><span class="sw" style="background:#ff8a3c"></span>
@@ -490,6 +512,10 @@ function showTitle(){
           <div><b>FROST</b> · 슬로우 (단일)</div></div>
         <div class="row"><span class="sw" style="background:#ff5b9c"></span>
           <div><b>RAIL</b> · 관통 라인 (긴 사거리)</div></div>
+        <div class="row"><span class="sw" style="background:#ff5577"></span>
+          <div><b>BLADE</b> · 근접 sweep (사거리 작지만 모든 적 동시)</div></div>
+        <div class="row"><span class="sw" style="background:#ffd96b"></span>
+          <div><b>ROCKET</b> · 추적 미사일 (날아가서 폭발)</div></div>
       </div>
       <div class="rules">
         <h3>R U L E S</h3>
@@ -526,6 +552,8 @@ function startGame(){
     explosions: [],
     particles: [],
     floatTexts: [],
+    projectiles: [],
+    sweeps: [],
     spawnEntries: [],
     entryIdx: 0,
     waveState: 'between',   // 'between' | 'wave' | 'won' | 'lost'
@@ -740,7 +768,10 @@ function doRoll(){
   }
   state.gold -= state.rollCost;
   state.rollCount += 1;
-  state.rollCost = ECONOMY.rollBaseCost + state.rollCount * ECONOMY.rollCostInc;
+  state.rollCost = Math.min(
+    ECONOMY.rollCostMax,
+    Math.floor(ECONOMY.rollBaseCost + state.rollCount * ECONOMY.rollCostInc)
+  );
   const kind = weightedPick(KIND_WEIGHT);
   let tier = pickTierByProb();
   // 등급 상한 보장
@@ -783,6 +814,8 @@ function tryAutoMerge(){
       state.slots[a].flash = 0.7;
       addExplosion(state.slots[a].x, state.slots[a].y, 26, state.slots[a].color);
       floatAt(state.slots[a].x, state.slots[a].y - 10, '★' + state.slots[a].tier, '#ffd96b');
+      state.gold += ECONOMY.mergeBonusGold;
+      floatAt(state.slots[a].x + 20, state.slots[a].y + 8, '+' + ECONOMY.mergeBonusGold + 'g', '#ffd96b');
       merged = true;
       break; // 한 번에 한 그룹만 (다음 루프에서 다시 검사)
     }
@@ -1011,7 +1044,91 @@ function fireTower(t, target){
         applyDamage(e, t.dmg);
       }
     }
+  } else if (t.fire === 'melee'){
+    // 사거리 내 모든 적에게 즉시 데미지 + sweep 시각
+    for (const e of state.enemies){
+      if (e.dead) continue;
+      const dx = e.x - t.x, dy = e.y - t.y;
+      if (dx*dx + dy*dy < t.range * t.range){
+        applyDamage(e, t.dmg);
+      }
+    }
+    state.sweeps.push({ x: t.x, y: t.y, r: t.range, color: t.color, life: 0.22, maxLife: 0.22 });
+  } else if (t.fire === 'missile'){
+    const dx = target.x - t.x, dy = target.y - t.y;
+    const d = Math.hypot(dx, dy) || 0.001;
+    state.projectiles.push({
+      x: t.x, y: t.y,
+      vx: (dx / d) * t.missileSpeed,
+      vy: (dy / d) * t.missileSpeed,
+      speed: t.missileSpeed,
+      targetRef: target,
+      dmg: t.dmg,
+      aoeRadius: t.aoeRadius,
+      color: t.color,
+      life: 3.5,
+      trail: []
+    });
   }
+}
+
+function stepProjectiles(dt){
+  for (const p of state.projectiles){
+    p.life -= dt;
+    // retarget if target dead
+    if (!p.targetRef || p.targetRef.dead){
+      let best = null, bd = 1e9;
+      for (const e of state.enemies){
+        if (e.dead) continue;
+        const dx = e.x - p.x, dy = e.y - p.y;
+        const d2 = dx*dx + dy*dy;
+        if (d2 < bd){ bd = d2; best = e; }
+      }
+      p.targetRef = best;
+    }
+    if (p.targetRef){
+      const dx = p.targetRef.x - p.x;
+      const dy = p.targetRef.y - p.y;
+      const d = Math.hypot(dx, dy) || 0.001;
+      const dvx = (dx / d) * p.speed;
+      const dvy = (dy / d) * p.speed;
+      // homing 회전 (lerp velocity, 그 후 속도 재정규화)
+      p.vx = p.vx * 0.78 + dvx * 0.22;
+      p.vy = p.vy * 0.78 + dvy * 0.22;
+      const sp = Math.hypot(p.vx, p.vy) || 0.001;
+      p.vx = (p.vx / sp) * p.speed;
+      p.vy = (p.vy / sp) * p.speed;
+    }
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.trail.push({ x: p.x, y: p.y });
+    if (p.trail.length > 7) p.trail.shift();
+
+    // 적과 충돌 검사 → 폭발
+    let exploded = false;
+    for (const e of state.enemies){
+      if (e.dead) continue;
+      const dx = e.x - p.x, dy = e.y - p.y;
+      if (dx*dx + dy*dy < (e.r + 5) * (e.r + 5)){
+        exploded = true; break;
+      }
+    }
+    if (exploded){
+      addExplosion(p.x, p.y, p.aoeRadius, p.color);
+      for (const e of state.enemies){
+        if (e.dead) continue;
+        const dx = e.x - p.x, dy = e.y - p.y;
+        if (dx*dx + dy*dy < p.aoeRadius * p.aoeRadius){
+          applyDamage(e, p.dmg);
+        }
+      }
+      p.life = 0;
+    }
+
+    // 화면 밖이면 제거
+    if (p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) p.life = 0;
+  }
+  state.projectiles = state.projectiles.filter(p => p.life > 0);
 }
 
 /* ============================================================
@@ -1132,6 +1249,11 @@ function step(dt){
     f.life -= dt;
   }
   state.floatTexts = state.floatTexts.filter(f => f.life > 0);
+
+  // 발사체 + sweep 처리
+  stepProjectiles(dt);
+  for (const s of state.sweeps) s.life -= dt;
+  state.sweeps = state.sweeps.filter(s => s.life > 0);
 
   // 웨이브 종료 검사
   // 적이 사각 루프를 돌며 안 죽는 구조라, 적 처치와 무관하게 spawn 완료 시 다음 웨이브로 자동 진행.
@@ -1306,6 +1428,59 @@ function render(){
     ctx.restore();
   }
 
+  // missile projectiles (trail + body)
+  for (const p of state.projectiles){
+    // trail
+    for (let i = 0; i < p.trail.length; i++){
+      const a = (i + 1) / p.trail.length * 0.55;
+      ctx.save();
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = a;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(p.trail[i].x, p.trail[i].y, 2 + i * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    // body
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(Math.atan2(p.vy, p.vx) + Math.PI / 2);
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.moveTo(0, -6);
+    ctx.lineTo(3.5, 4);
+    ctx.lineTo(0, 2);
+    ctx.lineTo(-3.5, 4);
+    ctx.closePath();
+    ctx.fill();
+    // 흰 코어
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(0, -2, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // melee sweeps (확장 링)
+  for (const s of state.sweeps){
+    const a = s.life / s.maxLife;
+    const r = s.r * (1 - a) + 6;
+    ctx.save();
+    ctx.strokeStyle = s.color;
+    ctx.globalAlpha = a * 0.9;
+    ctx.lineWidth = 2 + a;
+    ctx.shadowColor = s.color;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // float texts
   for (const f of state.floatTexts){
     const a = Math.max(0, f.life / f.maxLife);
@@ -1453,10 +1628,12 @@ function drawTower(t){
 }
 
 function drawTowerBody(c, t){
-  if (t.kind === 'pulse')      drawPulseBody(c, t);
-  else if (t.kind === 'burst') drawBurstBody(c, t);
-  else if (t.kind === 'frost') drawFrostBody(c, t);
-  else if (t.kind === 'rail')  drawRailBody(c, t);
+  if (t.kind === 'pulse')       drawPulseBody(c, t);
+  else if (t.kind === 'burst')  drawBurstBody(c, t);
+  else if (t.kind === 'frost')  drawFrostBody(c, t);
+  else if (t.kind === 'rail')   drawRailBody(c, t);
+  else if (t.kind === 'blade')  drawBladeBody(c, t);
+  else if (t.kind === 'rocket') drawRocketBody(c, t);
 }
 
 function drawPulseBody(ctx, t){
@@ -1566,6 +1743,85 @@ function drawRailBody(ctx, t){
   ctx.moveTo(0, -13);
   ctx.lineTo(0, 10);
   ctx.stroke();
+}
+
+function drawBladeBody(c, t){
+  // 본체 (어두운 원) + 회전하는 두 칼날
+  c.fillStyle = '#1a0b30';
+  c.beginPath();
+  c.arc(0, 0, 10, 0, Math.PI * 2);
+  c.fill();
+  c.strokeStyle = t.color;
+  c.lineWidth = 1.5 + (t.tier - 1) * 0.3;
+  c.beginPath();
+  c.arc(0, 0, 10, 0, Math.PI * 2);
+  c.stroke();
+  // 회전 칼날 (시간 기반, 게임 안에서만 회전)
+  const spin = (state ? state.time : 0) * 5;
+  c.save();
+  c.rotate(spin);
+  c.fillStyle = t.color;
+  // 가로 칼날
+  c.beginPath();
+  c.moveTo(-15 - t.tier, 0);
+  c.lineTo(-9, -2);
+  c.lineTo(9, -2);
+  c.lineTo(15 + t.tier, 0);
+  c.lineTo(9, 2);
+  c.lineTo(-9, 2);
+  c.closePath();
+  c.fill();
+  c.restore();
+  c.save();
+  c.rotate(spin + Math.PI / 2);
+  c.fillStyle = t.color;
+  c.beginPath();
+  c.moveTo(-15 - t.tier, 0);
+  c.lineTo(-9, -2);
+  c.lineTo(9, -2);
+  c.lineTo(15 + t.tier, 0);
+  c.lineTo(9, 2);
+  c.lineTo(-9, 2);
+  c.closePath();
+  c.fill();
+  c.restore();
+  // 중심 점
+  c.fillStyle = '#fff';
+  c.beginPath();
+  c.arc(0, 0, 2 + t.tier * 0.3, 0, Math.PI * 2);
+  c.fill();
+}
+
+function drawRocketBody(c, t){
+  // 박스 본체 + 위에 미사일 머리 (포인티드 화살표) + 측면 스태빌라이저 + 등급 배지
+  c.fillStyle = '#1a0b30';
+  roundRect(c, -10, -8, 20, 22, 3);
+  c.fill();
+  c.strokeStyle = t.color;
+  c.lineWidth = 1.5 + (t.tier - 1) * 0.3;
+  roundRect(c, -10, -8, 20, 22, 3);
+  c.stroke();
+  // 미사일 머리 (위쪽)
+  c.fillStyle = t.color;
+  c.beginPath();
+  c.moveTo(0, -18);
+  c.lineTo(6, -8);
+  c.lineTo(-6, -8);
+  c.closePath();
+  c.fill();
+  // 측면 stabilizer 핀
+  c.fillRect(-12, -4, 2, 10);
+  c.fillRect(10, -4, 2, 10);
+  // 작은 launch dot (총구)
+  c.fillStyle = '#fff';
+  c.beginPath();
+  c.arc(0, -8, 2 + t.tier * 0.4, 0, Math.PI * 2);
+  c.fill();
+  // 본체 가운데에 등급 점
+  c.fillStyle = t.color;
+  c.beginPath();
+  c.arc(0, 4, 2.5, 0, Math.PI * 2);
+  c.fill();
 }
 
 function drawTierPips(ctx, t){
@@ -1786,7 +2042,14 @@ function closeCodex(){
   document.getElementById('codex-backdrop').classList.remove('on');
 }
 function describeFire(f){
-  return ({ single: '단일 빔', aoe: '광역 폭발', slow: '단일 + 슬로우', pierce: '관통 라인' })[f] || f;
+  return ({
+    single: '단일 빔',
+    aoe: '광역 폭발',
+    slow: '단일 + 슬로우',
+    pierce: '관통 라인',
+    melee: '근접 sweep',
+    missile: '추적 미사일'
+  })[f] || f;
 }
 function buildCodexHTML(){
   let html = '<h2>도감 & 합성표</h2>';
@@ -1801,7 +2064,9 @@ function buildCodexHTML(){
     for (let tier = 1; tier <= 4; tier++){
       const s = def.tiers[tier];
       const extra = def.fire === 'aoe' && s.aoeRadius ? `<br>aoe ${s.aoeRadius}` :
-                     def.fire === 'slow' ? `<br>${Math.round((1 - s.slowFactor)*100)}% ${s.slowDur}s` : '';
+                     def.fire === 'slow' ? `<br>${Math.round((1 - s.slowFactor)*100)}% ${s.slowDur}s` :
+                     def.fire === 'missile' ? `<br>aoe ${s.aoeRadius}` :
+                     def.fire === 'melee' ? `<br>sweep` : '';
       html += `<div class="tower-card-mini">
         <canvas data-tower="${kind}-${tier}"></canvas>
         <div class="lbl">${'★'.repeat(tier)}</div>
