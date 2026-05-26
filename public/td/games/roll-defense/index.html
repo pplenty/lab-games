@@ -184,13 +184,27 @@ const GRID_COLS = 8, GRID_ROWS = 8;
 const GRID_W = GRID_COLS * CELL;          // 352
 const GRID_H = GRID_ROWS * CELL;          // 352
 const GRID_X = (W - GRID_W) / 2;          // 64
-const GRID_Y = 96;                        // 격자 시작 y
-const LANE_Y = (row) => GRID_Y + row * CELL + CELL / 2;
+const GRID_Y = 80;                        // 격자 시작 y
+
+// 루프 트랙: 격자 외곽 24px 떨어진 사각형, 시계방향
+const TRACK_PAD = 24;
+const TX1 = GRID_X - TRACK_PAD;
+const TY1 = GRID_Y - TRACK_PAD;
+const TX2 = GRID_X + GRID_W + TRACK_PAD;
+const TY2 = GRID_Y + GRID_H + TRACK_PAD;
+const TRACK_SEGS = [
+  { x1: TX1, y1: TY1, x2: TX2, y2: TY1 },   // 상 (좌→우)
+  { x1: TX2, y1: TY1, x2: TX2, y2: TY2 },   // 우 (상→하)
+  { x1: TX2, y1: TY2, x2: TX1, y2: TY2 },   // 하 (우→좌)
+  { x1: TX1, y1: TY2, x2: TX1, y2: TY1 }    // 좌 (하→상)
+];
+const TRACK_SEG_LEN = TRACK_SEGS.map(s => Math.hypot(s.x2 - s.x1, s.y2 - s.y1));
 
 /* ---------- Economy ---------- */
 const ECONOMY = {
   startGold: 60,
-  startLives: 20,
+  maxAlive: 45,             // 화면에 동시 N마리 초과 시 게임 오버
+  warnAlive: 35,            // HUD 경고 색 임계
   rollBaseCost: 12,
   rollCostInc: 0,           // 매 뽑기마다 증가량 (0 = 고정)
   waveBonusGold: 25,
@@ -374,7 +388,8 @@ function showTitle(){
         <h3>R U L E S</h3>
         <div>· <b>뽑기</b>로 무작위 타워 1개를 빈 슬롯에 받음 (1성, 가끔 2성).</div>
         <div>· <b>같은 종류 + 같은 등급 3개 → 1단 위로 합성</b> (자동/수동 토글).</div>
-        <div>· 적은 격자 라인을 좌→우로 통과. 출구 도달 시 라이프 -1.</div>
+        <div>· 적은 격자 외곽 사각 루프를 시계방향으로 <b>빙글빙글</b> 돕니다 (죽지 않으면 영원히).</div>
+        <div>· 누적되어 화면에 <b>${ECONOMY.maxAlive}마리 초과</b>하면 즉시 게임 오버.</div>
         <div>· 슬롯 클릭으로 선택 → 다른 슬롯 클릭으로 이동/스왑, 또는 판매.</div>
         <div>· 키: <b>R</b> 뽑기 / <b>M</b> 자동합성 / <b>P</b> 일시정지 / <b>F</b> 배속 / <b>Esc</b> 해제</div>
       </div>
@@ -393,7 +408,6 @@ function showTitle(){
 function startGame(){
   state = {
     gold: ECONOMY.startGold,
-    lives: ECONOMY.startLives,
     score: 0,
     waveIdx: 0,             // 0..14
     wavesCleared: 0,
@@ -425,7 +439,7 @@ function buildLayout(){
   root.innerHTML = `
     <div class="hud">
       <div class="stat gold"><span class="l">GOLD</span><span class="v" id="hud-gold">0</span></div>
-      <div class="stat lives"><span class="l">LIVES</span><span class="v" id="hud-lives">0</span></div>
+      <div class="stat lives"><span class="l">FIELD</span><span class="v" id="hud-field">0/${ECONOMY.maxAlive}</span></div>
       <div class="stat wave"><span class="l">WAVE</span><span class="v" id="hud-wave">0/15</span></div>
       <div class="stat speed"><span class="l">SPEED</span><span class="v" id="hud-speed">1×</span></div>
     </div>
@@ -447,7 +461,7 @@ function buildLayout(){
   `;
   hudEls = {
     gold: document.getElementById('hud-gold'),
-    lives: document.getElementById('hud-lives'),
+    field: document.getElementById('hud-field'),
     wave: document.getElementById('hud-wave'),
     speed: document.getElementById('hud-speed')
   };
@@ -763,9 +777,9 @@ function tickSpawns(dt){
 
 function spawnEnemy(type){
   const def = ENEMY_STATS[type];
-  const lane = Math.floor(Math.random() * GRID_ROWS);
+  const startSeg = TRACK_SEGS[0];
   state.enemies.push({
-    type, x: -10, y: LANE_Y(lane),
+    type, x: startSeg.x1, y: startSeg.y1,
     hp: def.hp, maxHp: def.hp,
     speed: def.speed,
     slowUntil: 0,
@@ -773,9 +787,10 @@ function spawnEnemy(type){
     r: def.r,
     color: def.color,
     reward: def.gold,
-    lane,
-    dead: false,
-    escaped: false
+    segIdx: 0,
+    segProgress: 0,
+    laps: 0,
+    dead: false
   });
 }
 
@@ -794,7 +809,9 @@ function endWave(){
 
 function winGame(){
   state.waveState = 'won';
-  state.score += state.lives * 30 + state.gold;
+  // 보너스: 화면이 깨끗할수록 + 남은 골드
+  const cleanBonus = Math.max(0, ECONOMY.maxAlive - state.enemies.length) * 20;
+  state.score += cleanBonus + state.gold;
   finishUI(true);
 }
 function loseGame(){
@@ -813,7 +830,7 @@ function finishUI(won){
   });
   setOverlay(`
     <h2>${won ? '🏆 클리어!' : '💥 게임 오버'}</h2>
-    <p>웨이브 ${state.wavesCleared}/15 · 라이프 ${Math.max(0, state.lives)} · 골드 ${state.gold}</p>
+    <p>웨이브 ${state.wavesCleared}/15 · 필드 ${state.enemies.length}/${ECONOMY.maxAlive} · 골드 ${state.gold}</p>
     <div style="font-size:42px; font-weight:900; color:${won ? '#c98aff' : '#ff7799'}; margin: 12px 0; line-height:1; font-variant-numeric: tabular-nums;">${state.score}</div>
     ${isBest ? '<div class="ribbon">NEW BEST</div>' : ''}
     <div style="margin-top: 16px;">
@@ -836,7 +853,7 @@ function fireTower(t, target){
     addBeam(t.x, t.y, target.x, target.y, t.color, 0.16);
     addExplosion(target.x, target.y, t.aoeRadius, t.color);
     for (const e of state.enemies){
-      if (e.dead || e.escaped) continue;
+      if (e.dead) continue;
       const dx = e.x - target.x, dy = e.y - target.y;
       if (dx*dx + dy*dy <= t.aoeRadius * t.aoeRadius){
         e.hp -= t.dmg;
@@ -853,7 +870,7 @@ function fireTower(t, target){
     const ey = t.y + dy * t.range;
     addBeam(t.x, t.y, ex, ey, t.color, 0.28);
     for (const e of state.enemies){
-      if (e.dead || e.escaped) continue;
+      if (e.dead) continue;
       const dist = pointSegDist(e.x, e.y, t.x, t.y, ex, ey);
       if (dist < e.r + 5){
         e.hp -= t.dmg;
@@ -877,21 +894,35 @@ function step(dt){
     tickSpawns(dt);
   }
 
-  // 적 이동
+  // 적 이동 (사각 루프)
   for (const e of state.enemies){
-    if (e.dead || e.escaped) continue;
+    if (e.dead) continue;
     const slow = e.slowUntil > state.time ? e.slowFactor : 1;
-    e.x += e.speed * slow * dt;
-    if (e.x > W + 20){
-      e.escaped = true;
-      state.lives -= 1;
-      if (state.lives <= 0){ loseGame(); return; }
+    let remaining = e.speed * slow * dt;
+    let guard = 0;
+    while (remaining > 0 && guard < 8){
+      const segLen = TRACK_SEG_LEN[e.segIdx];
+      const left = segLen - e.segProgress;
+      if (remaining < left){
+        e.segProgress += remaining;
+        remaining = 0;
+      } else {
+        remaining -= left;
+        e.segIdx = (e.segIdx + 1) % TRACK_SEGS.length;
+        e.segProgress = 0;
+        if (e.segIdx === 0) e.laps += 1;
+      }
+      guard += 1;
     }
+    const seg = TRACK_SEGS[e.segIdx];
+    const t = e.segProgress / TRACK_SEG_LEN[e.segIdx];
+    e.x = seg.x1 + (seg.x2 - seg.x1) * t;
+    e.y = seg.y1 + (seg.y2 - seg.y1) * t;
   }
 
   // 사망 처리
   for (const e of state.enemies){
-    if (!e.dead && !e.escaped && e.hp <= 0){
+    if (!e.dead && e.hp <= 0){
       e.dead = true;
       state.gold += e.reward;
       state.score += e.reward;
@@ -899,7 +930,13 @@ function step(dt){
       spawnKillParticles(e);
     }
   }
-  state.enemies = state.enemies.filter(e => !e.dead && !e.escaped);
+  state.enemies = state.enemies.filter(e => !e.dead);
+
+  // 동시 적 수 초과 시 게임 오버
+  if (state.enemies.length > ECONOMY.maxAlive){
+    loseGame();
+    return;
+  }
 
   // 타워 사격
   for (const t of state.slots){
@@ -908,12 +945,16 @@ function step(dt){
     if (t.flash > 0) t.flash -= dt;
     let best = null, bestProgress = -1;
     for (const e of state.enemies){
-      if (e.dead || e.escaped) continue;
+      if (e.dead) continue;
       const dx = e.x - t.x, dy = e.y - t.y;
       const d2 = dx*dx + dy*dy;
       if (d2 > t.range * t.range) continue;
-      if (e.x > bestProgress){
-        bestProgress = e.x;
+      // 트랙 진행도가 가장 높은 적 (사이클 수 + 세그먼트 + 진행거리)
+      const totalLen = TRACK_SEG_LEN.reduce((a, b) => a + b, 0);
+      const offsetBefore = TRACK_SEG_LEN.slice(0, e.segIdx).reduce((a, b) => a + b, 0);
+      const progress = e.laps * totalLen + offsetBefore + e.segProgress;
+      if (progress > bestProgress){
+        bestProgress = progress;
         best = e;
       }
     }
@@ -950,9 +991,15 @@ function step(dt){
   state.floatTexts = state.floatTexts.filter(f => f.life > 0);
 
   // 웨이브 종료 검사
+  // 적이 사각 루프를 돌며 안 죽는 구조라, 적 처치와 무관하게 spawn 완료 시 다음 웨이브로 자동 진행.
+  // 마지막 웨이브만은 적 0이 되어야 승리.
   if (state.waveState === 'wave'){
-    if (state.entryIdx >= state.spawnEntries.length && state.enemies.length === 0){
-      endWave();
+    if (state.entryIdx >= state.spawnEntries.length){
+      if (state.waveIdx + 1 >= WAVES.length){
+        if (state.enemies.length === 0) winGame();
+      } else {
+        endWave();
+      }
     }
   }
 }
@@ -999,33 +1046,8 @@ function render(){
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // 라인 (적 경로 = 격자 각 행)
-  ctx.save();
-  for (let row = 0; row < GRID_ROWS; row++){
-    const y = LANE_Y(row);
-    const grad = ctx.createLinearGradient(0, y, W, y);
-    grad.addColorStop(0, 'rgba(140,90,220,.0)');
-    grad.addColorStop(0.5, 'rgba(140,90,220,.18)');
-    grad.addColorStop(1, 'rgba(255,120,150,.22)');
-    ctx.strokeStyle = grad;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(W, y);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // 입구/출구 표시
-  ctx.save();
-  for (let row = 0; row < GRID_ROWS; row++){
-    const y = LANE_Y(row);
-    ctx.fillStyle = 'rgba(140,90,220,.5)';
-    ctx.fillRect(0, y - 1, 6, 2);
-    ctx.fillStyle = 'rgba(255,90,120,.7)';
-    ctx.fillRect(W - 6, y - 1, 6, 2);
-  }
-  ctx.restore();
+  // 루프 트랙 (사각 + 글로우)
+  drawTrack();
 
   // 격자
   ctx.save();
@@ -1160,10 +1182,70 @@ function render(){
 
   // HUD 업데이트
   hudEls.gold.textContent = state.gold;
-  hudEls.lives.textContent = state.lives;
+  const alive = state.enemies.length;
+  hudEls.field.textContent = alive + '/' + ECONOMY.maxAlive;
+  hudEls.field.style.color = alive >= ECONOMY.warnAlive ? '#ff7799' : (alive >= ECONOMY.warnAlive * 0.65 ? '#ffd96b' : '#ff7799');
+  // 평상시엔 분홍, 안전권엔 흰색에 가깝게
+  if (alive < ECONOMY.warnAlive * 0.5) hudEls.field.style.color = '#fff';
   hudEls.wave.textContent = (state.waveState === 'wave' ? (state.waveIdx + 1) : state.wavesCleared) + '/15';
   hudEls.speed.textContent = state.paused ? '||' : state.speed + '×';
   refreshRollBtn();
+}
+
+function drawTrack(){
+  // 외곽 글로우 라인 (시계방향 화살표 같이)
+  ctx.save();
+  ctx.shadowColor = '#c98aff';
+  ctx.shadowBlur = 12;
+  ctx.strokeStyle = 'rgba(200,170,255,.55)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(TX1, TY1);
+  ctx.lineTo(TX2, TY1);
+  ctx.lineTo(TX2, TY2);
+  ctx.lineTo(TX1, TY2);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+
+  // 트랙 진행 방향 표시 (각 변 가운데에 작은 ▶)
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,180,220,.7)';
+  ctx.shadowColor = '#ff5b9c';
+  ctx.shadowBlur = 6;
+  const arrowSize = 4;
+  // 상변 중앙 (→)
+  drawArrow(ctx, (TX1 + TX2) / 2, TY1, 0, arrowSize);
+  // 우변 중앙 (↓)
+  drawArrow(ctx, TX2, (TY1 + TY2) / 2, Math.PI / 2, arrowSize);
+  // 하변 중앙 (←)
+  drawArrow(ctx, (TX1 + TX2) / 2, TY2, Math.PI, arrowSize);
+  // 좌변 중앙 (↑)
+  drawArrow(ctx, TX1, (TY1 + TY2) / 2, -Math.PI / 2, arrowSize);
+  ctx.restore();
+
+  // 트랙 영역 살짝 채움 (적이 다닐 공간)
+  ctx.save();
+  ctx.fillStyle = 'rgba(140,90,220,.05)';
+  ctx.fillRect(TX1 - 6, TY1 - 6, (TX2 - TX1) + 12, 12);
+  ctx.fillRect(TX1 - 6, TY2 - 6, (TX2 - TX1) + 12, 12);
+  ctx.fillRect(TX1 - 6, TY1 - 6, 12, (TY2 - TY1) + 12);
+  ctx.fillRect(TX2 - 6, TY1 - 6, 12, (TY2 - TY1) + 12);
+  ctx.restore();
+}
+
+function drawArrow(c, x, y, angle, size){
+  c.save();
+  c.translate(x, y);
+  c.rotate(angle);
+  c.beginPath();
+  c.moveTo(size, 0);
+  c.lineTo(-size * 0.7, size * 0.7);
+  c.lineTo(-size * 0.3, 0);
+  c.lineTo(-size * 0.7, -size * 0.7);
+  c.closePath();
+  c.fill();
+  c.restore();
 }
 
 function drawTopOverlay(){
