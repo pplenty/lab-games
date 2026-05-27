@@ -537,13 +537,13 @@ const TRACK_SEG_LEN = TRACK_SEGS.map(s => Math.hypot(s.x2 - s.x1, s.y2 - s.y1));
 /* ---------- Economy ---------- */
 const ECONOMY = {
   startGold: 70,
-  maxAlive: 38,             // 화면에 동시 N마리 초과 시 게임 오버
-  warnAlive: 28,            // HUD 경고 색 임계
-  rollBaseCost: 14,
-  rollCostInc: 0.4,         // 매 뽑기마다 증가 (점진 압박)
-  rollCostMax: 40,          // 상한
+  maxAlive: 34,             // 화면에 동시 N마리 초과 시 게임 오버 (38→34, 압박 ↑)
+  warnAlive: 25,            // HUD 경고 색 임계
+  rollBaseCost: 16,         // 14→16 (뽑기 경제 조임)
+  rollCostInc: 0.5,         // 0.4→0.5
+  rollCostMax: 45,          // 40→45
   mergeBonusGold: 4,        // 합성 1회당 환급
-  waveBonusGold: 22,
+  waveBonusGold: 16,        // 22→16 (후반 골드 누적 과잉 완화)
   betweenWaveSec: 4
 };
 
@@ -601,12 +601,13 @@ const TOWER_STATS = {
   pulse: {
     name: 'PULSE', color: '#5cd6ea', fire: 'single',
     strongVs: ['runner'], weakVs: ['tank'],
+    // 단일타깃이라 멀티 보너스 없음 → dmg/cd 상향으로 균형 타워다운 위상
     tiers: [
       null,
-      { dmg:  8, range:  88, cd: 0.55 },
-      { dmg: 22, range: 102, cd: 0.50 },
-      { dmg: 55, range: 118, cd: 0.42 },
-      { dmg:130, range: 140, cd: 0.36 }
+      { dmg: 11, range:  88, cd: 0.50 },
+      { dmg: 28, range: 102, cd: 0.46 },
+      { dmg: 68, range: 118, cd: 0.40 },
+      { dmg:160, range: 140, cd: 0.34 }
     ]
   },
   burst: {
@@ -623,12 +624,13 @@ const TOWER_STATS = {
   frost: {
     name: 'FROST', color: '#80e8ff', fire: 'slow',
     strongVs: ['shielded'], weakVs: [],
+    // 슬로우 유틸이 본업이라 DPS는 낮게 두되, 단독으로도 의미있게 소폭 상향
     tiers: [
       null,
-      { dmg:  4, range:  96, cd: 0.60, slowDur: 1.6, slowFactor: 0.55 },
-      { dmg: 10, range: 108, cd: 0.55, slowDur: 2.0, slowFactor: 0.45 },
-      { dmg: 28, range: 124, cd: 0.50, slowDur: 2.4, slowFactor: 0.35 },
-      { dmg: 70, range: 144, cd: 0.45, slowDur: 2.8, slowFactor: 0.25 }
+      { dmg:  7, range:  96, cd: 0.58, slowDur: 1.6, slowFactor: 0.55 },
+      { dmg: 16, range: 108, cd: 0.53, slowDur: 2.0, slowFactor: 0.45 },
+      { dmg: 38, range: 124, cd: 0.48, slowDur: 2.4, slowFactor: 0.35 },
+      { dmg: 88, range: 144, cd: 0.44, slowDur: 2.8, slowFactor: 0.25 }
     ]
   },
   rail: {
@@ -646,13 +648,13 @@ const TOWER_STATS = {
     name: 'GUARD', color: '#ff5577', fire: 'sweep',
     strongVs: ['splitter', 'grunt'], weakVs: ['tank'],
     // 격자 외곽 셀 → 트랙 최단거리가 46px이므로 1성도 56부터 시작.
-    // 사거리 안의 모든 적 동시 sweep + 빠른 cd. 외곽 1~2줄 전용 타워.
+    // sweep 전체 타격이라 DPS가 과했음 — dmg↓ cd↑ 로 조정 (여전히 외곽 최강).
     tiers: [
       null,
-      { dmg:  6, range: 56, cd: 0.28 },
-      { dmg: 15, range: 70, cd: 0.24 },
-      { dmg: 36, range: 86, cd: 0.20 },
-      { dmg: 88, range:104, cd: 0.16 }
+      { dmg:  5, range: 56, cd: 0.32 },
+      { dmg: 12, range: 70, cd: 0.28 },
+      { dmg: 28, range: 86, cd: 0.23 },
+      { dmg: 68, range:104, cd: 0.18 }
     ]
   },
   rocket: {
