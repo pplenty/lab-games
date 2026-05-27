@@ -429,8 +429,31 @@ const TIER_ROLL_PROB = [0.94, 0.05, 0.01, 0.00];
 // 종류 출현 가중치 (합 자동 정규화)
 const KIND_WEIGHT = { pulse: 20, burst: 16, frost: 16, rail: 12, guard: 14, rocket: 11, chain: 11 };
 
-// 인접 시너지: 같은 종류 4-이웃 (상하좌우) 1개당 +N% 데미지
-const ADJ_BONUS_PER = 0.10;
+// 인접 시너지 (per neighbor) — 종류별 다르게.
+// 같은 종류 상하좌우 1개당 dmg multiplier 증가.
+const ADJ_BONUS_PER = 0.10;   // fallback
+const KIND_SYNERGY = {
+  pulse:  { dmg: 0.10 },   // 균형
+  burst:  { dmg: 0.10 },   // 균형
+  frost:  { dmg: 0.06 },   // 슬로우가 본업이라 dmg 보너스 작음
+  rail:   { dmg: 0.15 },   // 단발 burst 강화
+  guard:  { dmg: 0.12 },   // 외곽 다수 적 sweep 강화
+  rocket: { dmg: 0.10 },
+  chain:  { dmg: 0.08 }    // chain은 다양화에 더 가치
+};
+function synergyDmgMult(t){
+  const per = (KIND_SYNERGY[t.kind] && KIND_SYNERGY[t.kind].dmg) || ADJ_BONUS_PER;
+  return 1 + per * (t.synergy || 0);
+}
+
+// 타깃 우선순위
+const PRIORITY_ORDER = ['progress', 'weakest', 'strongest', 'closest'];
+const PRIORITY_LABEL = {
+  progress: '진행도',
+  weakest:  '약한 적',
+  strongest:'강한 적',
+  closest:  '가까운 적'
+};
 
 /* ---------- Active skills ---------- */
 const SKILLS = {
@@ -667,10 +690,17 @@ function showTitle(){
           <div><b>CHAIN</b> · 체인 라이트닝 (적 → 다른 적으로 점프, 매 점프 감쇠)</div></div>
       </div>
       <div class="rules">
-        <h3>S Y N E R G Y</h3>
-        <div>· 같은 종류 타워가 <b>상하좌우</b>로 인접하면 <b>+10% 데미지</b>씩 보너스.</div>
-        <div>· 4면 인접 시 최대 +40%. 본체 외곽에 골드 점 표시 + 선택 패널에서 확인.</div>
-        <div>· <b>RAIL · ROCKET만 anti-air</b> (FLYING 적 명중 가능). CHAIN/PULSE/BURST/FROST/GUARD는 지상만.</div>
+        <h3>S Y N E R G Y &nbsp;·&nbsp; 종류별 차별</h3>
+        <div>· 같은 종류 타워가 <b>상하좌우</b>로 인접하면 종류별로 다른 % 데미지 보너스 (4면 인접 최대).</div>
+        <div>· RAIL +15%/면 · GUARD +12% · PULSE/BURST/ROCKET +10% · CHAIN +8% · FROST +6%</div>
+        <div>· 본체 외곽 골드 점 = 인접 시너지 카운트. 도감에서 전부 확인.</div>
+        <div>· <b>RAIL · ROCKET만 anti-air</b> (FLYING 적 명중). 나머지는 지상만.</div>
+      </div>
+      <div class="rules">
+        <h3>L O C K &nbsp;·&nbsp; T A R G E T &nbsp;·&nbsp; P R E V I E W</h3>
+        <div>· 타워 선택 후 <b>🔒 잠금</b> 토글 → 자동/수동 합성 그룹에서 제외 (시너지 보호).</div>
+        <div>· <b>타깃 우선순위</b> 토글: 진행도 · 약한 적 · 강한 적 · 가까운 적 — 타워 위에 인디케이터.</div>
+        <div>· 웨이브 사이엔 <b>다음 5웨이브</b> 미리보기 (★보스 / ✈비행 / ◇쉴드 / +회복 / ◎분열).</div>
       </div>
       <div class="rules">
         <h3>R U L E S</h3>
@@ -1066,7 +1096,9 @@ function placeTowerIntoSlot(idx, kind, tier){
     x: c.x, y: c.y,
     slotIdx: idx,
     flash: 0,
-    synergy: 0
+    synergy: 0,
+    locked: false,
+    priority: 'progress'
   };
   recomputeSynergy();
 }
@@ -1126,7 +1158,7 @@ function findMergeGroup(kind, tier){
   const result = [];
   for (let i = 0; i < state.slots.length; i++){
     const t = state.slots[i];
-    if (t && t.kind === kind && t.tier === tier){
+    if (t && t.kind === kind && t.tier === tier && !t.locked){
       result.push(i);
       if (result.length >= 3) break;
     }
@@ -1267,7 +1299,7 @@ function tryAutoMerge(){
     const buckets = {};
     for (let i = 0; i < state.slots.length; i++){
       const t = state.slots[i];
-      if (!t) continue;
+      if (!t || t.locked) continue;
       const key = t.kind + ':' + t.tier;
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push(i);
@@ -1313,10 +1345,11 @@ function refreshPanel(){
   const t = state.slots[state.selectedSlot];
   const refund = Math.floor(towerCost(t.kind, t.tier) * 0.5);
   const tierStars = '★'.repeat(t.tier);
-  const synMult = 1 + ADJ_BONUS_PER * (t.synergy || 0);
+  const synMult = synergyDmgMult(t);
+  const synPer = (KIND_SYNERGY[t.kind] && KIND_SYNERGY[t.kind].dmg) || ADJ_BONUS_PER;
   const synPct = t.synergy > 0
     ? `<span style="color:#ffd96b">+${Math.round((synMult - 1) * 100)}%</span>`
-    : '<span style="color:#8888aa">없음</span>';
+    : '<span style="color:#8888aa">없음 (이웃당 +' + Math.round(synPer*100) + '%)</span>';
   panelEl.classList.add('on');
   panelEl.innerHTML = `
     <div class="tname" style="color: ${t.color};">${t.name} ${tierStars}
@@ -1330,15 +1363,24 @@ function refreshPanel(){
     ${t.fire === 'missile' ? `<div class="row"><span>폭발 반경</span><span>${t.aoeRadius}</span></div>` : ''}
     ${t.fire === 'chain' ? `<div class="row"><span>점프</span><span>${t.chains}회 · 감쇠 ${Math.round(t.dmgFalloff*100)}%</span></div>` : ''}
     <div class="row"><span>인접 시너지</span><span>${synPct} <span style="color:#9a8cd6">(${t.synergy || 0}/4)</span></span></div>
+    <div class="row"><span>타깃</span><span><button id="btn-priority" style="background:rgba(60,28,120,.7); color:#d8d0ff; border:1px solid rgba(160,120,255,.4); border-radius:6px; padding:3px 8px; font:inherit; font-size:11px; font-weight:800; cursor:pointer;">${PRIORITY_LABEL[t.priority || 'progress']}</button></span></div>
     <div class="actions">
       ${canMergeTower(t) ? `<button class="btn" id="btn-merge-now" style="background:linear-gradient(180deg,#ffd96b,#c08a1a); color:#1a0b30; border-color:#ffd96b; font-weight:900;">합 성 ▶</button>` : ''}
+      <button class="btn" id="btn-lock" style="background:${t.locked ? 'rgba(255,217,107,.6)' : 'rgba(60,28,120,.7)'}; color:#fff; border-color:${t.locked ? '#ffd96b' : 'rgba(160,120,255,.4)'};">${t.locked ? '🔒 잠김' : '🔓 잠금'}</button>
       <button class="btn" id="btn-sell" style="background: rgba(200,50,80,.4); border-color: rgba(255,120,150,.4);">판매 +${refund}g</button>
     </div>
-    <div class="row" style="font-size:11px; color:#8888aa; margin-top:6px;">${canMergeTower(t) ? '★ 같은 종류·등급 3개 → 합성 분기 선택' : '다른 슬롯 클릭으로 이동/스왑 · AA = anti-air'}</div>
+    <div class="row" style="font-size:11px; color:#8888aa; margin-top:6px;">${canMergeTower(t) ? '★ 같은 종류·등급 3개 → 합성 분기 선택' : '잠긴 타워는 자동 합성 제외 · AA = anti-air'}</div>
   `;
   document.getElementById('btn-sell').onclick = sellSelected;
   const mn = document.getElementById('btn-merge-now');
   if (mn) mn.onclick = () => openMergeModal(t.kind, t.tier);
+  document.getElementById('btn-lock').onclick = () => { t.locked = !t.locked; refreshPanel(); };
+  document.getElementById('btn-priority').onclick = () => {
+    const cur = t.priority || 'progress';
+    const next = PRIORITY_ORDER[(PRIORITY_ORDER.indexOf(cur) + 1) % PRIORITY_ORDER.length];
+    t.priority = next;
+    refreshPanel();
+  };
 }
 function towerCost(kind, tier){
   // 합성 비용 누적: tier 1 기준 12g, tier 2는 ~36g, tier 3 ~108g, tier 4 ~324g
@@ -1578,7 +1620,7 @@ function finishUI(won){
  * Tower fire
  * ============================================================ */
 function fireTower(t, target){
-  const mult = 1 + ADJ_BONUS_PER * (t.synergy || 0);
+  const mult = synergyDmgMult(t);
   const dmg = t.dmg * mult;
   if (t.fire === 'single'){
     applyDamage(target, dmg);
@@ -1815,19 +1857,26 @@ function step(dt){
     if (!t) continue;
     t.cooldown -= dt;
     if (t.flash > 0) t.flash -= dt;
-    let best = null, bestProgress = -1;
+    let best = null, bestVal = -Infinity;
+    const totalLen = TRACK_SEG_LEN[0] + TRACK_SEG_LEN[1] + TRACK_SEG_LEN[2] + TRACK_SEG_LEN[3];
     for (const e of state.enemies){
       if (e.dead) continue;
       if (e.flying && !t.antiAir) continue; // 비행체는 anti-air 타워만 사격
       const dx = e.x - t.x, dy = e.y - t.y;
       const d2 = dx*dx + dy*dy;
       if (d2 > t.range * t.range) continue;
-      // 트랙 진행도가 가장 높은 적 (사이클 수 + 세그먼트 + 진행거리)
-      const totalLen = TRACK_SEG_LEN.reduce((a, b) => a + b, 0);
-      const offsetBefore = TRACK_SEG_LEN.slice(0, e.segIdx).reduce((a, b) => a + b, 0);
-      const progress = e.laps * totalLen + offsetBefore + e.segProgress;
-      if (progress > bestProgress){
-        bestProgress = progress;
+      let val;
+      const pr = t.priority || 'progress';
+      if (pr === 'weakest')      val = -e.hp;
+      else if (pr === 'strongest') val = e.hp;
+      else if (pr === 'closest') val = -d2;
+      else { // 'progress'
+        let offsetBefore = 0;
+        for (let s = 0; s < e.segIdx; s++) offsetBefore += TRACK_SEG_LEN[s];
+        val = e.laps * totalLen + offsetBefore + e.segProgress;
+      }
+      if (val > bestVal){
+        bestVal = val;
         best = e;
       }
     }
@@ -2231,23 +2280,62 @@ function drawTopOverlay(){
   if (state.waveState === 'between'){
     const t = Math.max(0, state.betweenTimer);
     ctx.fillStyle = '#c0b8e4';
-    ctx.fillText(`다음 웨이브 ${state.waveIdx + 1}/15 — ${t.toFixed(1)}s`, W/2, 30);
-    // 다음 웨이브 미리보기
-    const next = WAVES[state.waveIdx];
-    if (next){
-      const counts = {};
-      for (const [type, n] of next) counts[type] = (counts[type] || 0) + n;
-      const summary = Object.entries(counts).map(([k, v]) => `${ENEMY_STATS[k].name} ×${v}`).join(' · ');
-      ctx.fillStyle = '#9a8cd6';
-      ctx.font = '700 10px "Pretendard", sans-serif';
-      ctx.fillText(summary, W/2, 50);
-    }
+    ctx.fillText(`다음 웨이브 ${state.waveIdx + 1} — ${t.toFixed(1)}s`, W/2, 26);
+    // 다음 5웨이브 압축 미리보기
+    drawWavePreview(state.waveIdx, 5);
   } else if (state.waveState === 'wave'){
     const remainingSpawns = state.spawnEntries.slice(state.entryIdx).reduce((s, e) => s + e.remaining, 0);
     ctx.fillStyle = '#5cd6ea';
-    ctx.fillText(`Wave ${state.waveIdx + 1}/15 — 남은 적 ${state.enemies.length + remainingSpawns}`, W/2, 30);
+    ctx.fillText(`Wave ${state.waveIdx + 1} — 남은 적 ${state.enemies.length + remainingSpawns}`, W/2, 26);
+    // 게임 중에도 다음 2웨이브 미리보기 (작게)
+    drawWavePreview(state.waveIdx + 1, 3);
   }
   ctx.restore();
+}
+
+function drawWavePreview(startIdx, count){
+  const totalW = count * 62;
+  const startX = (W - totalW) / 2;
+  const y = 52;
+  for (let i = 0; i < count; i++){
+    const wIdx = startIdx + i;
+    const spec = getWaveSpec(wIdx);
+    if (!spec) continue;
+    let hasBoss = false, hasFlying = false, hasShield = false, hasRegen = false, hasSplit = false;
+    let totalCount = 0;
+    for (const entry of spec){
+      const tp = entry[0];
+      totalCount += entry[1];
+      if (tp === 'boss') hasBoss = true;
+      else if (tp === 'flying') hasFlying = true;
+      else if (tp === 'shielded') hasShield = true;
+      else if (tp === 'regen') hasRegen = true;
+      else if (tp === 'splitter') hasSplit = true;
+    }
+    const cx = startX + i * 62 + 30;
+    ctx.save();
+    ctx.fillStyle = i === 0 ? 'rgba(140,90,220,.55)' : 'rgba(40,18,90,.45)';
+    roundRect(ctx, cx - 28, y - 9, 56, 18, 4);
+    ctx.fill();
+    ctx.strokeStyle = hasBoss ? '#ff5577' : (i === 0 ? '#c98aff' : 'rgba(160,120,255,.3)');
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = '800 9px "Pretendard", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`W${wIdx + 1}`, cx - 24, y + 3);
+    // 위험 아이콘 (오른쪽)
+    let icons = '';
+    if (hasBoss) icons += '★';
+    if (hasFlying) icons += '✈';
+    if (hasShield) icons += '◇';
+    if (hasRegen) icons += '+';
+    if (hasSplit) icons += '◎';
+    ctx.fillStyle = hasBoss ? '#ff5577' : (hasFlying ? '#7cc4ff' : '#9a8cd6');
+    ctx.textAlign = 'right';
+    ctx.fillText(icons || '·', cx + 24, y + 3);
+    ctx.restore();
+  }
 }
 
 function drawTower(t){
@@ -2294,6 +2382,34 @@ function drawTower(t){
       ctx.arc(Math.cos(ang) * 16, Math.sin(ang) * 16, 1.8, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore();
+  }
+
+  // 락 표시 (점선 ring)
+  if (t.locked){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,217,107,.85)';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = '#ffd96b';
+    ctx.shadowBlur = 6;
+    ctx.setLineDash([3, 2]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // priority 인디케이터 (기본 progress 외에만 표시)
+  if (t.priority && t.priority !== 'progress'){
+    ctx.save();
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur = 4;
+    ctx.font = '700 9px "Pretendard", sans-serif';
+    ctx.textAlign = 'center';
+    const icon = t.priority === 'weakest' ? '▼' : t.priority === 'strongest' ? '▲' : '◉';
+    ctx.fillText(icon, 0, -19);
     ctx.restore();
   }
 
@@ -2814,11 +2930,14 @@ function buildCodexHTML(){
   let html = '<h2>도감 & 합성표</h2>';
   html += `<div class="lead">같은 종류 + 같은 등급 3개 → 1단 위로 합성. 모든 능력치는 데이터 객체로 정의되어 즉시 변경 가능.</div>`;
 
-  html += '<h3>합성 체인</h3>';
+  html += '<h3>합성 체인 · 종류별 시너지</h3>';
   for (const kind of KIND_ORDER){
     const def = TOWER_STATS[kind];
+    const synBonus = (KIND_SYNERGY[kind] && KIND_SYNERGY[kind].dmg) || ADJ_BONUS_PER;
+    const aa = def.antiAir ? ' <span style="color:#7cc4ff; font-size:9px; margin-left:4px;">AA</span>' : '';
     html += `<div style="margin-top: 6px;"><span style="color:${def.color}; font-weight:800; letter-spacing:.06em;">${def.name}</span>` +
-      ` <span style="color:#9a8cd6; font-size:11px;">— ${describeFire(def.fire)}</span></div>`;
+      ` <span style="color:#9a8cd6; font-size:11px;">— ${describeFire(def.fire)}</span>${aa}` +
+      ` <span style="color:#ffd96b; font-size:10px; margin-left:6px;">· 시너지 +${Math.round(synBonus*100)}%/인접</span></div>`;
     html += '<div class="tower-chain">';
     for (let tier = 1; tier <= 4; tier++){
       const s = def.tiers[tier];
