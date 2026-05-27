@@ -2877,17 +2877,17 @@ function drawTopOverlay(){
   ctx.save();
   ctx.textAlign = 'center';
   ctx.font = '800 11px "Pretendard", sans-serif';
+  // 하단(트랙 아래 빈 공간)에 라벨 + 미리보기 — 트랙/격자와 겹치지 않게
+  const labelY = TY2 + 22;   // 트랙 하단 아래
   if (state.waveState === 'between'){
     const t = Math.max(0, state.betweenTimer);
     ctx.fillStyle = '#c0b8e4';
-    ctx.fillText(`다음 웨이브 ${state.waveIdx + 1} — ${t.toFixed(1)}s`, W/2, 26);
-    // 다음 5웨이브 압축 미리보기
+    ctx.fillText(`다음 웨이브 ${state.waveIdx + 1} — ${t.toFixed(1)}s`, W/2, labelY);
     drawWavePreview(state.waveIdx, 5);
   } else if (state.waveState === 'wave'){
     const remainingSpawns = state.spawnEntries.slice(state.entryIdx).reduce((s, e) => s + e.remaining, 0);
     ctx.fillStyle = '#5cd6ea';
-    ctx.fillText(`Wave ${state.waveIdx + 1} — 남은 적 ${state.enemies.length + remainingSpawns}`, W/2, 26);
-    // 게임 중에도 다음 2웨이브 미리보기 (작게)
+    ctx.fillText(`Wave ${state.waveIdx + 1} — 남은 적 ${state.enemies.length + remainingSpawns}`, W/2, labelY);
     drawWavePreview(state.waveIdx + 1, 3);
   }
   ctx.restore();
@@ -2896,7 +2896,7 @@ function drawTopOverlay(){
 function drawWavePreview(startIdx, count){
   const totalW = count * 62;
   const startX = (W - totalW) / 2;
-  const y = 52;
+  const y = TY2 + 44;   // 트랙 하단 아래 카드 행
   for (let i = 0; i < count; i++){
     const wIdx = startIdx + i;
     const spec = getWaveSpec(wIdx);
