@@ -563,6 +563,14 @@ function showTitle(){
         <div>· 슬롯 클릭으로 선택 → 다른 슬롯 클릭으로 이동/스왑, 또는 판매.</div>
         <div>· 키: <b>R</b> 뽑기 / <b>M</b> 자동합성 / <b>P</b> 일시정지 / <b>F</b> 배속 / <b>Esc</b> 해제 / <b>C</b> 도감</div>
       </div>
+      <div class="rules">
+        <h3>E N D L E S S</h3>
+        <div>· <b>1~15웨이브</b>는 정해진 패턴. <b>16웨이브부터는 무한 절차 생성</b>으로 끝없이 진행됩니다.</div>
+        <div>· 사이클(5웨이브)마다 적 HP <b>+18%</b>, 골드 보상 +8%, REGEN 회복 +10% 누적.</div>
+        <div>· 5의 배수 웨이브는 <b>보스 웨이브</b>. 사이클이 깊어질수록 보스 수도 늘어남.</div>
+        <div>· <b>WAVE 15</b> + 매 <b>25웨이브</b>마다 마일스톤 골드+스코어 보너스.</div>
+        <div>· 라이프 = 필드 적 수가 <b>${ECONOMY.maxAlive}마리</b> 넘는 순간 종료. 도달 웨이브가 곧 점수.</div>
+      </div>
       <button class="btn primary" id="btn-start" style="
         background: linear-gradient(180deg, #c98aff, #7e4ec2);
         color: #fff; border: 1px solid #c98aff;
@@ -613,7 +621,7 @@ function buildLayout(){
     <div class="hud">
       <div class="stat gold"><span class="l">GOLD</span><span class="v" id="hud-gold">0</span></div>
       <div class="stat lives"><span class="l">FIELD</span><span class="v" id="hud-field">0/${ECONOMY.maxAlive}</span></div>
-      <div class="stat wave"><span class="l">WAVE</span><span class="v" id="hud-wave">0/15</span></div>
+      <div class="stat wave"><span class="l">WAVE</span><span class="v" id="hud-wave">1/15</span></div>
       <div class="stat speed"><span class="l">SPEED</span><span class="v" id="hud-speed">1×</span></div>
     </div>
     <div class="stage-wrap">
@@ -972,7 +980,7 @@ function toggleSpeed(){
  * Wave / Enemy
  * ============================================================ */
 function startWave(idx){
-  const wave = WAVES[idx];
+  const wave = getWaveSpec(idx);
   if (!wave) return;
   state.spawnEntries = wave.map(e => ({
     type: e[0],
@@ -982,6 +990,62 @@ function startWave(idx){
   }));
   state.entryIdx = 0;
   state.waveState = 'wave';
+}
+
+function getWaveSpec(idx){
+  if (idx < WAVES.length) return WAVES[idx];
+  return generateInfiniteWave(idx);
+}
+
+// 무한 웨이브 생성기 — WAVES 끝난 뒤 호출.
+// idx = 15, 16, 17 ... 매 5번째 (subStep 4) 는 보스 wave.
+// tier (5웨이브마다 ↑)로 적 수·강한 적 비율을 키운다.
+function generateInfiniteWave(idx){
+  const cycle = idx - WAVES.length;
+  const tier  = Math.floor(cycle / 5);
+  const subStep = cycle % 5;
+
+  // 보스 웨이브 (5의 배수)
+  if (subStep === 4){
+    const bossCount = 1 + Math.floor(tier / 2);
+    return [
+      ['boss',    bossCount,       4.5, 1.0],
+      ['flying',  8 + tier * 3,    0.5, 2.0],
+      ['regen',   4 + tier,        1.4, 5.0]
+    ];
+  }
+
+  // 일반 웨이브: 적 풀에서 가중치로 2~4종 mix
+  // tier가 늘수록 강한 적 비율 상승
+  const weights = {
+    grunt:    30,
+    runner:   25 + tier * 2,
+    swift:    18 + tier * 3,
+    tank:     12 + tier * 3,
+    splitter:  8 + tier * 3,
+    shielded:  6 + tier * 3,
+    flying:    4 + tier * 4,
+    regen:     3 + tier * 3
+  };
+
+  const numTypes = 2 + Math.floor(Math.random() * 3); // 2..4
+  const picked = new Set();
+  let safety = 0;
+  while (picked.size < numTypes && safety++ < 20){
+    picked.add(weightedPick(weights));
+  }
+
+  const entries = [];
+  let delay = 0;
+  for (const type of picked){
+    const tough = ENEMY_STATS[type].hp >= 110;
+    const baseCount = tough ? (4 + tier * 2) : (10 + tier * 3);
+    const intervalBase = 0.55 - tier * 0.025;
+    const interval = Math.max(0.18, intervalBase + Math.random() * 0.15);
+    entries.push([type, baseCount, interval, delay]);
+    delay += 0.8 + Math.random() * 2.2;
+  }
+  return entries;
 }
 
 function tickSpawns(dt){
@@ -1005,22 +1069,31 @@ function spawnEnemy(type, atSeg, atProgress){
   const segProgress = atProgress != null ? atProgress : 0;
   const seg = TRACK_SEGS[segIdx];
   const t = segProgress / TRACK_SEG_LEN[segIdx];
+
+  // 무한 모드 스케일링 (16웨이브부터)
+  const cycle = Math.max(0, state.waveIdx - WAVES.length);
+  const hpMult   = 1 + 0.18 * cycle;
+  const goldMult = 1 + 0.08 * cycle;
+  const regenMult = 1 + 0.10 * cycle;
+
+  const hp = Math.floor(def.hp * hpMult);
+  const shield = Math.floor((def.shield || 0) * hpMult);
+
   state.enemies.push({
     type, name: def.name,
     x: seg.x1 + (seg.x2 - seg.x1) * t,
     y: seg.y1 + (seg.y2 - seg.y1) * t,
-    hp: def.hp, maxHp: def.hp,
-    shield: def.shield || 0,
-    maxShield: def.shield || 0,
+    hp, maxHp: hp,
+    shield, maxShield: shield,
     speed: def.speed,
     slowUntil: 0,
     slowFactor: 1,
     r: def.r,
     color: def.color,
-    reward: def.gold,
+    reward: Math.max(1, Math.floor(def.gold * goldMult)),
     split: def.split || 0,
     flying: !!def.flying,
-    regen: def.regen || 0,
+    regen: (def.regen || 0) * regenMult,
     segIdx, segProgress,
     laps: 0,
     dead: false,
@@ -1043,8 +1116,15 @@ function endWave(){
   state.score += 100;
   state.waveIdx += 1;
   floatAt(W/2, GRID_Y + GRID_H/2, '+' + ECONOMY.waveBonusGold + 'g 보너스', '#ffd96b');
-  if (state.waveIdx >= WAVES.length){
-    return winGame();
+  // 마일스톤 보너스: 15(1st stage clear) / 25 / 50 / 100 ...
+  if (state.waveIdx === WAVES.length){
+    state.gold += 80;
+    state.score += 1000;
+    floatAt(W/2, GRID_Y + GRID_H/2 - 22, '★ STAGE 1 CLEAR · +80g ★', '#c98aff');
+  } else if (state.waveIdx > 0 && state.waveIdx % 25 === 0){
+    state.gold += 60;
+    state.score += 500;
+    floatAt(W/2, GRID_Y + GRID_H/2 - 22, '★ WAVE ' + state.waveIdx + ' · +60g ★', '#c98aff');
   }
   state.waveState = 'between';
   state.betweenTimer = ECONOMY.betweenWaveSec;
@@ -1071,9 +1151,12 @@ function finishUI(won){
     bestScore: Math.max(best.bestScore, state.score),
     bestWave: Math.max(best.bestWave, state.wavesCleared)
   });
+  const reached = state.wavesCleared >= WAVES.length
+    ? `Wave <b>${state.wavesCleared}</b> 도달 <span style="color:#c98aff">∞</span>`
+    : `Wave <b>${state.wavesCleared}/${WAVES.length}</b>`;
   setOverlay(`
-    <h2>${won ? '🏆 클리어!' : '💥 게임 오버'}</h2>
-    <p>웨이브 ${state.wavesCleared}/15 · 필드 ${state.enemies.length}/${ECONOMY.maxAlive} · 골드 ${state.gold}</p>
+    <h2>${won ? '🏆 클리어!' : '💥 격침'}</h2>
+    <p>${reached} · 필드 ${state.enemies.length}/${ECONOMY.maxAlive} · 골드 ${state.gold}</p>
     <div style="font-size:42px; font-weight:900; color:${won ? '#c98aff' : '#ff7799'}; margin: 12px 0; line-height:1; font-variant-numeric: tabular-nums;">${state.score}</div>
     ${isBest ? '<div class="ribbon">NEW BEST</div>' : ''}
     <div style="margin-top: 16px;">
@@ -1368,16 +1451,10 @@ function step(dt){
   for (const s of state.sweeps) s.life -= dt;
   state.sweeps = state.sweeps.filter(s => s.life > 0);
 
-  // 웨이브 종료 검사
-  // 적이 사각 루프를 돌며 안 죽는 구조라, 적 처치와 무관하게 spawn 완료 시 다음 웨이브로 자동 진행.
-  // 마지막 웨이브만은 적 0이 되어야 승리.
+  // 웨이브 종료 검사 — 무한 모드: spawn 완료 시 항상 다음 웨이브로
   if (state.waveState === 'wave'){
     if (state.entryIdx >= state.spawnEntries.length){
-      if (state.waveIdx + 1 >= WAVES.length){
-        if (state.enemies.length === 0) winGame();
-      } else {
-        endWave();
-      }
+      endWave();
     }
   }
 }
@@ -1618,7 +1695,12 @@ function render(){
   hudEls.field.style.color = alive >= ECONOMY.warnAlive ? '#ff7799' : (alive >= ECONOMY.warnAlive * 0.65 ? '#ffd96b' : '#ff7799');
   // 평상시엔 분홍, 안전권엔 흰색에 가깝게
   if (alive < ECONOMY.warnAlive * 0.5) hudEls.field.style.color = '#fff';
-  hudEls.wave.textContent = (state.waveState === 'wave' ? (state.waveIdx + 1) : state.wavesCleared) + '/15';
+  {
+    const cur = state.waveState === 'wave' ? (state.waveIdx + 1) : (state.wavesCleared + (state.waveState === 'between' ? 1 : 0));
+    hudEls.wave.textContent = state.wavesCleared >= WAVES.length
+      ? cur + ' ∞'
+      : cur + '/' + WAVES.length;
+  }
   hudEls.speed.textContent = state.paused ? '||' : state.speed + '×';
   refreshRollBtn();
 }
