@@ -705,6 +705,64 @@ const WAVES = [
 ];
 
 /* ============================================================
+ * Audio (Web Audio synth — no asset files)
+ * ============================================================ */
+let audioCtx = null;
+let MUTED = (function(){ try { return localStorage.getItem('roll_defense_muted') === '1'; } catch(e){ return false; } })();
+let lastKillSfx = 0;
+
+function ac(){
+  if (!audioCtx){
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ audioCtx = null; }
+  }
+  return audioCtx;
+}
+function resumeAudio(){
+  const c = ac();
+  if (c && c.state === 'suspended') c.resume();
+}
+function toggleMute(){
+  MUTED = !MUTED;
+  try { localStorage.setItem('roll_defense_muted', MUTED ? '1' : '0'); } catch(e){}
+  return MUTED;
+}
+// 단발 톤. slideTo 주면 주파수 슬라이드.
+function tone(freq, dur, type, vol, slideTo){
+  if (MUTED) return;
+  const c = ac();
+  if (!c) return;
+  const t0 = c.currentTime;
+  const o = c.createOscillator();
+  const g = c.createGain();
+  o.type = type || 'square';
+  o.frequency.setValueAtTime(freq, t0);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1, slideTo), t0 + dur);
+  g.gain.setValueAtTime(Math.max(0.0001, vol || 0.08), t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(c.destination);
+  o.start(t0);
+  o.stop(t0 + dur + 0.02);
+}
+const SFX = {
+  kill(){
+    const now = performance.now();
+    if (now - lastKillSfx < 45) return;  // throttle
+    lastKillSfx = now;
+    tone(280, 0.07, 'sine', 0.05, 150);
+  },
+  roll(){ tone(700, 0.05, 'square', 0.05, 920); },
+  merge(){ tone(420, 0.16, 'triangle', 0.10, 880); },
+  bomb(){ tone(130, 0.32, 'sawtooth', 0.16, 38); },
+  freeze(){ tone(1300, 0.30, 'sine', 0.09, 380); },
+  gold(){ tone(880, 0.10, 'square', 0.09, 1500); },
+  reroll(){ tone(520, 0.10, 'triangle', 0.08, 760); },
+  modifier(){ tone(600, 0.10, 'triangle', 0.10, 900); setTimeout(()=>tone(900, 0.12, 'triangle', 0.09, 1300), 90); },
+  wave(){ tone(660, 0.10, 'square', 0.09); setTimeout(()=>tone(990, 0.14, 'square', 0.09), 100); },
+  gameover(){ tone(440, 0.5, 'sawtooth', 0.13, 70); },
+  bossSkill(){ tone(180, 0.18, 'sawtooth', 0.08, 90); }
+};
+
+/* ============================================================
  * Helpers
  * ============================================================ */
 function weightedPick(weights){
@@ -967,6 +1025,7 @@ function buyUpgrade(key){
 }
 
 function startGame(){
+  resumeAudio();
   const meta = loadMeta();
   state = {
     meta,
@@ -1037,6 +1096,7 @@ function buildLayout(){
       <button class="btn" id="btn-codex">도감</button>
       <button class="btn" id="btn-pause">일시정지</button>
       <button class="btn" id="btn-speed">2×</button>
+      <button class="btn" id="btn-mute">${MUTED ? '🔇' : '🔊'}</button>
       <button class="btn" id="btn-quit">그만</button>
     </div>
     <div class="info">
@@ -1124,10 +1184,10 @@ function useSkill(key){
   state.gold -= s.cost;
   state.skillCd[key] = s.cooldown * (1 - upLevel(state.meta, 'haste') * 0.10) * state.mods.skillCdMult;
   if (state.stats) state.stats.skillUses += 1;
-  if (key === 'bomb')          fireBomb();
-  else if (key === 'freeze')   fireFreeze();
-  else if (key === 'goldRush') startGoldRush();
-  else if (key === 'reroll')   fireReroll();
+  if (key === 'bomb')          { SFX.bomb(); fireBomb(); }
+  else if (key === 'freeze')   { SFX.freeze(); fireFreeze(); }
+  else if (key === 'goldRush') { SFX.gold(); startGoldRush(); }
+  else if (key === 'reroll')   { SFX.reroll(); fireReroll(); }
 }
 
 function fireBomb(){
@@ -1208,6 +1268,10 @@ function bindEvents(){
   pauseBtn.onclick = togglePause;
   speedBtn.onclick = toggleSpeed;
   document.getElementById('btn-codex').onclick = openCodex;
+  document.getElementById('btn-mute').onclick = () => {
+    const m = toggleMute();
+    document.getElementById('btn-mute').textContent = m ? '🔇' : '🔊';
+  };
   document.getElementById('btn-quit').onclick = () => {
     document.removeEventListener('keydown', onKey);
     if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
@@ -1396,6 +1460,7 @@ function doRoll(){
   const idx = empties[Math.floor(Math.random() * empties.length)];
   placeTowerIntoSlot(idx, kind, tier);
   state.slots[idx].flash = 0.4;
+  SFX.roll();
   refreshRollBtn();
   if (state.autoMerge) tryAutoMerge();
 }
@@ -1529,6 +1594,7 @@ function performMergeAction(action){
   }
   if (action === 'evolve' || action === 'convert'){
     if (state.stats) state.stats.mergeCount += 1;
+    SFX.merge();
   }
   recomputeSynergy();
   state.selectedSlot = -1;
@@ -1571,6 +1637,7 @@ function tryAutoMerge(){
       state.gold += ECONOMY.mergeBonusGold;
       floatAt(state.slots[a].x + 20, state.slots[a].y + 8, '+' + ECONOMY.mergeBonusGold + 'g', '#ffd96b');
       if (state.stats) state.stats.mergeCount += 1;
+      SFX.merge();
       merged = true;
       break; // 한 번에 한 그룹만 (다음 루프에서 다시 검사)
     }
@@ -1817,6 +1884,7 @@ function triggerBossAbility(boss){
   const tier = Math.floor(cycle / 5);
   const info = BOSS_ABILITY_INFO[boss.bossAbility];
   boss.abilityFlash = 0.6;
+  SFX.bossSkill();
   if (boss.bossAbility === 'summon'){
     const n = 2 + Math.floor(tier / 2);
     for (let i = 0; i < n; i++){
@@ -1875,6 +1943,7 @@ function endWave(){
   state.gold += ECONOMY.waveBonusGold;
   state.score += 100;
   state.waveIdx += 1;
+  SFX.wave();
   floatAt(W/2, GRID_Y + GRID_H/2, '+' + ECONOMY.waveBonusGold + 'g 보너스', '#ffd96b');
   // 마일스톤 보너스: 15(1st stage clear) / 25 / 50 / 100 ...
   if (state.waveIdx === WAVES.length){
@@ -1926,6 +1995,7 @@ function applyModifier(id){
     m.apply(state);
     if (m.tag !== 'once') state.activeModNames.push(m.icon);
     floatAt(W/2, GRID_Y + GRID_H/2, m.icon + ' ' + m.name, '#ffd96b');
+    SFX.modifier();
   }
   state.pendingModifier = false;
   document.getElementById('mod-backdrop').classList.remove('on');
@@ -1947,6 +2017,7 @@ function loseGame(){
 function finishUI(won){
   if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
   document.removeEventListener('keydown', onKey);
+  if (!won) SFX.gameover();
   // 메타 적립 (영구 통화)
   const earned = Math.floor(state.score / CORE_PER_SCORE);
   const meta = state.meta || loadMeta();
@@ -2231,6 +2302,7 @@ function step(dt){
     if (!e.dead && e.hp <= 0){
       e.dead = true;
       state.stats.kills += 1;
+      SFX.kill();
       const gained = Math.max(1, Math.floor(e.reward * goldMult));
       state.gold += gained;
       state.score += e.reward;
