@@ -332,6 +332,37 @@
     width: 100%;
   }
   .merge-cancel:hover{ color: #d8d0ff; border-color: #c98aff; }
+
+  /* Skill bar */
+  .skills{
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 6px; margin-top: 8px;
+  }
+  .skill{
+    position: relative;
+    background: rgba(30,12,70,.55);
+    border: 1px solid rgba(160,120,255,.22);
+    border-radius: 10px;
+    padding: 8px 4px 6px;
+    text-align: center;
+    cursor: pointer;
+    font: inherit; font-weight: 800; color: #d8d0ff;
+    overflow: hidden;
+    transition: all .12s;
+  }
+  .skill:hover:not(:disabled){ border-color: rgba(200,180,255,.5); }
+  .skill:disabled{ opacity: .35; cursor: not-allowed; }
+  .skill.ready{ box-shadow: 0 0 10px rgba(200,180,255,.2); }
+  .skill .icon{ display: block; font-size: 16px; line-height: 1; margin-bottom: 2px; }
+  .skill .lbl{ display: block; font-size: 10px; letter-spacing:.08em; color: #fff; }
+  .skill .cost{ display: block; font-size: 9px; color: #ffd96b; margin-top: 1px; font-weight: 700; }
+  .skill .cd-overlay{
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,.7);
+    color: #fff; font-size: 11px; font-weight: 800;
+    padding: 6px 0;
+    transition: height .1s linear;
+  }
 </style>
 </head>
 <body>
@@ -400,6 +431,21 @@ const KIND_WEIGHT = { pulse: 20, burst: 16, frost: 16, rail: 12, guard: 14, rock
 
 // 인접 시너지: 같은 종류 4-이웃 (상하좌우) 1개당 +N% 데미지
 const ADJ_BONUS_PER = 0.10;
+
+/* ---------- Active skills ---------- */
+const SKILLS = {
+  bomb:     { name:'BOMB',   icon:'💣', cost: 50, cooldown: 25, color:'#ff6b35', desc:'화면 중앙 폭발 · 광역 데미지' },
+  freeze:   { name:'FREEZE', icon:'❄',  cost: 60, cooldown: 32, color:'#80e8ff', desc:'8초간 적 전체 60% 슬로우' },
+  goldRush: { name:'GOLD',   icon:'💰', cost: 40, cooldown: 50, color:'#ffd96b', desc:'30초간 처치 골드 +50%' },
+  reroll:   { name:'REROLL', icon:'🎲', cost: 25, cooldown: 10, color:'#c98aff', desc:'무작위 ★1 슬롯 1개 다른 종류로 교체' }
+};
+const SKILL_ORDER = ['bomb', 'freeze', 'goldRush', 'reroll'];
+const BOMB_DAMAGE = 180;
+const BOMB_RADIUS = 130;
+const FREEZE_DUR = 8;
+const FREEZE_FACTOR = 0.40;
+const GOLDRUSH_DUR = 30;
+const GOLDRUSH_MULT = 1.5;
 
 /* ---------- Tower stats: kind × tier (1..4) ---------- */
 const TOWER_STATS = {
@@ -637,6 +683,14 @@ function showTitle(){
         <div>· 키: <b>R</b> 뽑기 / <b>M</b> 자동합성 / <b>P</b> 일시정지 / <b>F</b> 배속 / <b>Esc</b> 해제 / <b>C</b> 도감</div>
       </div>
       <div class="rules">
+        <h3>S K I L L S &nbsp;·&nbsp; A C T I V E</h3>
+        <div>· <b>💣 BOMB</b> (50g) — 화면 중앙 광역 폭발 +${BOMB_DAMAGE} 데미지</div>
+        <div>· <b>❄ FREEZE</b> (60g) — ${FREEZE_DUR}초간 전체 ${Math.round((1-FREEZE_FACTOR)*100)}% 슬로우</div>
+        <div>· <b>💰 GOLD-RUSH</b> (40g) — ${GOLDRUSH_DUR}초간 처치 골드 +${Math.round((GOLDRUSH_MULT-1)*100)}%</div>
+        <div>· <b>🎲 REROLL</b> (25g) — ★1 슬롯 1개를 무작위 다른 종류로 교체</div>
+        <div>· 각 스킬 개별 쿨다운. 위급할 때 능동 개입의 길.</div>
+      </div>
+      <div class="rules">
         <h3>E N D L E S S</h3>
         <div>· <b>1~15웨이브</b>는 정해진 패턴. <b>16웨이브부터는 무한 절차 생성</b>으로 끝없이 진행됩니다.</div>
         <div>· 사이클(5웨이브)마다 적 HP <b>+18%</b>, 골드 보상 +8%, REGEN 회복 +10% 누적.</div>
@@ -683,7 +737,10 @@ function startGame(){
     hoverSlot: -1,
     time: 0,
     codexOpen: false,
-    mergeModalGroup: null
+    mergeModalGroup: null,
+    skillCd: { bomb: 0, freeze: 0, goldRush: 0, reroll: 0 },
+    goldRushUntil: 0,
+    freezeFlash: 0
   };
   buildLayout();
   bindEvents();
@@ -703,6 +760,7 @@ function buildLayout(){
       <div class="overlay" id="overlay"></div>
     </div>
     <div class="selected-panel" id="panel"></div>
+    <div class="skills" id="skill-bar"></div>
     <div class="controls">
       <button class="btn primary" id="btn-roll">뽑기 (12g)</button>
       <button class="btn" id="btn-merge">자동합성 OFF</button>
@@ -740,6 +798,134 @@ function buildLayout(){
   canvas.width = W * dpr;
   canvas.height = H * dpr;
   ctx.scale(dpr, dpr);
+
+  buildSkillBar();
+}
+
+function buildSkillBar(){
+  const bar = document.getElementById('skill-bar');
+  if (!bar) return;
+  bar.innerHTML = SKILL_ORDER.map(key => {
+    const s = SKILLS[key];
+    return `
+      <button class="skill" data-skill="${key}" title="${s.desc}">
+        <span class="icon">${s.icon}</span>
+        <span class="lbl">${s.name}</span>
+        <span class="cost">${s.cost}g</span>
+        <span class="cd-overlay" id="cd-${key}" style="height:0%;"></span>
+      </button>
+    `;
+  }).join('');
+  for (const key of SKILL_ORDER){
+    const btn = bar.querySelector(`.skill[data-skill="${key}"]`);
+    btn.onclick = () => useSkill(key);
+  }
+}
+
+function refreshSkillBar(){
+  for (const key of SKILL_ORDER){
+    const s = SKILLS[key];
+    const cd = state.skillCd[key] || 0;
+    const btn = document.querySelector(`.skill[data-skill="${key}"]`);
+    if (!btn) continue;
+    const ratio = cd > 0 ? cd / s.cooldown : 0;
+    const overlay = btn.querySelector('.cd-overlay');
+    overlay.style.height = (ratio * 100) + '%';
+    overlay.textContent = cd > 0 ? cd.toFixed(1) : '';
+    const ready = cd <= 0 && state.gold >= s.cost;
+    btn.disabled = !ready;
+    btn.classList.toggle('ready', ready);
+  }
+}
+
+function useSkill(key){
+  if (state.paused || state.codexOpen || state.mergeModalGroup) return;
+  if (state.waveState === 'won' || state.waveState === 'lost') return;
+  const s = SKILLS[key];
+  if (!s) return;
+  if ((state.skillCd[key] || 0) > 0) return;
+  if (state.gold < s.cost){
+    floatAt(W/2, GRID_Y + GRID_H/2, '골드 부족', '#ff7799');
+    return;
+  }
+  state.gold -= s.cost;
+  state.skillCd[key] = s.cooldown;
+  if (key === 'bomb')          fireBomb();
+  else if (key === 'freeze')   fireFreeze();
+  else if (key === 'goldRush') startGoldRush();
+  else if (key === 'reroll')   fireReroll();
+}
+
+function fireBomb(){
+  const cx = (TX1 + TX2) / 2;
+  const cy = (TY1 + TY2) / 2;
+  addExplosion(cx, cy, BOMB_RADIUS, '#ff6b35');
+  addExplosion(cx, cy, BOMB_RADIUS * 0.6, '#ffd96b');
+  for (const e of state.enemies){
+    if (e.dead) continue;
+    const dx = e.x - cx, dy = e.y - cy;
+    if (dx*dx + dy*dy < BOMB_RADIUS * BOMB_RADIUS){
+      applyDamage(e, BOMB_DAMAGE);
+    }
+  }
+  for (let i = 0; i < 40; i++){
+    const a = Math.random() * Math.PI * 2;
+    const sp = 50 + Math.random() * 160;
+    state.particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      size: 2 + Math.random() * 4,
+      color: i % 3 === 0 ? '#ffd96b' : '#ff6b35',
+      life: 0.5 + Math.random() * 0.5,
+      maxLife: 1.0
+    });
+  }
+  floatAt(cx, cy - 10, '💣 BOMB', '#ff6b35');
+}
+
+function fireFreeze(){
+  for (const e of state.enemies){
+    if (e.dead) continue;
+    e.slowUntil = state.time + FREEZE_DUR;
+    e.slowFactor = FREEZE_FACTOR;
+  }
+  state.freezeFlash = 1.0;
+  floatAt(W/2, GRID_Y + GRID_H/2, '❄ FREEZE', '#80e8ff');
+}
+
+function startGoldRush(){
+  state.goldRushUntil = state.time + GOLDRUSH_DUR;
+  floatAt(W/2, GRID_Y + GRID_H/2 - 20, '💰 GOLD RUSH', '#ffd96b');
+}
+
+function fireReroll(){
+  const candidates = [];
+  for (let i = 0; i < state.slots.length; i++){
+    const t = state.slots[i];
+    if (t && t.tier === 1) candidates.push(i);
+  }
+  let idx, oldKind = null;
+  if (candidates.length > 0){
+    idx = candidates[Math.floor(Math.random() * candidates.length)];
+    oldKind = state.slots[idx].kind;
+    state.slots[idx] = null;
+  } else {
+    const empties = emptySlots();
+    if (empties.length === 0){
+      // 환불 + cd 취소
+      state.gold += SKILLS.reroll.cost;
+      state.skillCd.reroll = 0;
+      floatAt(W/2, GRID_Y + GRID_H/2, '대상 없음 · 환불', '#9a8cd6');
+      return;
+    }
+    idx = empties[Math.floor(Math.random() * empties.length)];
+  }
+  const pool = oldKind ? KIND_ORDER.filter(k => k !== oldKind) : KIND_ORDER;
+  const kind = pool[Math.floor(Math.random() * pool.length)];
+  placeTowerIntoSlot(idx, kind, 1);
+  state.slots[idx].flash = 0.9;
+  addExplosion(state.slots[idx].x, state.slots[idx].y, 24, state.slots[idx].color);
+  floatAt(state.slots[idx].x, state.slots[idx].y - 14, '→ ' + state.slots[idx].name, '#c98aff');
 }
 
 function bindEvents(){
@@ -1587,14 +1773,25 @@ function step(dt){
     e.pulse = (e.pulse || 0) + dt * 4;
   }
 
+  // 스킬 쿨다운 차감
+  for (const key of SKILL_ORDER){
+    if (state.skillCd[key] > 0){
+      state.skillCd[key] = Math.max(0, state.skillCd[key] - dt);
+    }
+  }
+  if (state.freezeFlash > 0) state.freezeFlash = Math.max(0, state.freezeFlash - dt * 1.2);
+
   // 사망 처리
   const newSpawns = [];
+  const rushOn = state.goldRushUntil > state.time;
+  const goldMult = rushOn ? GOLDRUSH_MULT : 1;
   for (const e of state.enemies){
     if (!e.dead && e.hp <= 0){
       e.dead = true;
-      state.gold += e.reward;
+      const gained = Math.max(1, Math.floor(e.reward * goldMult));
+      state.gold += gained;
       state.score += e.reward;
-      floatAt(e.x, e.y, '+' + e.reward + 'g', '#ffd96b');
+      floatAt(e.x, e.y, '+' + gained + 'g' + (rushOn ? ' ×' : ''), rushOn ? '#fff5b0' : '#ffd96b');
       spawnKillParticles(e);
       // splitter: 죽으면 같은 위치에 grunt 2마리
       if (e.split > 0){
@@ -1932,6 +2129,27 @@ function render(){
   // 상단 영역에 next-wave 카운트다운 / 웨이브 인디케이터
   drawTopOverlay();
 
+  // freeze 화면 플래시
+  if (state.freezeFlash > 0){
+    ctx.save();
+    ctx.fillStyle = `rgba(128,232,255,${state.freezeFlash * 0.22})`;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // GOLD-RUSH 인디케이터
+  if (state.goldRushUntil > state.time){
+    const remain = state.goldRushUntil - state.time;
+    ctx.save();
+    ctx.fillStyle = '#ffd96b';
+    ctx.font = '700 11px "Pretendard", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.shadowColor = '#ffd96b';
+    ctx.shadowBlur = 6;
+    ctx.fillText('💰 RUSH ' + remain.toFixed(1) + 's', W - 8, H - 8);
+    ctx.restore();
+  }
+
   // HUD 업데이트
   hudEls.gold.textContent = state.gold;
   const alive = state.enemies.length;
@@ -1947,6 +2165,7 @@ function render(){
   }
   hudEls.speed.textContent = state.paused ? '||' : state.speed + '×';
   refreshRollBtn();
+  refreshSkillBar();
 }
 
 function drawTrack(){
