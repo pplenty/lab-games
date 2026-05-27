@@ -355,6 +355,40 @@
   .mod-tag-risk{ background: rgba(255,120,150,.25); color: #ff7799; }
   .mod-tag-once{ background: rgba(255,217,107,.25); color: #ffd96b; }
 
+  /* Tutorial guide */
+  .guide-backdrop{
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.82);
+    backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+    display: none; align-items: center; justify-content: center;
+    z-index: 300; padding: 20px;
+  }
+  .guide-backdrop.on{ display: flex; }
+  .guide-panel{
+    background: linear-gradient(180deg, rgba(40,18,90,.98), rgba(20,8,50,.98));
+    border: 1px solid rgba(200,180,255,.45);
+    border-radius: 14px;
+    box-shadow: 0 30px 70px rgba(40,10,80,.6);
+    max-width: 380px; width: 100%;
+    padding: 22px 24px; color: #d8d0ff; text-align: center;
+  }
+  .guide-step{ font-size: 11px; color: #9a8cd6; letter-spacing: .2em; font-weight: 800; }
+  .guide-icon{ font-size: 40px; margin: 6px 0 4px; }
+  .guide-panel h2{ font-size: 20px; color: #fff; margin-bottom: 10px; letter-spacing: .04em; }
+  .guide-body{ font-size: 13px; color: #c0b8e4; line-height: 1.75; text-align: left; margin-bottom: 18px; }
+  .guide-body b{ color: #fff; }
+  .guide-nav{ display: flex; gap: 8px; }
+  .guide-btn{
+    flex: 1; background: rgba(60,28,120,.7); color: #d8d0ff;
+    border: 1px solid rgba(160,120,255,.4); border-radius: 10px;
+    padding: 11px; font: inherit; font-weight: 800; cursor: pointer; font-size: 13px;
+  }
+  .guide-btn:hover{ background: rgba(80,40,160,.9); }
+  .guide-btn.primary{ background: linear-gradient(180deg,#c98aff,#7e4ec2); color: #fff; border-color: #c98aff; }
+  .guide-dots{ display:flex; gap:5px; justify-content:center; margin: 14px 0 12px; }
+  .guide-dot{ width:6px; height:6px; border-radius:50%; background: rgba(200,180,255,.25); }
+  .guide-dot.on{ background: #c98aff; }
+
   /* Skill bar */
   .skills{
     display: grid; grid-template-columns: repeat(4, 1fr);
@@ -433,6 +467,10 @@
 <main class="shell">
   <div id="root"></div>
 </main>
+
+<div class="guide-backdrop" id="guide-backdrop">
+  <div class="guide-panel" id="guide-panel"></div>
+</div>
 
 <script>
 'use strict';
@@ -857,9 +895,61 @@ let speedBtn = null;
 let pauseBtn = null;
 let mergeBtn = null;
 
+const TUTORIAL = [
+  { icon:'🎯', title:'목표', body:'적은 격자 외곽 <b>사각 루프</b>를 빙글빙글 돕니다. 죽이지 못해 화면에 쌓인 적이 <b>필드 한계(FIELD)</b>를 넘으면 게임 오버. 끝까지 버텨 깊은 웨이브에 도달하는 게 목표입니다.' },
+  { icon:'🎲', title:'뽑기 & 배치', body:'<b>뽑기</b> 버튼(골드 소모)으로 무작위 ★1 타워를 빈 슬롯에 받습니다 (가끔 ★2). 슬롯을 클릭해 선택하고, 다른 빈 슬롯을 클릭하면 이동/스왑됩니다.' },
+  { icon:'⭐', title:'합성', body:'<b>같은 종류 · 같은 등급 3개</b>가 모이면 격자에 금색 테두리가 깜빡입니다. 그 타워 클릭 → <b>합성 ▶</b>:<br>· <b>EVOLVE</b> 같은 종류 한 단계 위<br>· <b>CONVERT</b> 무작위 다른 종류로<br>· <b>REFUND</b> 골드 환급' },
+  { icon:'🔗', title:'시너지 & 상성', body:'같은 종류 타워가 <b>상하좌우 인접</b>하면 데미지 보너스(종류별 차등). 각 타워는 적 종류에 <b>💪강함 / 🔻약함</b> — FROST→쉴드, RAIL·ROCKET→비행 등. <b>도감(C)</b>에서 전부 확인.' },
+  { icon:'⚡', title:'스킬 & 모디파이어', body:'골드로 <b>액티브 스킬</b>을 씁니다 (💣BOMB · ❄FREEZE · 💰GOLD-RUSH · 🎲REROLL). <b>5웨이브마다</b> 3택 보상(💚이득/❤위험/💛즉시)으로 빌드를 굳혀갑니다.' },
+  { icon:'◆', title:'영구 성장', body:'게임이 끝나면 점수가 <b>◆ CORE</b>로 적립됩니다. 타이틀의 <b>◆ 강화</b>에서 시작 골드·필드 한계·스킬 가속 등을 영구 구매 → 다음 판이 더 강해집니다.' }
+];
+let guideStep = 0;
+
 function init(){
   root = document.getElementById('root');
+  document.getElementById('guide-backdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'guide-backdrop') closeGuide();
+  });
   showTitle();
+  // 첫 방문 시 가이드 자동
+  try {
+    if (localStorage.getItem('roll_defense_seen_tutorial') !== '1') showGuide();
+  } catch(e){}
+}
+
+function showGuide(){
+  guideStep = 0;
+  renderGuide();
+}
+function renderGuide(){
+  const s = TUTORIAL[guideStep];
+  const last = guideStep === TUTORIAL.length - 1;
+  const dots = TUTORIAL.map((_, i) => `<span class="guide-dot ${i === guideStep ? 'on' : ''}"></span>`).join('');
+  const panel = document.getElementById('guide-panel');
+  panel.innerHTML = `
+    <div class="guide-step">GUIDE ${guideStep + 1} / ${TUTORIAL.length}</div>
+    <div class="guide-icon">${s.icon}</div>
+    <h2>${s.title}</h2>
+    <p class="guide-body">${s.body}</p>
+    <div class="guide-dots">${dots}</div>
+    <div class="guide-nav">
+      <button class="guide-btn" id="g-back">${guideStep > 0 ? '이전' : '건너뛰기'}</button>
+      <button class="guide-btn primary" id="g-next">${last ? '시작하기' : '다음'}</button>
+    </div>
+  `;
+  document.getElementById('guide-backdrop').classList.add('on');
+  document.getElementById('g-next').onclick = () => {
+    if (last) closeGuide();
+    else { guideStep++; renderGuide(); }
+  };
+  document.getElementById('g-back').onclick = () => {
+    if (guideStep > 0){ guideStep--; renderGuide(); }
+    else closeGuide();
+  };
+}
+function closeGuide(){
+  document.getElementById('guide-backdrop').classList.remove('on');
+  try { localStorage.setItem('roll_defense_seen_tutorial', '1'); } catch(e){}
 }
 
 function showTitle(){
@@ -958,10 +1048,18 @@ function showTitle(){
           ◆ 강화
         </button>
       </div>
+      <button id="btn-guide" style="
+        margin-top: 8px; width: 100%;
+        background: rgba(40,18,90,.5); color: #9a8cd6;
+        border: 1px solid rgba(160,120,255,.25); border-radius: 10px;
+        padding: 10px; font-weight: 700; cursor: pointer; font-size: 12px;">
+        ❓ 게임 가이드
+      </button>
     </section>
   `;
   document.getElementById('btn-start').onclick = startGame;
   document.getElementById('btn-upgrades').onclick = showUpgrades;
+  document.getElementById('btn-guide').onclick = showGuide;
 }
 
 function showUpgrades(){
