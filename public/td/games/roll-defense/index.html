@@ -358,7 +358,7 @@ const TOWER_STATS = {
     ]
   },
   rail: {
-    name: 'RAIL', color: '#ff5b9c', fire: 'pierce',
+    name: 'RAIL', color: '#ff5b9c', fire: 'pierce', antiAir: true,
     tiers: [
       null,
       { dmg: 14, range: 152, cd: 1.30 },
@@ -380,7 +380,7 @@ const TOWER_STATS = {
     ]
   },
   rocket: {
-    name: 'ROCKET', color: '#ffd96b', fire: 'missile',
+    name: 'ROCKET', color: '#ffd96b', fire: 'missile', antiAir: true,
     tiers: [
       null,
       { dmg: 26, range: 150, cd: 1.6,  missileSpeed: 280, aoeRadius: 38 },
@@ -392,14 +392,22 @@ const TOWER_STATS = {
 };
 const KIND_ORDER = ['pulse', 'burst', 'frost', 'rail', 'guard', 'rocket'];
 
-/* ---------- Enemy stats ---------- */
+/* ---------- Enemy stats ----------
+ * flags:
+ *   split N      → 사망 시 grunt N마리 분열
+ *   shield N     → 쉴드 N부터 차감
+ *   flying true  → antiAir 표시 있는 타워만 명중 가능
+ *   regen N      → 초당 HP 회복 N
+ */
 const ENEMY_STATS = {
   grunt:    { hp:  42, speed: 46, gold:  5, r:  9, color:'#86d6a8', name:'GRUNT',  desc:'기본 적' },
   runner:   { hp:  28, speed: 92, gold:  8, r:  7, color:'#ffd96b', name:'RUNNER', desc:'빠르고 약함' },
   tank:     { hp: 220, speed: 30, gold: 24, r: 13, color:'#ff7799', name:'TANK',   desc:'느리지만 단단함' },
   swift:    { hp: 110, speed: 72, gold: 15, r: 10, color:'#a4ff5c', name:'SWIFT',  desc:'중간 균형' },
   splitter: { hp: 120, speed: 42, gold: 17, r: 11, color:'#c98aff', name:'SPLIT',  desc:'죽으면 그런트 2마리로 분열', split:2 },
-  shielded: { hp:  80, speed: 36, gold: 20, r: 12, color:'#bcc6ff', name:'SHIELD', desc:'쉴드 80을 먼저 깎아야 본체 데미지', shield:80 },
+  shielded: { hp:  80, speed: 36, gold: 20, r: 12, color:'#bcc6ff', name:'SHIELD', desc:'쉴드 80 먼저, 본체 데미지', shield:80 },
+  flying:   { hp:  90, speed: 78, gold: 22, r: 10, color:'#7cc4ff', name:'FLYING', desc:'RAIL · ROCKET만 명중 (안티에어)', flying:true },
+  regen:    { hp: 140, speed: 38, gold: 22, r: 12, color:'#56e6a2', name:'REGEN',  desc:'초당 6 HP 회복 (한 방에 부숴야)', regen:6 },
   boss:     { hp:1100, speed: 28, gold:120, r: 17, color:'#ff5577', name:'BOSS',   desc:'매우 두꺼움' }
 };
 
@@ -412,15 +420,15 @@ const WAVES = [
   [['grunt', 14, 0.45], ['runner', 5, 0.5, 2.0]],
   [['tank', 5, 1.4]],
   [['splitter', 6, 0.9], ['runner', 10, 0.4, 3.0]],
-  [['swift', 10, 0.7]],
+  [['flying', 8, 0.8]],
   [['shielded', 5, 1.2], ['grunt', 12, 0.4, 2.0]],
   [['boss', 1, 0]],
-  [['splitter', 8, 0.8], ['runner', 16, 0.35, 3.0]],
-  [['tank', 7, 1.0], ['shielded', 5, 1.0, 2.0]],
-  [['swift', 16, 0.45], ['grunt', 24, 0.3, 3.0]],
+  [['regen', 6, 1.1], ['runner', 14, 0.4, 2.0]],
+  [['tank', 7, 1.0], ['flying', 8, 0.65, 2.0]],
+  [['swift', 16, 0.45], ['regen', 5, 1.4, 4.0]],
   [['boss', 2, 6.0], ['splitter', 6, 0.7, 4.0]],
-  [['shielded', 8, 0.9], ['tank', 6, 0.8, 2.0], ['swift', 14, 0.45, 4.0]],
-  [['grunt', 32, 0.28], ['runner', 22, 0.32, 3.0], ['splitter', 8, 0.6, 6.0], ['tank', 6, 0.9, 8.0], ['boss', 2, 5.0, 16.0]]
+  [['shielded', 8, 0.9], ['flying', 10, 0.55, 2.0], ['regen', 4, 1.6, 6.0]],
+  [['grunt', 28, 0.3], ['flying', 14, 0.5, 4.0], ['regen', 6, 1.4, 8.0], ['tank', 6, 0.9, 10.0], ['boss', 2, 5.0, 16.0]]
 ];
 
 /* ============================================================
@@ -445,7 +453,11 @@ function pickTierByProb(){
 }
 function statsFor(kind, tier){
   const def = TOWER_STATS[kind];
-  return Object.assign({}, def.tiers[tier], { name: def.name, color: def.color, fire: def.fire, kind, tier });
+  return Object.assign({}, def.tiers[tier], {
+    name: def.name, color: def.color, fire: def.fire,
+    antiAir: !!def.antiAir,
+    kind, tier
+  });
 }
 function loadStats(){
   try {
@@ -525,8 +537,9 @@ function showTitle(){
         <div>· <b>같은 종류 + 같은 등급 3개 → 1단 위로 합성</b> (자동/수동 토글).</div>
         <div>· 적은 격자 외곽 사각 루프를 시계방향으로 <b>빙글빙글</b> 돕니다 (죽지 않으면 영원히).</div>
         <div>· 누적되어 화면에 <b>${ECONOMY.maxAlive}마리 초과</b>하면 즉시 게임 오버.</div>
+        <div>· <b>FLYING</b>은 RAIL · ROCKET (anti-air)만 명중. <b>REGEN</b>은 초당 HP 회복.</div>
         <div>· 슬롯 클릭으로 선택 → 다른 슬롯 클릭으로 이동/스왑, 또는 판매.</div>
-        <div>· 키: <b>R</b> 뽑기 / <b>M</b> 자동합성 / <b>P</b> 일시정지 / <b>F</b> 배속 / <b>Esc</b> 해제</div>
+        <div>· 키: <b>R</b> 뽑기 / <b>M</b> 자동합성 / <b>P</b> 일시정지 / <b>F</b> 배속 / <b>Esc</b> 해제 / <b>C</b> 도감</div>
       </div>
       <button class="btn primary" id="btn-start" style="
         background: linear-gradient(180deg, #c98aff, #7e4ec2);
@@ -746,6 +759,8 @@ function placeTowerIntoSlot(idx, kind, tier){
     name: s.name, color: s.color, fire: s.fire,
     dmg: s.dmg, range: s.range, cd: s.cd,
     aoeRadius: s.aoeRadius, slowDur: s.slowDur, slowFactor: s.slowFactor,
+    missileSpeed: s.missileSpeed,
+    antiAir: !!s.antiAir,
     cooldown: 0,
     angle: 0,
     x: c.x, y: c.y,
@@ -949,9 +964,12 @@ function spawnEnemy(type, atSeg, atProgress){
     color: def.color,
     reward: def.gold,
     split: def.split || 0,
+    flying: !!def.flying,
+    regen: def.regen || 0,
     segIdx, segProgress,
     laps: 0,
-    dead: false
+    dead: false,
+    pulse: Math.random() * Math.PI * 2
   });
 }
 
@@ -1024,6 +1042,7 @@ function fireTower(t, target){
     addExplosion(target.x, target.y, t.aoeRadius, t.color);
     for (const e of state.enemies){
       if (e.dead) continue;
+      if (e.flying && !t.antiAir) continue;
       const dx = e.x - target.x, dy = e.y - target.y;
       if (dx*dx + dy*dy <= t.aoeRadius * t.aoeRadius){
         applyDamage(e, t.dmg);
@@ -1050,6 +1069,7 @@ function fireTower(t, target){
     // 사거리 내 모든 적에게 즉시 데미지 + sweep 확장 링
     for (const e of state.enemies){
       if (e.dead) continue;
+      if (e.flying && !t.antiAir) continue;
       const dx = e.x - t.x, dy = e.y - t.y;
       if (dx*dx + dy*dy < t.range * t.range){
         applyDamage(e, t.dmg);
@@ -1148,7 +1168,7 @@ function step(dt){
     tickSpawns(dt);
   }
 
-  // 적 이동 (사각 루프)
+  // 적 이동 (사각 루프) + regen + pulse
   for (const e of state.enemies){
     if (e.dead) continue;
     const slow = e.slowUntil > state.time ? e.slowFactor : 1;
@@ -1172,6 +1192,12 @@ function step(dt){
     const t = e.segProgress / TRACK_SEG_LEN[e.segIdx];
     e.x = seg.x1 + (seg.x2 - seg.x1) * t;
     e.y = seg.y1 + (seg.y2 - seg.y1) * t;
+
+    // REGEN: 초당 N HP 회복
+    if (e.regen > 0 && e.hp < e.maxHp){
+      e.hp = Math.min(e.maxHp, e.hp + e.regen * dt);
+    }
+    e.pulse = (e.pulse || 0) + dt * 4;
   }
 
   // 사망 처리
@@ -1208,6 +1234,7 @@ function step(dt){
     let best = null, bestProgress = -1;
     for (const e of state.enemies){
       if (e.dead) continue;
+      if (e.flying && !t.antiAir) continue; // 비행체는 anti-air 타워만 사격
       const dx = e.x - t.x, dy = e.y - t.y;
       const d2 = dx*dx + dy*dy;
       if (d2 > t.range * t.range) continue;
@@ -1979,6 +2006,51 @@ function drawEnemyShape(c, x, y, type, color, r, time){
     c.lineTo(-r * 0.5, -r * 0.2);
     c.closePath();
     c.fill();
+  } else if (type === 'flying'){
+    // 본체: 위쪽으로 들린 화살촉 + 아래쪽 그림자 (떠있는 느낌)
+    c.save();
+    c.translate(0, -2);
+    c.beginPath();
+    c.moveTo(r, 0);
+    c.lineTo(-r * 0.6, r * 0.7);
+    c.lineTo(-r * 0.15, 0);
+    c.lineTo(-r * 0.6, -r * 0.7);
+    c.closePath();
+    c.fill();
+    // 위쪽 작은 글로우 점 (날개 끝)
+    c.fillStyle = 'rgba(255,255,255,.55)';
+    c.beginPath();
+    c.arc(-r * 0.5, -r * 0.55, 1.5, 0, Math.PI * 2);
+    c.arc(-r * 0.5,  r * 0.55, 1.5, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+    // 그림자 (그라운드 아래 작은 타원)
+    c.shadowBlur = 0;
+    c.fillStyle = 'rgba(0,0,0,.45)';
+    c.beginPath();
+    c.ellipse(0, r + 5, r * 0.55, 1.6, 0, 0, Math.PI * 2);
+    c.fill();
+  } else if (type === 'regen'){
+    // 큰 원 + 회전 십자(+)
+    c.beginPath();
+    c.arc(0, 0, r, 0, Math.PI * 2);
+    c.fill();
+    const spin = time * 1.2;
+    c.save();
+    c.rotate(spin);
+    c.fillStyle = '#fff';
+    c.fillRect(-r * 0.65, -1.5, r * 1.3, 3);
+    c.fillRect(-1.5, -r * 0.65, 3, r * 1.3);
+    c.restore();
+    // 박동하는 외곽 ring
+    const pulseA = 0.4 + 0.4 * Math.sin(time * 3);
+    c.strokeStyle = '#fff';
+    c.globalAlpha = pulseA;
+    c.lineWidth = 1;
+    c.beginPath();
+    c.arc(0, 0, r + 2, 0, Math.PI * 2);
+    c.stroke();
+    c.globalAlpha = 1;
   } else if (type === 'boss'){
     // 회전 별 + 안쪽 코어
     c.rotate(time * 0.6);
