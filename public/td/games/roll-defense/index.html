@@ -618,7 +618,16 @@ const ENEMY_STATS = {
   shielded: { hp:  80, speed: 36, gold: 20, r: 12, color:'#bcc6ff', name:'SHIELD', desc:'쉴드 80 먼저, 본체 데미지', shield:80 },
   flying:   { hp:  90, speed: 78, gold: 22, r: 10, color:'#7cc4ff', name:'FLYING', desc:'RAIL · ROCKET만 명중 (안티에어)', flying:true },
   regen:    { hp: 140, speed: 38, gold: 22, r: 12, color:'#56e6a2', name:'REGEN',  desc:'초당 6 HP 회복 (한 방에 부숴야)', regen:6 },
-  boss:     { hp:1100, speed: 28, gold:120, r: 17, color:'#ff5577', name:'BOSS',   desc:'매우 두꺼움' }
+  boss:     { hp:1100, speed: 28, gold:120, r: 17, color:'#ff5577', name:'BOSS',   desc:'매우 두꺼움 · 무작위 능력 (소환/치유/수호/질주)', boss:true }
+};
+
+/* ---------- Boss abilities ---------- */
+const BOSS_ABILITIES = ['summon', 'heal', 'warden', 'rush'];
+const BOSS_ABILITY_INFO = {
+  summon: { name:'소환', color:'#86d6a8', desc:'주변에 그런트 소환' },
+  heal:   { name:'치유', color:'#56e6a2', desc:'주변 적 HP 회복' },
+  warden: { name:'수호', color:'#bcc6ff', desc:'주변 적에 쉴드 부여' },
+  rush:   { name:'질주', color:'#ffd96b', desc:'주변 적 슬로우 해제 + 가속' }
 };
 
 /* ---------- Waves ---------- */
@@ -807,6 +816,7 @@ function showTitle(){
         <div>· <b>1~15웨이브</b>는 정해진 패턴. <b>16웨이브부터는 무한 절차 생성</b>으로 끝없이 진행됩니다.</div>
         <div>· 사이클(5웨이브)마다 적 HP <b>+18%</b>, 골드 보상 +8%, REGEN 회복 +10% 누적.</div>
         <div>· 5의 배수 웨이브는 <b>보스 웨이브</b>. 사이클이 깊어질수록 보스 수도 늘어남.</div>
+        <div>· 보스는 <b>무작위 능력</b> 보유: ★소환(그런트) / ★치유(주변 HP) / ★수호(쉴드 부여) / ★질주(슬로우 해제+가속).</div>
         <div>· <b>WAVE 15</b> + 매 <b>25웨이브</b>마다 마일스톤 골드+스코어 보너스.</div>
         <div>· 라이프 = 필드 적 수가 <b>${ECONOMY.maxAlive}마리</b> 넘는 순간 종료. 도달 웨이브가 곧 점수.</div>
       </div>
@@ -1702,11 +1712,68 @@ function spawnEnemy(type, atSeg, atProgress){
     split: def.split || 0,
     flying: !!def.flying,
     regen: (def.regen || 0) * regenMult,
+    rushUntil: 0,
     segIdx, segProgress,
     laps: 0,
     dead: false,
-    pulse: Math.random() * Math.PI * 2
+    pulse: Math.random() * Math.PI * 2,
+    bossAbility: def.boss ? BOSS_ABILITIES[Math.floor(Math.random() * BOSS_ABILITIES.length)] : null,
+    abilityTimer: 4,
+    abilityFlash: 0
   });
+}
+
+function bossAbilityInterval(){
+  return 5.0;
+}
+
+function triggerBossAbility(boss){
+  const cycle = Math.max(0, state.waveIdx - WAVES.length);
+  const tier = Math.floor(cycle / 5);
+  const info = BOSS_ABILITY_INFO[boss.bossAbility];
+  boss.abilityFlash = 0.6;
+  if (boss.bossAbility === 'summon'){
+    const n = 2 + Math.floor(tier / 2);
+    for (let i = 0; i < n; i++){
+      spawnEnemy('grunt', boss.segIdx, Math.max(0, boss.segProgress - 6 - i * 5));
+    }
+    addExplosion(boss.x, boss.y, 34, info.color);
+  } else if (boss.bossAbility === 'heal'){
+    const R = 92;
+    for (const e of state.enemies){
+      if (e.dead || e === boss) continue;
+      const dx = e.x - boss.x, dy = e.y - boss.y;
+      if (dx*dx + dy*dy < R*R){
+        e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.25);
+      }
+    }
+    boss.hp = Math.min(boss.maxHp, boss.hp + boss.maxHp * 0.05);
+    addExplosion(boss.x, boss.y, R, info.color);
+  } else if (boss.bossAbility === 'warden'){
+    const R = 100;
+    for (const e of state.enemies){
+      if (e.dead || e === boss) continue;
+      const dx = e.x - boss.x, dy = e.y - boss.y;
+      if (dx*dx + dy*dy < R*R){
+        const amt = Math.floor(e.maxHp * 0.4);
+        e.shield = Math.max(e.shield, amt);
+        e.maxShield = Math.max(e.maxShield, amt);
+      }
+    }
+    addExplosion(boss.x, boss.y, R, info.color);
+  } else if (boss.bossAbility === 'rush'){
+    const R = 110;
+    for (const e of state.enemies){
+      if (e.dead) continue;
+      const dx = e.x - boss.x, dy = e.y - boss.y;
+      if (dx*dx + dy*dy < R*R){
+        e.slowUntil = 0;
+        e.rushUntil = state.time + 3;
+      }
+    }
+    addExplosion(boss.x, boss.y, R, info.color);
+  }
+  floatAt(boss.x, boss.y - boss.r - 8, info.name + '!', info.color);
 }
 
 function applyDamage(e, dmg){
@@ -1952,7 +2019,8 @@ function step(dt){
   for (const e of state.enemies){
     if (e.dead) continue;
     const slow = e.slowUntil > state.time ? e.slowFactor : 1;
-    let remaining = e.speed * slow * dt;
+    const rush = e.rushUntil > state.time ? 1.6 : 1;
+    let remaining = e.speed * slow * rush * dt;
     let guard = 0;
     while (remaining > 0 && guard < 8){
       const segLen = TRACK_SEG_LEN[e.segIdx];
@@ -1978,6 +2046,18 @@ function step(dt){
       e.hp = Math.min(e.maxHp, e.hp + e.regen * dt);
     }
     e.pulse = (e.pulse || 0) + dt * 4;
+  }
+
+  // 보스 능력 (역순회 — triggerBossAbility가 spawn으로 배열 push 가능)
+  for (let i = state.enemies.length - 1; i >= 0; i--){
+    const e = state.enemies[i];
+    if (e.dead || !e.bossAbility) continue;
+    if (e.abilityFlash > 0) e.abilityFlash = Math.max(0, e.abilityFlash - dt);
+    e.abilityTimer -= dt;
+    if (e.abilityTimer <= 0){
+      e.abilityTimer = bossAbilityInterval();
+      triggerBossAbility(e);
+    }
   }
 
   // 스킬 쿨다운 차감
@@ -2833,7 +2913,45 @@ function drawTierPips(ctx, t){
 }
 
 function drawEnemy(e){
+  // 보스 능력 오라 ring + 이름
+  if (e.bossAbility){
+    const info = BOSS_ABILITY_INFO[e.bossAbility];
+    const flashR = e.abilityFlash > 0 ? 24 * e.abilityFlash : 0;
+    const pulseR = e.r + 7 + Math.sin(state.time * 3) * 3 + flashR;
+    ctx.save();
+    ctx.strokeStyle = info.color;
+    ctx.globalAlpha = 0.45 + (e.abilityFlash > 0 ? 0.45 : 0.15);
+    ctx.lineWidth = 2;
+    ctx.shadowColor = info.color;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, pulseR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle = info.color;
+    ctx.font = '800 9px "Pretendard", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur = 3;
+    ctx.fillText('★' + info.name, e.x, e.y - e.r - 12);
+    ctx.restore();
+  }
+
   drawEnemyShape(ctx, e.x, e.y, e.type, e.color, e.r, state.time);
+
+  // rush 가속 인디케이터
+  if (e.rushUntil > state.time){
+    ctx.save();
+    ctx.strokeStyle = '#ffd96b';
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.r + 5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // 슬로우 인디케이터
   if (e.slowUntil > state.time){
