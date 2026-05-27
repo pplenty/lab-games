@@ -363,6 +363,28 @@
     padding: 6px 0;
     transition: height .1s linear;
   }
+
+  /* Upgrade list (meta) */
+  .upgrade-list{ display:flex; flex-direction:column; gap:8px; margin: 10px 0; text-align:left; }
+  .upgrade-card{
+    display:flex; align-items:center; gap:10px;
+    background: rgba(20,8,50,.6);
+    border: 1px solid rgba(160,120,255,.25);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .up-icon{ font-size: 22px; width: 28px; text-align:center; flex-shrink: 0; }
+  .up-info{ flex: 1; min-width: 0; }
+  .up-name{ font-weight: 800; color: #fff; font-size: 13px; }
+  .up-lv{ color: #9a8cd6; font-size: 11px; margin-left: 4px; font-weight: 600; }
+  .up-effect{ color: #c0b8e4; font-size: 11px; margin-top: 2px; line-height: 1.4; }
+  .up-buy{
+    background: linear-gradient(180deg,#ffd96b,#c08a1a);
+    color: #1a0b30; border: 0; border-radius: 8px;
+    padding: 8px 12px; font: inherit; font-weight: 900; cursor: pointer;
+    font-size: 12px; white-space: nowrap; min-width: 56px; flex-shrink: 0;
+  }
+  .up-buy:disabled{ background: rgba(80,60,120,.5); color: #9a8cd6; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -386,6 +408,31 @@
 
 const W = 480, H = 640;
 const KEY = 'roll_defense_stats';
+const META_KEY = 'roll_defense_meta';
+
+/* ---------- Meta progression (permanent) ---------- */
+const CORE_PER_SCORE = 80;   // score / 80 = cores earned
+const UPGRADES = {
+  gold:   { name:'시작 골드', icon:'💰', max:5, baseCost:40, costInc:30, fmt:(lv)=>`+${lv*15}g 시작` },
+  cap:    { name:'필드 한계', icon:'🛡', max:5, baseCost:60, costInc:45, fmt:(lv)=>`maxAlive +${lv*4}` },
+  haste:  { name:'스킬 가속', icon:'⚡', max:4, baseCost:70, costInc:55, fmt:(lv)=>`스킬 쿨다운 -${lv*10}%` },
+  luck:   { name:'행운 뽑기', icon:'🎲', max:5, baseCost:55, costInc:45, fmt:(lv)=>`2성 확률 +${lv*2}%` },
+  refund: { name:'합성 환급', icon:'♻', max:3, baseCost:50, costInc:45, fmt:(lv)=>`환급 +${lv*8}%` }
+};
+const UPGRADE_ORDER = ['gold', 'cap', 'haste', 'luck', 'refund'];
+function upgradeCost(key, lv){ return UPGRADES[key].baseCost + lv * UPGRADES[key].costInc; }
+
+function loadMeta(){
+  try {
+    const raw = localStorage.getItem(META_KEY);
+    if (raw) return Object.assign({ cores: 0, up: {}, bestScore: 0, bestWave: 0 }, JSON.parse(raw));
+  } catch(e){}
+  return { cores: 0, up: {}, bestScore: 0, bestWave: 0 };
+}
+function saveMeta(m){
+  try { localStorage.setItem(META_KEY, JSON.stringify(m)); } catch(e){}
+}
+function upLevel(meta, key){ return (meta.up && meta.up[key]) || 0; }
 
 /* ---------- Layout ---------- */
 const CELL = 44;
@@ -607,11 +654,16 @@ function weightedPick(weights){
   return Object.keys(weights)[0];
 }
 function pickTierByProb(){
+  // luck 업그레이드: 1성 확률에서 luck만큼 2성으로 이동
+  const luck = (state && state.meta) ? upLevel(state.meta, 'luck') * 0.02 : 0;
+  const p1 = Math.max(0, TIER_ROLL_PROB[0] - luck);
+  const p2 = (TIER_ROLL_PROB[1] || 0) + luck;
   let r = Math.random();
-  for (let t = 0; t < TIER_ROLL_PROB.length; t++){
-    if (r < TIER_ROLL_PROB[t]) return t + 1;
-    r -= TIER_ROLL_PROB[t];
-  }
+  if (r < p1) return 1;
+  r -= p1;
+  if (r < p2) return 2;
+  r -= p2;
+  if (r < (TIER_ROLL_PROB[2] || 0)) return 3;
   return 1;
 }
 function statsFor(kind, tier){
@@ -687,13 +739,15 @@ function init(){
 
 function showTitle(){
   if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
-  const best = loadStats();
+  const meta = loadMeta();
+  const upTotal = UPGRADE_ORDER.reduce((s, k) => s + upLevel(meta, k), 0);
   root.innerHTML = `
     <section id="title">
       <span class="badge">RANDOM · TOWER DEFENSE</span>
       <h1>롤 디펜스</h1>
       <p>스타2 랜덤 타워 디펜스 풍.<br>뽑기로 받은 타워를 합성해 더 강한 등급으로.</p>
-      ${best.bestScore > 0 ? `<div class="ribbon">B E S T &nbsp; ${best.bestScore} (W${best.bestWave})</div>` : ''}
+      ${meta.bestScore > 0 ? `<div class="ribbon">BEST ${meta.bestScore} · W${meta.bestWave}</div>` : ''}
+      <div style="color:#ffd96b; font-weight:800; margin: 10px 0 2px; font-size:15px;">◆ CORE ${meta.cores}${upTotal > 0 ? ` <span style="color:#9a8cd6; font-size:11px;">· 강화 Lv ${upTotal}</span>` : ''}</div>
       <div class="rules">
         <h3>T O W E R S &nbsp;·&nbsp; 7 K I N D S</h3>
         <div class="row"><span class="sw" style="background:#5cd6ea"></span>
@@ -756,21 +810,94 @@ function showTitle(){
         <div>· <b>WAVE 15</b> + 매 <b>25웨이브</b>마다 마일스톤 골드+스코어 보너스.</div>
         <div>· 라이프 = 필드 적 수가 <b>${ECONOMY.maxAlive}마리</b> 넘는 순간 종료. 도달 웨이브가 곧 점수.</div>
       </div>
-      <button class="btn primary" id="btn-start" style="
-        background: linear-gradient(180deg, #c98aff, #7e4ec2);
-        color: #fff; border: 1px solid #c98aff;
-        border-radius: 10px; padding: 14px; width: 100%;
-        font-weight: 900; letter-spacing:.05em; cursor: pointer; font-size: 14px;">
-        출 발
-      </button>
+      <div style="display:flex; gap:8px; margin-top: 4px;">
+        <button class="btn primary" id="btn-start" style="
+          flex: 2; background: linear-gradient(180deg, #c98aff, #7e4ec2);
+          color: #fff; border: 1px solid #c98aff;
+          border-radius: 10px; padding: 14px;
+          font-weight: 900; letter-spacing:.05em; cursor: pointer; font-size: 14px;">
+          출 발
+        </button>
+        <button id="btn-upgrades" style="
+          flex: 1; background: linear-gradient(180deg,#ffd96b,#c08a1a);
+          color: #1a0b30; border: 1px solid #ffd96b;
+          border-radius: 10px; padding: 14px;
+          font-weight: 900; cursor: pointer; font-size: 13px;">
+          ◆ 강화
+        </button>
+      </div>
     </section>
   `;
   document.getElementById('btn-start').onclick = startGame;
+  document.getElementById('btn-upgrades').onclick = showUpgrades;
+}
+
+function showUpgrades(){
+  if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
+  const meta = loadMeta();
+  root.innerHTML = `
+    <section id="title">
+      <span class="badge">META · 영구 강화</span>
+      <h1 style="font-size:28px;">강화</h1>
+      <div style="color:#ffd96b; font-weight:900; font-size:18px; margin: 6px 0 14px;">◆ CORE ${meta.cores}</div>
+      <div class="upgrade-list">
+        ${UPGRADE_ORDER.map(key => {
+          const u = UPGRADES[key];
+          const lv = upLevel(meta, key);
+          const maxed = lv >= u.max;
+          const cost = upgradeCost(key, lv);
+          const afford = meta.cores >= cost && !maxed;
+          return `
+            <div class="upgrade-card">
+              <div class="up-icon">${u.icon}</div>
+              <div class="up-info">
+                <div class="up-name">${u.name} <span class="up-lv">Lv.${lv}/${u.max}</span></div>
+                <div class="up-effect">${maxed ? '최대치 도달' : (lv > 0 ? u.fmt(lv) + ' → ' : '') + u.fmt(lv + 1)}</div>
+              </div>
+              <button class="up-buy" data-up="${key}" ${maxed || !afford ? 'disabled' : ''}>
+                ${maxed ? 'MAX' : '◆ ' + cost}
+              </button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div style="color:#9a8cd6; font-size:11px; margin: 8px 0 14px; line-height:1.6;">
+        코어는 게임 종료 시 점수 ÷ ${CORE_PER_SCORE} 만큼 적립됩니다. 강화는 영구 적용.
+      </div>
+      <button id="btn-back" style="
+        background: rgba(40,18,90,.7); color:#d8d0ff;
+        border: 1px solid rgba(160,120,255,.4); border-radius: 10px;
+        padding: 12px; width: 100%; font-weight: 800; cursor: pointer; font-size: 13px;">
+        ← 타이틀
+      </button>
+    </section>
+  `;
+  root.querySelectorAll('.up-buy[data-up]').forEach(b => {
+    if (!b.disabled) b.onclick = () => buyUpgrade(b.dataset.up);
+  });
+  document.getElementById('btn-back').onclick = showTitle;
+}
+
+function buyUpgrade(key){
+  const meta = loadMeta();
+  const lv = upLevel(meta, key);
+  const u = UPGRADES[key];
+  if (lv >= u.max) return;
+  const cost = upgradeCost(key, lv);
+  if (meta.cores < cost) return;
+  meta.cores -= cost;
+  if (!meta.up) meta.up = {};
+  meta.up[key] = lv + 1;
+  saveMeta(meta);
+  showUpgrades();
 }
 
 function startGame(){
+  const meta = loadMeta();
   state = {
-    gold: ECONOMY.startGold,
+    meta,
+    gold: ECONOMY.startGold + upLevel(meta, 'gold') * 15,
+    maxAlive: ECONOMY.maxAlive + upLevel(meta, 'cap') * 4,
     score: 0,
     waveIdx: 0,
     wavesCleared: 0,
@@ -809,7 +936,7 @@ function buildLayout(){
   root.innerHTML = `
     <div class="hud">
       <div class="stat gold"><span class="l">GOLD</span><span class="v" id="hud-gold">0</span></div>
-      <div class="stat lives"><span class="l">FIELD</span><span class="v" id="hud-field">0/${ECONOMY.maxAlive}</span></div>
+      <div class="stat lives"><span class="l">FIELD</span><span class="v" id="hud-field">0/${state.maxAlive}</span></div>
       <div class="stat wave"><span class="l">WAVE</span><span class="v" id="hud-wave">1/15</span></div>
       <div class="stat speed"><span class="l">SPEED</span><span class="v" id="hud-speed">1×</span></div>
     </div>
@@ -907,7 +1034,7 @@ function useSkill(key){
     return;
   }
   state.gold -= s.cost;
-  state.skillCd[key] = s.cooldown;
+  state.skillCd[key] = s.cooldown * (1 - upLevel(state.meta, 'haste') * 0.10);
   if (key === 'bomb')          fireBomb();
   else if (key === 'freeze')   fireFreeze();
   else if (key === 'goldRush') startGoldRush();
@@ -1205,7 +1332,7 @@ function openMergeModal(kind, tier){
   if (!group || tier >= 4) return;
   state.mergeModalGroup = { kind, tier, group };
   const def = TOWER_STATS[kind];
-  const refundAmt = Math.floor(towerCost(kind, tier) * 3 * 0.8);
+  const refundAmt = Math.floor(towerCost(kind, tier) * 3 * refundRate(0.8));
   const nextStars = '★'.repeat(tier + 1);
   const panel = document.getElementById('merge-panel');
   panel.innerHTML = `
@@ -1302,7 +1429,7 @@ function performMergeAction(action){
     floatAt(state.slots[a].x, state.slots[a].y - 12, '→ ' + state.slots[a].name + ' ★' + (tier + 1), '#c98aff');
     state.gold += ECONOMY.mergeBonusGold;
   } else if (action === 'refund'){
-    const refund = Math.floor(towerCost(kind, tier) * 3 * 0.8);
+    const refund = Math.floor(towerCost(kind, tier) * 3 * refundRate(0.8));
     state.slots[a] = null;
     state.slots[b] = null;
     state.slots[cIdx] = null;
@@ -1372,7 +1499,7 @@ function refreshPanel(){
     return;
   }
   const t = state.slots[state.selectedSlot];
-  const refund = Math.floor(towerCost(t.kind, t.tier) * 0.5);
+  const refund = Math.floor(towerCost(t.kind, t.tier) * refundRate(0.5));
   const tierStars = '★'.repeat(t.tier);
   const synMult = synergyDmgMult(t);
   const synPer = (KIND_SYNERGY[t.kind] && KIND_SYNERGY[t.kind].dmg) || ADJ_BONUS_PER;
@@ -1416,11 +1543,14 @@ function towerCost(kind, tier){
   // 합성 비용 누적: tier 1 기준 12g, tier 2는 ~36g, tier 3 ~108g, tier 4 ~324g
   return Math.floor(ECONOMY.rollBaseCost * Math.pow(3, tier - 1));
 }
+function refundRate(base){
+  return base + upLevel(state.meta, 'refund') * 0.08;
+}
 function sellSelected(){
   const idx = state.selectedSlot;
   if (idx < 0 || !state.slots[idx]) return;
   const t = state.slots[idx];
-  const refund = Math.floor(towerCost(t.kind, t.tier) * 0.5);
+  const refund = Math.floor(towerCost(t.kind, t.tier) * refundRate(0.5));
   state.gold += refund;
   floatAt(t.x, t.y, '+' + refund + 'g', '#ffd96b');
   state.slots[idx] = null;
@@ -1611,7 +1741,7 @@ function endWave(){
 function winGame(){
   state.waveState = 'won';
   // 보너스: 화면이 깨끗할수록 + 남은 골드
-  const cleanBonus = Math.max(0, ECONOMY.maxAlive - state.enemies.length) * 20;
+  const cleanBonus = Math.max(0, state.maxAlive - state.enemies.length) * 20;
   state.score += cleanBonus + state.gold;
   finishUI(true);
 }
@@ -1622,27 +1752,31 @@ function loseGame(){
 function finishUI(won){
   if (rafId){ cancelAnimationFrame(rafId); rafId = null; }
   document.removeEventListener('keydown', onKey);
-  const best = loadStats();
-  const isBest = state.score > best.bestScore;
-  saveStats({
-    played: best.played + 1,
-    bestScore: Math.max(best.bestScore, state.score),
-    bestWave: Math.max(best.bestWave, state.wavesCleared)
-  });
+  // 메타 적립 (영구 통화)
+  const earned = Math.floor(state.score / CORE_PER_SCORE);
+  const meta = state.meta || loadMeta();
+  meta.cores = (meta.cores || 0) + earned;
+  const isBest = state.score > (meta.bestScore || 0);
+  meta.bestScore = Math.max(meta.bestScore || 0, state.score);
+  meta.bestWave = Math.max(meta.bestWave || 0, state.wavesCleared);
+  saveMeta(meta);
   const reached = state.wavesCleared >= WAVES.length
     ? `Wave <b>${state.wavesCleared}</b> 도달 <span style="color:#c98aff">∞</span>`
     : `Wave <b>${state.wavesCleared}/${WAVES.length}</b>`;
   setOverlay(`
     <h2>${won ? '🏆 클리어!' : '💥 격침'}</h2>
-    <p>${reached} · 필드 ${state.enemies.length}/${ECONOMY.maxAlive} · 골드 ${state.gold}</p>
+    <p>${reached} · 필드 ${state.enemies.length}/${state.maxAlive} · 골드 ${state.gold}</p>
     <div style="font-size:42px; font-weight:900; color:${won ? '#c98aff' : '#ff7799'}; margin: 12px 0; line-height:1; font-variant-numeric: tabular-nums;">${state.score}</div>
+    <div style="color:#ffd96b; font-weight:800; margin-bottom: 6px;">◆ CORE +${earned} <span style="color:#9a8cd6; font-weight:600;">(보유 ${meta.cores})</span></div>
     ${isBest ? '<div class="ribbon">NEW BEST</div>' : ''}
-    <div style="margin-top: 16px;">
+    <div style="margin-top: 14px;">
       <button class="btn primary" id="ov-again" style="margin-right: 6px; background: linear-gradient(180deg, #c98aff, #7e4ec2); color:#fff; border:1px solid #c98aff; padding: 10px 16px; border-radius: 10px; font-weight: 900;">다시</button>
+      <button class="btn" id="ov-up" style="margin-right: 6px; background: linear-gradient(180deg,#ffd96b,#c08a1a); color:#1a0b30; border:1px solid #ffd96b; padding: 10px 16px; border-radius: 10px; font-weight: 900;">◆ 강화</button>
       <button class="btn" id="ov-home" style="background: rgba(40,18,90,.7); color:#d8d0ff; border:1px solid rgba(160,120,255,.3); padding: 10px 16px; border-radius: 10px; font-weight: 800;">홈</button>
     </div>
   `, true);
   document.getElementById('ov-again').onclick = startGame;
+  document.getElementById('ov-up').onclick = showUpgrades;
   document.getElementById('ov-home').onclick = showTitle;
 }
 
@@ -1878,7 +2012,7 @@ function step(dt){
   for (const s of newSpawns) spawnEnemy(s.type, s.segIdx, s.segProgress);
 
   // 동시 적 수 초과 시 게임 오버
-  if (state.enemies.length > ECONOMY.maxAlive){
+  if (state.enemies.length > state.maxAlive){
     loseGame();
     return;
   }
@@ -2233,10 +2367,9 @@ function render(){
   // HUD 업데이트
   hudEls.gold.textContent = state.gold;
   const alive = state.enemies.length;
-  hudEls.field.textContent = alive + '/' + ECONOMY.maxAlive;
-  hudEls.field.style.color = alive >= ECONOMY.warnAlive ? '#ff7799' : (alive >= ECONOMY.warnAlive * 0.65 ? '#ffd96b' : '#ff7799');
-  // 평상시엔 분홍, 안전권엔 흰색에 가깝게
-  if (alive < ECONOMY.warnAlive * 0.5) hudEls.field.style.color = '#fff';
+  hudEls.field.textContent = alive + '/' + state.maxAlive;
+  const warn = state.maxAlive * 0.74;
+  hudEls.field.style.color = alive >= warn ? '#ff7799' : (alive >= warn * 0.65 ? '#ffd96b' : '#fff');
   {
     const cur = state.waveState === 'wave' ? (state.waveIdx + 1) : (state.wavesCleared + (state.waveState === 'between' ? 1 : 0));
     hudEls.wave.textContent = state.wavesCleared >= WAVES.length
