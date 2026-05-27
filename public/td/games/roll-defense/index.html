@@ -259,6 +259,79 @@
     font-size: 13px;
   }
   .codex-close:hover{ background: rgba(80,40,160,1); }
+
+  /* Merge modal */
+  .merge-backdrop{
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.78);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 220;
+    padding: 20px;
+  }
+  .merge-backdrop.on{ display: flex; }
+  .merge-panel{
+    background: linear-gradient(180deg, rgba(40,18,90,.97), rgba(20,8,50,.97));
+    border: 1px solid rgba(255,217,107,.5);
+    border-radius: 14px;
+    box-shadow: 0 30px 60px rgba(40,10,80,.6);
+    max-width: 380px;
+    width: 100%;
+    padding: 20px 22px;
+    color: #d8d0ff;
+    text-align: center;
+  }
+  .merge-panel h2{
+    font-size: 16px; margin-bottom: 6px;
+    letter-spacing: .04em; color: #fff;
+  }
+  .merge-panel .sub{ font-size: 11px; color: #9a8cd6; margin-bottom: 6px; }
+  .merge-preview{
+    display: flex; align-items: center; justify-content: center;
+    gap: 4px; margin: 8px 0 14px;
+  }
+  .merge-preview-card{
+    background: rgba(20,8,50,.7);
+    border: 1px solid rgba(160,120,255,.3);
+    border-radius: 8px;
+    padding: 6px;
+    min-width: 52px;
+  }
+  .merge-preview-card canvas{ display: block; margin: 0 auto; }
+  .merge-preview-card .stars{ font-size: 9px; color: #ffd96b; margin-top: 2px; }
+  .merge-preview .arrow{ font-size: 18px; color: #ffd96b; font-weight: 800; padding: 0 4px; }
+  .merge-option{
+    display: block; width: 100%;
+    background: rgba(40,18,90,.7);
+    color: #d8d0ff;
+    border: 1px solid rgba(200,180,255,.3);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font: inherit; font-weight: 800;
+    cursor: pointer;
+    margin-bottom: 6px;
+    transition: all .12s;
+    text-align: left;
+  }
+  .merge-option:hover{ background: rgba(60,28,120,.95); border-color: #c98aff; }
+  .merge-option .opt-label{ display: block; color: #fff; font-size: 13px; }
+  .merge-option .opt-desc{ display: block; color: #9a8cd6; font-size: 10px; margin-top: 3px; font-weight: 600; line-height: 1.4; }
+  .merge-option.evolve  .opt-label{ color: #5cd6ea; }
+  .merge-option.convert .opt-label{ color: #c98aff; }
+  .merge-option.refund  .opt-label{ color: #ffd96b; }
+  .merge-cancel{
+    background: transparent;
+    color: #9a8cd6;
+    border: 1px solid rgba(160,120,255,.3);
+    border-radius: 10px;
+    padding: 8px;
+    font: inherit; font-size: 11px;
+    cursor: pointer;
+    margin-top: 4px;
+    width: 100%;
+  }
+  .merge-cancel:hover{ color: #d8d0ff; border-color: #c98aff; }
 </style>
 </head>
 <body>
@@ -587,7 +660,7 @@ function startGame(){
   state = {
     gold: ECONOMY.startGold,
     score: 0,
-    waveIdx: 0,             // 0..14
+    waveIdx: 0,
     wavesCleared: 0,
     rollCount: 0,
     rollCost: ECONOMY.rollBaseCost,
@@ -601,15 +674,16 @@ function startGame(){
     sweeps: [],
     spawnEntries: [],
     entryIdx: 0,
-    waveState: 'between',   // 'between' | 'wave' | 'won' | 'lost'
-    betweenTimer: 2.0,      // 게임 시작 시 2초 후 첫 웨이브
+    waveState: 'between',
+    betweenTimer: 2.0,
     paused: false,
     speed: 1,
-    autoMerge: true,
+    autoMerge: false,        // 기본 수동 — 합성이 진짜 결정이 되도록
     selectedSlot: -1,
     hoverSlot: -1,
     time: 0,
-    codexOpen: false
+    codexOpen: false,
+    mergeModalGroup: null
   };
   buildLayout();
   bindEvents();
@@ -631,17 +705,20 @@ function buildLayout(){
     <div class="selected-panel" id="panel"></div>
     <div class="controls">
       <button class="btn primary" id="btn-roll">뽑기 (12g)</button>
-      <button class="btn active" id="btn-merge">자동합성</button>
+      <button class="btn" id="btn-merge">자동합성 OFF</button>
       <button class="btn" id="btn-codex">도감</button>
       <button class="btn" id="btn-pause">일시정지</button>
       <button class="btn" id="btn-speed">2×</button>
       <button class="btn" id="btn-quit">그만</button>
     </div>
     <div class="info">
-      슬롯 클릭=선택/이동 · 단축키: R 뽑기 / M 자동합성 / P 일시 / F 배속 / Esc / C 도감
+      슬롯 클릭=선택, 합성 가능 시 패널에서 분기 선택 · 단축키: R 뽑기 / M 자동합성 / P 일시 / F 배속 / C 도감 / Esc
     </div>
     <div class="codex-backdrop" id="codex-backdrop">
       <div class="codex-panel" id="codex-panel"></div>
+    </div>
+    <div class="merge-backdrop" id="merge-backdrop">
+      <div class="merge-panel" id="merge-panel"></div>
     </div>
   `;
   hudEls = {
@@ -679,6 +756,9 @@ function bindEvents(){
   document.getElementById('codex-backdrop').addEventListener('click', (e) => {
     if (e.target.id === 'codex-backdrop') closeCodex();
   });
+  document.getElementById('merge-backdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'merge-backdrop') closeMergeModal();
+  });
 
   document.addEventListener('keydown', onKey);
   canvas.addEventListener('mousemove', onMove);
@@ -694,6 +774,8 @@ function onKey(e){
   else if (e.code === 'KeyF'){ toggleSpeed(); e.preventDefault(); }
   else if (e.code === 'KeyC'){ toggleCodex(); e.preventDefault(); }
   else if (e.code === 'Escape'){
+    const mb = document.getElementById('merge-backdrop');
+    if (mb && mb.classList.contains('on')){ closeMergeModal(); return; }
     const cb = document.getElementById('codex-backdrop');
     if (cb && cb.classList.contains('on')){ closeCodex(); return; }
     state.selectedSlot = -1;
@@ -854,6 +936,141 @@ function doRoll(){
   if (state.autoMerge) tryAutoMerge();
 }
 
+function findMergeGroup(kind, tier){
+  const result = [];
+  for (let i = 0; i < state.slots.length; i++){
+    const t = state.slots[i];
+    if (t && t.kind === kind && t.tier === tier){
+      result.push(i);
+      if (result.length >= 3) break;
+    }
+  }
+  return result.length >= 3 ? result : null;
+}
+
+function canMergeTower(t){
+  if (!t || t.tier >= 4) return false;
+  return !!findMergeGroup(t.kind, t.tier);
+}
+
+function openMergeModal(kind, tier){
+  const group = findMergeGroup(kind, tier);
+  if (!group || tier >= 4) return;
+  state.mergeModalGroup = { kind, tier, group };
+  const def = TOWER_STATS[kind];
+  const refundAmt = Math.floor(towerCost(kind, tier) * 3 * 0.8);
+  const nextStars = '★'.repeat(tier + 1);
+  const panel = document.getElementById('merge-panel');
+  panel.innerHTML = `
+    <h2 style="color:${def.color};">${def.name} ★${'★'.repeat(tier).slice(0)} · 합성 분기</h2>
+    <div class="sub">3장의 ${def.name} ★${tier}을 어떻게 처리할까?</div>
+    <div class="merge-preview">
+      <div class="merge-preview-card"><canvas data-prev="curr"></canvas><div class="stars">★${tier} ×3</div></div>
+      <div class="arrow">→</div>
+      <div class="merge-preview-card"><canvas data-prev="next"></canvas><div class="stars">${nextStars}</div></div>
+    </div>
+    <button class="merge-option evolve" data-action="evolve">
+      <span class="opt-label">EVOLVE — 같은 종류 ${nextStars} (안전)</span>
+      <span class="opt-desc">${def.name} ${nextStars}로 진화. 동일한 종류 시너지 유지에 좋음.</span>
+    </button>
+    <button class="merge-option convert" data-action="convert">
+      <span class="opt-label">CONVERT — 무작위 다른 종류 ${nextStars}</span>
+      <span class="opt-desc">${KIND_ORDER.length - 1}종 중 1개 무작위 ${nextStars}로 변환. 빌드 다양화 / 시너지 깨기.</span>
+    </button>
+    <button class="merge-option refund" data-action="refund">
+      <span class="opt-label">REFUND — 합성 포기 +${refundAmt}g</span>
+      <span class="opt-desc">3장 합성 비용의 80% 환급, 슬롯 모두 비움. 잘못된 종류 정리에.</span>
+    </button>
+    <button class="merge-cancel" data-action="cancel">취소 (Esc)</button>
+  `;
+  drawMergePreview(kind, tier);
+  document.getElementById('merge-backdrop').classList.add('on');
+  panel.querySelectorAll('button[data-action]').forEach(b => {
+    b.onclick = () => performMergeAction(b.dataset.action);
+  });
+}
+
+function drawMergePreview(kind, tier){
+  for (const cv of document.querySelectorAll('#merge-panel canvas[data-prev]')){
+    const which = cv.dataset.prev;
+    const def = TOWER_STATS[kind];
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = 44 * dpr; cv.height = 44 * dpr;
+    cv.style.width = '44px'; cv.style.height = '44px';
+    const c = cv.getContext('2d');
+    c.scale(dpr, dpr);
+    c.translate(22, 24);
+    const useTier = which === 'curr' ? tier : (tier + 1);
+    if (useTier === 4){
+      c.save();
+      c.strokeStyle = 'rgba(255,217,107,.6)';
+      c.lineWidth = 1.2;
+      c.shadowColor = '#ffd96b'; c.shadowBlur = 8;
+      c.setLineDash([3, 3]);
+      c.beginPath();
+      c.arc(0, 0, 20, 0, Math.PI * 2);
+      c.stroke();
+      c.setLineDash([]);
+      c.restore();
+    }
+    const t = { kind, tier: useTier, color: def.color };
+    c.save();
+    c.shadowColor = def.color;
+    c.shadowBlur = 3 + useTier * 1.5;
+    drawTowerBody(c, t);
+    c.restore();
+    drawTierPips(c, t);
+  }
+}
+
+function closeMergeModal(){
+  state.mergeModalGroup = null;
+  const back = document.getElementById('merge-backdrop');
+  if (back) back.classList.remove('on');
+}
+
+function performMergeAction(action){
+  const m = state.mergeModalGroup;
+  if (!m){ closeMergeModal(); return; }
+  if (action === 'cancel'){ closeMergeModal(); return; }
+  const { kind, tier, group } = m;
+  const [a, b, cIdx] = group;
+  if (action === 'evolve'){
+    state.slots[b] = null;
+    state.slots[cIdx] = null;
+    placeTowerIntoSlot(a, kind, tier + 1);
+    state.slots[a].flash = 0.7;
+    addExplosion(state.slots[a].x, state.slots[a].y, 26, state.slots[a].color);
+    floatAt(state.slots[a].x, state.slots[a].y - 10, '★' + state.slots[a].tier, '#ffd96b');
+    state.gold += ECONOMY.mergeBonusGold;
+    floatAt(state.slots[a].x + 20, state.slots[a].y + 8, '+' + ECONOMY.mergeBonusGold + 'g', '#ffd96b');
+  } else if (action === 'convert'){
+    state.slots[b] = null;
+    state.slots[cIdx] = null;
+    const others = KIND_ORDER.filter(k => k !== kind);
+    const newKind = others[Math.floor(Math.random() * others.length)];
+    placeTowerIntoSlot(a, newKind, tier + 1);
+    state.slots[a].flash = 0.9;
+    addExplosion(state.slots[a].x, state.slots[a].y, 32, state.slots[a].color);
+    floatAt(state.slots[a].x, state.slots[a].y - 12, '→ ' + state.slots[a].name + ' ★' + (tier + 1), '#c98aff');
+    state.gold += ECONOMY.mergeBonusGold;
+  } else if (action === 'refund'){
+    const refund = Math.floor(towerCost(kind, tier) * 3 * 0.8);
+    state.slots[a] = null;
+    state.slots[b] = null;
+    state.slots[cIdx] = null;
+    state.gold += refund;
+    const sc = slotCenter(a);
+    floatAt(sc.x, sc.y, '+' + refund + 'g', '#ffd96b');
+  }
+  recomputeSynergy();
+  state.selectedSlot = -1;
+  refreshPanel();
+  closeMergeModal();
+  // 자동 합성 모드면 후속 합성 시도
+  if (state.autoMerge) tryAutoMerge();
+}
+
 function tryAutoMerge(){
   // 같은 kind + 같은 tier 가 3개 이상 모이면 자동 합성
   let merged = false;
@@ -928,11 +1145,14 @@ function refreshPanel(){
     ${t.fire === 'chain' ? `<div class="row"><span>점프</span><span>${t.chains}회 · 감쇠 ${Math.round(t.dmgFalloff*100)}%</span></div>` : ''}
     <div class="row"><span>인접 시너지</span><span>${synPct} <span style="color:#9a8cd6">(${t.synergy || 0}/4)</span></span></div>
     <div class="actions">
+      ${canMergeTower(t) ? `<button class="btn" id="btn-merge-now" style="background:linear-gradient(180deg,#ffd96b,#c08a1a); color:#1a0b30; border-color:#ffd96b; font-weight:900;">합 성 ▶</button>` : ''}
       <button class="btn" id="btn-sell" style="background: rgba(200,50,80,.4); border-color: rgba(255,120,150,.4);">판매 +${refund}g</button>
     </div>
-    <div class="row" style="font-size:11px; color:#8888aa; margin-top:6px;">다른 슬롯 클릭으로 이동/스왑 · AA = anti-air</div>
+    <div class="row" style="font-size:11px; color:#8888aa; margin-top:6px;">${canMergeTower(t) ? '★ 같은 종류·등급 3개 → 합성 분기 선택' : '다른 슬롯 클릭으로 이동/스왑 · AA = anti-air'}</div>
   `;
   document.getElementById('btn-sell').onclick = sellSelected;
+  const mn = document.getElementById('btn-merge-now');
+  if (mn) mn.onclick = () => openMergeModal(t.kind, t.tier);
 }
 function towerCost(kind, tier){
   // 합성 비용 누적: tier 1 기준 12g, tier 2는 ~36g, tier 3 ~108g, tier 4 ~324g
@@ -956,7 +1176,7 @@ function sellSelected(){
  * ============================================================ */
 function toggleAutoMerge(){
   state.autoMerge = !state.autoMerge;
-  mergeBtn.textContent = state.autoMerge ? '자동합성' : '수동합성';
+  mergeBtn.textContent = state.autoMerge ? '자동합성 ON' : '자동합성 OFF';
   mergeBtn.classList.toggle('active', state.autoMerge);
   if (state.autoMerge) tryAutoMerge();
 }
@@ -1559,6 +1779,30 @@ function render(){
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.restore();
+    }
+  }
+
+  // 합성 가능 그룹 시각 (자동 합성 OFF일 때만)
+  if (!state.autoMerge){
+    const pulse = 0.4 + 0.5 * Math.sin(state.time * 4.5);
+    const checked = new Set();
+    for (const t of state.slots){
+      if (!t || t.tier >= 4) continue;
+      const key = t.kind + ':' + t.tier;
+      if (checked.has(key)) continue;
+      checked.add(key);
+      const group = findMergeGroup(t.kind, t.tier);
+      if (!group) continue;
+      for (const idx of group){
+        const sc = slotCenter(idx);
+        ctx.save();
+        ctx.strokeStyle = `rgba(255,217,107,${pulse * 0.85})`;
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#ffd96b';
+        ctx.shadowBlur = 8 * pulse;
+        ctx.strokeRect(sc.x - CELL/2 + 2, sc.y - CELL/2 + 2, CELL - 4, CELL - 4);
+        ctx.restore();
+      }
     }
   }
 
@@ -2306,7 +2550,9 @@ function loop(ts){
   rafId = requestAnimationFrame(loop);
   const dtRaw = Math.min(0.05, (ts - lastFrameTs) / 1000);
   lastFrameTs = ts;
-  if (!state.paused && !state.codexOpen && state.waveState !== 'won' && state.waveState !== 'lost'){
+  const blocked = state.paused || state.codexOpen || state.mergeModalGroup
+    || state.waveState === 'won' || state.waveState === 'lost';
+  if (!blocked){
     const dt = dtRaw * state.speed;
     step(dt);
   }
