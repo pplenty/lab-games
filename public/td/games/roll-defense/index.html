@@ -333,6 +333,28 @@
   }
   .merge-cancel:hover{ color: #d8d0ff; border-color: #c98aff; }
 
+  /* Modifier choice */
+  .mod-sub{ font-size: 11px; color: #9a8cd6; margin-bottom: 12px; }
+  .mod-option{
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    background: rgba(40,18,90,.7);
+    border: 1px solid rgba(200,180,255,.3);
+    border-radius: 10px; padding: 11px 12px; margin-bottom: 8px;
+    cursor: pointer; font: inherit; text-align: left; transition: all .12s;
+  }
+  .mod-option:hover{ background: rgba(60,28,120,.95); }
+  .mod-option.good{ border-color: rgba(124,200,140,.5); }
+  .mod-option.risk{ border-color: rgba(255,120,150,.5); }
+  .mod-option.once{ border-color: rgba(255,217,107,.5); }
+  .mod-icon{ font-size: 22px; flex-shrink: 0; width: 26px; text-align: center; }
+  .mod-text{ flex: 1; min-width: 0; }
+  .mod-text b{ display: block; color: #fff; font-size: 13px; }
+  .mod-desc{ display: block; color: #c0b8e4; font-size: 11px; margin-top: 2px; }
+  .mod-tag{ font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 10px; flex-shrink: 0; }
+  .mod-tag-good{ background: rgba(124,200,140,.25); color: #86d6a8; }
+  .mod-tag-risk{ background: rgba(255,120,150,.25); color: #ff7799; }
+  .mod-tag-once{ background: rgba(255,217,107,.25); color: #ffd96b; }
+
   /* Skill bar */
   .skills{
     display: grid; grid-template-columns: repeat(4, 1fr);
@@ -507,7 +529,8 @@ const KIND_SYNERGY = {
   chain:  { dmg: 0.08 }    // chain은 다양화에 더 가치
 };
 function synergyDmgMult(t){
-  const per = (KIND_SYNERGY[t.kind] && KIND_SYNERGY[t.kind].dmg) || ADJ_BONUS_PER;
+  const base = (KIND_SYNERGY[t.kind] && KIND_SYNERGY[t.kind].dmg) || ADJ_BONUS_PER;
+  const per = base + ((state && state.mods) ? state.mods.synergyAdd : 0);
   return 1 + per * (t.synergy || 0);
 }
 
@@ -640,6 +663,19 @@ const ENEMY_STATS = {
 };
 
 /* ---------- Boss abilities ---------- */
+/* ---------- Wave modifiers (roguelite) ---------- */
+const MODIFIERS = [
+  { id:'gold',   name:'금광',      icon:'💰', tag:'good', desc:'처치 골드 +30%',           apply:(s)=>{ s.mods.goldMult *= 1.3; } },
+  { id:'power',  name:'화력 집중',  icon:'⚔',  tag:'good', desc:'타워 데미지 +20%',          apply:(s)=>{ s.mods.dmgMult *= 1.2; } },
+  { id:'bond',   name:'결속',      icon:'🔗', tag:'good', desc:'시너지 +4%/면',            apply:(s)=>{ s.mods.synergyAdd += 0.04; } },
+  { id:'haste',  name:'신속',      icon:'⚡', tag:'good', desc:'스킬 쿨다운 -25%',          apply:(s)=>{ s.mods.skillCdMult *= 0.75; } },
+  { id:'gamble', name:'한탕',      icon:'🎲', tag:'risk', desc:'데미지 +40% · 적 HP +20%',  apply:(s)=>{ s.mods.dmgMult *= 1.4; s.mods.enemyHpMult *= 1.2; } },
+  { id:'greed',  name:'탐욕',      icon:'🤑', tag:'risk', desc:'골드 +60% · 필드 한계 -4',  apply:(s)=>{ s.mods.goldMult *= 1.6; s.maxAlive = Math.max(10, s.maxAlive - 4); } },
+  { id:'mass',   name:'대량생산',   icon:'🏭', tag:'risk', desc:'뽑기 -30% · 적 속도 +12%',  apply:(s)=>{ s.mods.rollCostMult *= 0.7; s.mods.enemySpeedMult *= 1.12; } },
+  { id:'cash',   name:'긴급 자금',  icon:'💵', tag:'once', desc:'즉시 +120g',               apply:(s)=>{ s.gold += 120; } },
+  { id:'purge',  name:'정화',      icon:'☢',  tag:'once', desc:'현재 필드 전체 처치',       apply:(s)=>{ for (const e of s.enemies){ if (!e.dead) e.hp = 0; } } }
+];
+
 const BOSS_ABILITIES = ['summon', 'heal', 'warden', 'rush'];
 const BOSS_ABILITY_INFO = {
   summon: { name:'소환', color:'#86d6a8', desc:'주변에 그런트 소환' },
@@ -826,6 +862,12 @@ function showTitle(){
         <div>· 키: <b>R</b> 뽑기 / <b>M</b> 자동합성 / <b>P</b> 일시정지 / <b>F</b> 배속 / <b>Esc</b> 해제 / <b>C</b> 도감</div>
       </div>
       <div class="rules">
+        <h3>M O D I F I E R S &nbsp;·&nbsp; 5웨이브마다</h3>
+        <div>· 5웨이브마다 <b>3택 보상</b> — 💚이득 / ❤위험 / 💛즉시 중 하나 선택.</div>
+        <div>· 위험 보상은 강력하지만 대가 동반 (적 HP↑ / 필드 한계↓ / 적 속도↑).</div>
+        <div>· 영구 누적되어 매판 다른 빌드. 화면 좌하단에 활성 모디파이어 표시.</div>
+      </div>
+      <div class="rules">
         <h3>S K I L L S &nbsp;·&nbsp; A C T I V E</h3>
         <div>· <b>💣 BOMB</b> (50g) — 화면 중앙 광역 폭발 +${BOMB_DAMAGE} 데미지</div>
         <div>· <b>❄ FREEZE</b> (60g) — ${FREEZE_DUR}초간 전체 ${Math.round((1-FREEZE_FACTOR)*100)}% 슬로우</div>
@@ -965,7 +1007,10 @@ function startGame(){
       mergeCount: 0,
       skillUses: 0,
       peakField: 0
-    }
+    },
+    mods: { goldMult: 1, dmgMult: 1, synergyAdd: 0, skillCdMult: 1, enemyHpMult: 1, rollCostMult: 1, enemySpeedMult: 1 },
+    pendingModifier: false,
+    activeModNames: []
   };
   buildLayout();
   bindEvents();
@@ -1002,6 +1047,9 @@ function buildLayout(){
     </div>
     <div class="merge-backdrop" id="merge-backdrop">
       <div class="merge-panel" id="merge-panel"></div>
+    </div>
+    <div class="merge-backdrop" id="mod-backdrop">
+      <div class="merge-panel" id="mod-panel" style="max-width: 360px; border-color: rgba(124,200,140,.4);"></div>
     </div>
   `;
   hudEls = {
@@ -1074,7 +1122,7 @@ function useSkill(key){
     return;
   }
   state.gold -= s.cost;
-  state.skillCd[key] = s.cooldown * (1 - upLevel(state.meta, 'haste') * 0.10);
+  state.skillCd[key] = s.cooldown * (1 - upLevel(state.meta, 'haste') * 0.10) * state.mods.skillCdMult;
   if (state.stats) state.stats.skillUses += 1;
   if (key === 'bomb')          fireBomb();
   else if (key === 'freeze')   fireFreeze();
@@ -1336,10 +1384,10 @@ function doRoll(){
   }
   state.gold -= state.rollCost;
   state.rollCount += 1;
-  state.rollCost = Math.min(
+  state.rollCost = Math.max(1, Math.floor(Math.min(
     ECONOMY.rollCostMax,
-    Math.floor(ECONOMY.rollBaseCost + state.rollCount * ECONOMY.rollCostInc)
-  );
+    ECONOMY.rollBaseCost + state.rollCount * ECONOMY.rollCostInc
+  ) * state.mods.rollCostMult));
   const kind = weightedPick(KIND_WEIGHT);
   let tier = pickTierByProb();
   // 등급 상한 보장
@@ -1730,8 +1778,9 @@ function spawnEnemy(type, atSeg, atProgress){
   const goldMult = 1 + 0.08 * cycle;
   const regenMult = 1 + 0.10 * cycle;
 
-  const hp = Math.floor(def.hp * hpMult);
-  const shield = Math.floor((def.shield || 0) * hpMult);
+  const ehm = (state && state.mods) ? state.mods.enemyHpMult : 1;
+  const hp = Math.floor(def.hp * hpMult * ehm);
+  const shield = Math.floor((def.shield || 0) * hpMult * ehm);
 
   state.enemies.push({
     type, name: def.name,
@@ -1837,6 +1886,49 @@ function endWave(){
     state.score += 500;
     floatAt(W/2, GRID_Y + GRID_H/2 - 22, '★ WAVE ' + state.waveIdx + ' · +60g ★', '#c98aff');
   }
+  // 5웨이브마다 모디파이어 선택 (게임 시작 직후 제외)
+  if (state.waveIdx > 0 && state.waveIdx % 5 === 0){
+    openModifierChoice();
+    return;
+  }
+  state.waveState = 'between';
+  state.betweenTimer = ECONOMY.betweenWaveSec;
+}
+
+function openModifierChoice(){
+  const pool = MODIFIERS.slice();
+  const picks = [];
+  for (let i = 0; i < 3 && pool.length; i++){
+    picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  }
+  state.pendingModifier = true;
+  const panel = document.getElementById('mod-panel');
+  panel.innerHTML = `
+    <h2>웨이브 ${state.waveIdx} 보상</h2>
+    <div class="mod-sub">하나를 선택하세요 — 즉시 항목 외에는 <b>영구 적용</b></div>
+    ${picks.map(m => `
+      <button class="mod-option ${m.tag}" data-mod="${m.id}">
+        <span class="mod-icon">${m.icon}</span>
+        <span class="mod-text"><b>${m.name}</b><span class="mod-desc">${m.desc}</span></span>
+        <span class="mod-tag mod-tag-${m.tag}">${m.tag === 'good' ? '이득' : m.tag === 'risk' ? '위험' : '즉시'}</span>
+      </button>
+    `).join('')}
+  `;
+  document.getElementById('mod-backdrop').classList.add('on');
+  panel.querySelectorAll('.mod-option').forEach(b => {
+    b.onclick = () => applyModifier(b.dataset.mod);
+  });
+}
+
+function applyModifier(id){
+  const m = MODIFIERS.find(x => x.id === id);
+  if (m){
+    m.apply(state);
+    if (m.tag !== 'once') state.activeModNames.push(m.icon);
+    floatAt(W/2, GRID_Y + GRID_H/2, m.icon + ' ' + m.name, '#ffd96b');
+  }
+  state.pendingModifier = false;
+  document.getElementById('mod-backdrop').classList.remove('on');
   state.waveState = 'between';
   state.betweenTimer = ECONOMY.betweenWaveSec;
 }
@@ -1915,8 +2007,7 @@ function finishUI(won){
  * Tower fire
  * ============================================================ */
 function fireTower(t, target){
-  const mult = synergyDmgMult(t);
-  const dmg = t.dmg * mult;
+  const dmg = t.dmg * synergyDmgMult(t) * state.mods.dmgMult;
   if (t.fire === 'single'){
     applyDmgVs(target, dmg, t);
     addBeam(t.x, t.y, target.x, target.y, t.color, 0.13);
@@ -2084,7 +2175,7 @@ function step(dt){
     if (e.dead) continue;
     const slow = e.slowUntil > state.time ? e.slowFactor : 1;
     const rush = e.rushUntil > state.time ? 1.6 : 1;
-    let remaining = e.speed * slow * rush * dt;
+    let remaining = e.speed * slow * rush * state.mods.enemySpeedMult * dt;
     let guard = 0;
     while (remaining > 0 && guard < 8){
       const segLen = TRACK_SEG_LEN[e.segIdx];
@@ -2135,7 +2226,7 @@ function step(dt){
   // 사망 처리
   const newSpawns = [];
   const rushOn = state.goldRushUntil > state.time;
-  const goldMult = rushOn ? GOLDRUSH_MULT : 1;
+  const goldMult = (rushOn ? GOLDRUSH_MULT : 1) * state.mods.goldMult;
   for (const e of state.enemies){
     if (!e.dead && e.hp <= 0){
       e.dead = true;
@@ -2507,6 +2598,16 @@ function render(){
     ctx.shadowColor = '#ffd96b';
     ctx.shadowBlur = 6;
     ctx.fillText('💰 RUSH ' + remain.toFixed(1) + 's', W - 8, H - 8);
+    ctx.restore();
+  }
+
+  // 활성 모디파이어 (좌하단)
+  if (state.activeModNames.length){
+    ctx.save();
+    ctx.font = '13px "Pretendard", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.globalAlpha = 0.85;
+    ctx.fillText(state.activeModNames.join(' '), 6, H - 8);
     ctx.restore();
   }
 
@@ -3233,7 +3334,7 @@ function loop(ts){
   rafId = requestAnimationFrame(loop);
   const dtRaw = Math.min(0.05, (ts - lastFrameTs) / 1000);
   lastFrameTs = ts;
-  const blocked = state.paused || state.codexOpen || state.mergeModalGroup
+  const blocked = state.paused || state.codexOpen || state.mergeModalGroup || state.pendingModifier
     || state.waveState === 'won' || state.waveState === 'lost';
   if (!blocked){
     const dt = dtRaw * state.speed;
