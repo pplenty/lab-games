@@ -385,6 +385,24 @@
     font-size: 12px; white-space: nowrap; min-width: 56px; flex-shrink: 0;
   }
   .up-buy:disabled{ background: rgba(80,60,120,.5); color: #9a8cd6; cursor: not-allowed; }
+
+  /* Result screen stats */
+  .result-grid{
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0;
+  }
+  .stat-mini{
+    background: rgba(20,8,50,.6);
+    border: 1px solid rgba(160,120,255,.2);
+    border-radius: 8px; padding: 8px 4px; text-align: center;
+  }
+  .stat-mini span{ display: block; font-size: 10px; color: #9a8cd6; letter-spacing: .04em; }
+  .stat-mini b{ display: block; font-size: 16px; color: #fff; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .dmg-bars{ text-align: left; }
+  .dmg-bar{ display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .dmg-label{ width: 52px; font-size: 11px; font-weight: 800; flex-shrink: 0; }
+  .dmg-track{ flex: 1; height: 10px; background: rgba(255,255,255,.08); border-radius: 5px; overflow: hidden; }
+  .dmg-fill{ height: 100%; border-radius: 5px; transition: width .3s; }
+  .dmg-pct{ width: 30px; text-align: right; font-size: 11px; color: #c0b8e4; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -696,7 +714,11 @@ function counterMult(source, enemy){
   return 1;
 }
 function applyDmgVs(e, dmg, source){
-  applyDamage(e, dmg * counterMult(source, e));
+  const final = dmg * counterMult(source, e);
+  applyDamage(e, final);
+  if (source && source.kind && state && state.stats){
+    state.stats.dmgByKind[source.kind] = (state.stats.dmgByKind[source.kind] || 0) + final;
+  }
 }
 function loadStats(){
   try {
@@ -935,7 +957,15 @@ function startGame(){
     mergeModalGroup: null,
     skillCd: { bomb: 0, freeze: 0, goldRush: 0, reroll: 0 },
     goldRushUntil: 0,
-    freezeFlash: 0
+    freezeFlash: 0,
+    stats: {
+      kills: 0,
+      dmgByKind: {},
+      maxTier: 1,
+      mergeCount: 0,
+      skillUses: 0,
+      peakField: 0
+    }
   };
   buildLayout();
   bindEvents();
@@ -1045,6 +1075,7 @@ function useSkill(key){
   }
   state.gold -= s.cost;
   state.skillCd[key] = s.cooldown * (1 - upLevel(state.meta, 'haste') * 0.10);
+  if (state.stats) state.stats.skillUses += 1;
   if (key === 'bomb')          fireBomb();
   else if (key === 'freeze')   fireFreeze();
   else if (key === 'goldRush') startGoldRush();
@@ -1266,6 +1297,7 @@ function placeTowerIntoSlot(idx, kind, tier){
     locked: false,
     priority: 'progress'
   };
+  if (state && state.stats) state.stats.maxTier = Math.max(state.stats.maxTier, tier);
   recomputeSynergy();
 }
 
@@ -1447,6 +1479,9 @@ function performMergeAction(action){
     const sc = slotCenter(a);
     floatAt(sc.x, sc.y, '+' + refund + 'g', '#ffd96b');
   }
+  if (action === 'evolve' || action === 'convert'){
+    if (state.stats) state.stats.mergeCount += 1;
+  }
   recomputeSynergy();
   state.selectedSlot = -1;
   refreshPanel();
@@ -1487,6 +1522,7 @@ function tryAutoMerge(){
       floatAt(state.slots[a].x, state.slots[a].y - 10, '★' + state.slots[a].tier, '#ffd96b');
       state.gold += ECONOMY.mergeBonusGold;
       floatAt(state.slots[a].x + 20, state.slots[a].y + 8, '+' + ECONOMY.mergeBonusGold + 'g', '#ffd96b');
+      if (state.stats) state.stats.mergeCount += 1;
       merged = true;
       break; // 한 번에 한 그룹만 (다음 루프에서 다시 검사)
     }
@@ -1830,18 +1866,46 @@ function finishUI(won){
   const reached = state.wavesCleared >= WAVES.length
     ? `Wave <b>${state.wavesCleared}</b> 도달 <span style="color:#c98aff">∞</span>`
     : `Wave <b>${state.wavesCleared}/${WAVES.length}</b>`;
-  setOverlay(`
-    <h2>${won ? '🏆 클리어!' : '💥 격침'}</h2>
-    <p>${reached} · 필드 ${state.enemies.length}/${state.maxAlive} · 골드 ${state.gold}</p>
-    <div style="font-size:42px; font-weight:900; color:${won ? '#c98aff' : '#ff7799'}; margin: 12px 0; line-height:1; font-variant-numeric: tabular-nums;">${state.score}</div>
-    <div style="color:#ffd96b; font-weight:800; margin-bottom: 6px;">◆ CORE +${earned} <span style="color:#9a8cd6; font-weight:600;">(보유 ${meta.cores})</span></div>
-    ${isBest ? '<div class="ribbon">NEW BEST</div>' : ''}
-    <div style="margin-top: 14px;">
-      <button class="btn primary" id="ov-again" style="margin-right: 6px; background: linear-gradient(180deg, #c98aff, #7e4ec2); color:#fff; border:1px solid #c98aff; padding: 10px 16px; border-radius: 10px; font-weight: 900;">다시</button>
-      <button class="btn" id="ov-up" style="margin-right: 6px; background: linear-gradient(180deg,#ffd96b,#c08a1a); color:#1a0b30; border:1px solid #ffd96b; padding: 10px 16px; border-radius: 10px; font-weight: 900;">◆ 강화</button>
-      <button class="btn" id="ov-home" style="background: rgba(40,18,90,.7); color:#d8d0ff; border:1px solid rgba(160,120,255,.3); padding: 10px 16px; border-radius: 10px; font-weight: 800;">홈</button>
-    </div>
-  `, true);
+
+  const s = state.stats;
+  const totalDmg = Object.values(s.dmgByKind).reduce((a, b) => a + b, 0) || 1;
+  const dmgRows = KIND_ORDER
+    .map(k => ({ k, d: s.dmgByKind[k] || 0 }))
+    .filter(r => r.d > 0)
+    .sort((a, b) => b.d - a.d)
+    .map(r => {
+      const def = TOWER_STATS[r.k];
+      const pct = r.d / totalDmg * 100;
+      return `<div class="dmg-bar">
+        <span class="dmg-label" style="color:${def.color}">${def.name}</span>
+        <div class="dmg-track"><div class="dmg-fill" style="width:${pct.toFixed(1)}%; background:${def.color}"></div></div>
+        <span class="dmg-pct">${pct.toFixed(0)}%</span>
+      </div>`;
+    }).join('');
+
+  root.innerHTML = `
+    <section id="title" style="padding-top: 18px;">
+      <h1 style="font-size: 30px;">${won ? '🏆 클리어' : '💥 격침'}</h1>
+      <div style="font-size: 44px; font-weight: 900; color:${won ? '#c98aff' : '#ff7799'}; line-height: 1; margin: 6px 0;">${state.score}</div>
+      <div style="color:#9a8cd6; margin-bottom: 4px;">${reached} · 필드 ${state.enemies.length}/${state.maxAlive}</div>
+      <div style="color:#ffd96b; font-weight: 800; margin-bottom: 10px;">◆ CORE +${earned} <span style="color:#9a8cd6; font-weight: 600;">(보유 ${meta.cores})</span></div>
+      ${isBest ? '<div class="ribbon" style="margin-bottom: 10px;">NEW BEST</div>' : ''}
+      <div class="result-grid">
+        <div class="stat-mini"><span>처치</span><b>${s.kills}</b></div>
+        <div class="stat-mini"><span>최고 등급</span><b>★${s.maxTier}</b></div>
+        <div class="stat-mini"><span>합성</span><b>${s.mergeCount}</b></div>
+        <div class="stat-mini"><span>스킬</span><b>${s.skillUses}</b></div>
+        <div class="stat-mini"><span>최대 필드</span><b>${s.peakField}</b></div>
+        <div class="stat-mini"><span>잔여 골드</span><b>${state.gold}</b></div>
+      </div>
+      ${dmgRows ? `<div style="font-size: 11px; color:#9a8cd6; letter-spacing:.15em; margin: 14px 0 6px; text-align: left;">종류별 데미지 기여</div><div class="dmg-bars">${dmgRows}</div>` : ''}
+      <div style="display: flex; gap: 8px; margin-top: 14px;">
+        <button class="btn primary" id="ov-again" style="flex: 1; background: linear-gradient(180deg, #c98aff, #7e4ec2); color:#fff; border: 1px solid #c98aff; padding: 12px; border-radius: 10px; font-weight: 900; cursor: pointer;">다시</button>
+        <button id="ov-up" style="flex: 1; background: linear-gradient(180deg,#ffd96b,#c08a1a); color:#1a0b30; border: 1px solid #ffd96b; padding: 12px; border-radius: 10px; font-weight: 900; cursor: pointer;">◆ 강화</button>
+        <button id="ov-home" style="flex: 1; background: rgba(40,18,90,.7); color:#d8d0ff; border: 1px solid rgba(160,120,255,.3); padding: 12px; border-radius: 10px; font-weight: 800; cursor: pointer;">홈</button>
+      </div>
+    </section>
+  `;
   document.getElementById('ov-again').onclick = startGame;
   document.getElementById('ov-up').onclick = showUpgrades;
   document.getElementById('ov-home').onclick = showTitle;
@@ -2075,6 +2139,7 @@ function step(dt){
   for (const e of state.enemies){
     if (!e.dead && e.hp <= 0){
       e.dead = true;
+      state.stats.kills += 1;
       const gained = Math.max(1, Math.floor(e.reward * goldMult));
       state.gold += gained;
       state.score += e.reward;
@@ -2092,6 +2157,7 @@ function step(dt){
   for (const s of newSpawns) spawnEnemy(s.type, s.segIdx, s.segProgress);
 
   // 동시 적 수 초과 시 게임 오버
+  if (state.stats) state.stats.peakField = Math.max(state.stats.peakField, state.enemies.length);
   if (state.enemies.length > state.maxAlive){
     loseGame();
     return;
