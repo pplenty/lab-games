@@ -474,6 +474,7 @@ const GOLDRUSH_MULT = 1.5;
 const TOWER_STATS = {
   pulse: {
     name: 'PULSE', color: '#5cd6ea', fire: 'single',
+    strongVs: ['runner'], weakVs: ['tank'],
     tiers: [
       null,
       { dmg:  8, range:  88, cd: 0.55 },
@@ -484,6 +485,7 @@ const TOWER_STATS = {
   },
   burst: {
     name: 'BURST', color: '#ff8a3c', fire: 'aoe',
+    strongVs: ['splitter'], weakVs: ['shielded'],
     tiers: [
       null,
       { dmg: 14, range:  80, cd: 1.20, aoeRadius: 42 },
@@ -494,6 +496,7 @@ const TOWER_STATS = {
   },
   frost: {
     name: 'FROST', color: '#80e8ff', fire: 'slow',
+    strongVs: ['shielded'], weakVs: [],
     tiers: [
       null,
       { dmg:  4, range:  96, cd: 0.60, slowDur: 1.6, slowFactor: 0.55 },
@@ -504,6 +507,7 @@ const TOWER_STATS = {
   },
   rail: {
     name: 'RAIL', color: '#ff5b9c', fire: 'pierce', antiAir: true,
+    strongVs: ['flying'], weakVs: [],
     tiers: [
       null,
       { dmg: 14, range: 152, cd: 1.30 },
@@ -514,6 +518,7 @@ const TOWER_STATS = {
   },
   guard: {
     name: 'GUARD', color: '#ff5577', fire: 'sweep',
+    strongVs: ['splitter', 'grunt'], weakVs: ['tank'],
     // 격자 외곽 셀 → 트랙 최단거리가 46px이므로 1성도 56부터 시작.
     // 사거리 안의 모든 적 동시 sweep + 빠른 cd. 외곽 1~2줄 전용 타워.
     tiers: [
@@ -526,6 +531,7 @@ const TOWER_STATS = {
   },
   rocket: {
     name: 'ROCKET', color: '#ffd96b', fire: 'missile', antiAir: true,
+    strongVs: ['boss', 'tank'], weakVs: ['runner'],
     tiers: [
       null,
       { dmg: 26, range: 150, cd: 1.6,  missileSpeed: 280, aoeRadius: 38 },
@@ -536,6 +542,7 @@ const TOWER_STATS = {
   },
   chain: {
     name: 'CHAIN', color: '#a4ff5c', fire: 'chain',
+    strongVs: ['grunt', 'runner'], weakVs: ['shielded'],
     // 첫 적 명중 + 사거리(=chainRange) 내 다른 적으로 점프, 매 점프 dmg × dmgFalloff
     tiers: [
       null,
@@ -612,8 +619,23 @@ function statsFor(kind, tier){
   return Object.assign({}, def.tiers[tier], {
     name: def.name, color: def.color, fire: def.fire,
     antiAir: !!def.antiAir,
+    strongVs: def.strongVs || [],
+    weakVs:   def.weakVs || [],
     kind, tier
   });
+}
+
+/* ---------- Counters (light) ---------- */
+const COUNTER_STRONG = 1.45;   // ×1.45 데미지 (강함)
+const COUNTER_WEAK   = 0.65;   // ×0.65 데미지 (약함)
+function counterMult(source, enemy){
+  if (!source || !enemy) return 1;
+  if (source.strongVs && source.strongVs.includes(enemy.type)) return COUNTER_STRONG;
+  if (source.weakVs   && source.weakVs.includes(enemy.type))   return COUNTER_WEAK;
+  return 1;
+}
+function applyDmgVs(e, dmg, source){
+  applyDamage(e, dmg * counterMult(source, e));
 }
 function loadStats(){
   try {
@@ -701,6 +723,12 @@ function showTitle(){
         <div>· 타워 선택 후 <b>🔒 잠금</b> 토글 → 자동/수동 합성 그룹에서 제외 (시너지 보호).</div>
         <div>· <b>타깃 우선순위</b> 토글: 진행도 · 약한 적 · 강한 적 · 가까운 적 — 타워 위에 인디케이터.</div>
         <div>· 웨이브 사이엔 <b>다음 5웨이브</b> 미리보기 (★보스 / ✈비행 / ◇쉴드 / +회복 / ◎분열).</div>
+      </div>
+      <div class="rules">
+        <h3>C O U N T E R S</h3>
+        <div>· 각 타워는 특정 적에 <b style="color:#86d6a8">💪 강함 (×${COUNTER_STRONG})</b> 또는 <b style="color:#ff7799">🔻 약함 (×${COUNTER_WEAK})</b>.</div>
+        <div>· FROST→SHIELD · ROCKET→BOSS·TANK · RAIL→FLYING · CHAIN→GRUNT·RUNNER ...</div>
+        <div>· 도감(<b>C</b>) 또는 타워 패널에서 매칭 확인. 무리하게 외우지 않아도 됨 — 적은 직관적으로 매칭됨.</div>
       </div>
       <div class="rules">
         <h3>R U L E S</h3>
@@ -1091,6 +1119,7 @@ function placeTowerIntoSlot(idx, kind, tier){
     missileSpeed: s.missileSpeed,
     chains: s.chains, chainRange: s.chainRange, dmgFalloff: s.dmgFalloff,
     antiAir: !!s.antiAir,
+    strongVs: s.strongVs || [], weakVs: s.weakVs || [],
     cooldown: 0,
     angle: 0,
     x: c.x, y: c.y,
@@ -1363,6 +1392,7 @@ function refreshPanel(){
     ${t.fire === 'missile' ? `<div class="row"><span>폭발 반경</span><span>${t.aoeRadius}</span></div>` : ''}
     ${t.fire === 'chain' ? `<div class="row"><span>점프</span><span>${t.chains}회 · 감쇠 ${Math.round(t.dmgFalloff*100)}%</span></div>` : ''}
     <div class="row"><span>인접 시너지</span><span>${synPct} <span style="color:#9a8cd6">(${t.synergy || 0}/4)</span></span></div>
+    ${(t.strongVs && t.strongVs.length) || (t.weakVs && t.weakVs.length) ? `<div class="row"><span>상성</span><span style="font-size:11px;">${(t.strongVs||[]).length ? '<span style=\"color:#86d6a8\">💪'+(t.strongVs.map(k=>ENEMY_STATS[k].name).join(','))+'</span>' : ''} ${(t.weakVs||[]).length ? '<span style=\"color:#ff7799\">🔻'+(t.weakVs.map(k=>ENEMY_STATS[k].name).join(','))+'</span>' : ''}</span></div>` : ''}
     <div class="row"><span>타깃</span><span><button id="btn-priority" style="background:rgba(60,28,120,.7); color:#d8d0ff; border:1px solid rgba(160,120,255,.4); border-radius:6px; padding:3px 8px; font:inherit; font-size:11px; font-weight:800; cursor:pointer;">${PRIORITY_LABEL[t.priority || 'progress']}</button></span></div>
     <div class="actions">
       ${canMergeTower(t) ? `<button class="btn" id="btn-merge-now" style="background:linear-gradient(180deg,#ffd96b,#c08a1a); color:#1a0b30; border-color:#ffd96b; font-weight:900;">합 성 ▶</button>` : ''}
@@ -1623,7 +1653,7 @@ function fireTower(t, target){
   const mult = synergyDmgMult(t);
   const dmg = t.dmg * mult;
   if (t.fire === 'single'){
-    applyDamage(target, dmg);
+    applyDmgVs(target, dmg, t);
     addBeam(t.x, t.y, target.x, target.y, t.color, 0.13);
   } else if (t.fire === 'aoe'){
     addBeam(t.x, t.y, target.x, target.y, t.color, 0.16);
@@ -1633,11 +1663,11 @@ function fireTower(t, target){
       if (e.flying && !t.antiAir) continue;
       const dx = e.x - target.x, dy = e.y - target.y;
       if (dx*dx + dy*dy <= t.aoeRadius * t.aoeRadius){
-        applyDamage(e, dmg);
+        applyDmgVs(e, dmg, t);
       }
     }
   } else if (t.fire === 'slow'){
-    applyDamage(target, dmg);
+    applyDmgVs(target, dmg, t);
     target.slowUntil = state.time + t.slowDur;
     target.slowFactor = t.slowFactor;
     addBeam(t.x, t.y, target.x, target.y, t.color, 0.18);
@@ -1650,7 +1680,7 @@ function fireTower(t, target){
       if (e.dead) continue;
       const dist = pointSegDist(e.x, e.y, t.x, t.y, ex, ey);
       if (dist < e.r + 5){
-        applyDamage(e, dmg);
+        applyDmgVs(e, dmg, t);
       }
     }
   } else if (t.fire === 'sweep'){
@@ -1659,7 +1689,7 @@ function fireTower(t, target){
       if (e.flying && !t.antiAir) continue;
       const dx = e.x - t.x, dy = e.y - t.y;
       if (dx*dx + dy*dy < t.range * t.range){
-        applyDamage(e, dmg);
+        applyDmgVs(e, dmg, t);
       }
     }
     state.sweeps.push({ x: t.x, y: t.y, r: t.range, color: t.color, life: 0.22, maxLife: 0.22 });
@@ -1676,6 +1706,7 @@ function fireTower(t, target){
       aoeRadius: t.aoeRadius,
       color: t.color,
       antiAir: !!t.antiAir,
+      strongVs: t.strongVs, weakVs: t.weakVs,
       life: 3.5,
       trail: []
     });
@@ -1688,7 +1719,7 @@ function fireTower(t, target){
     for (let i = 0; i <= t.chains; i++){
       if (!cur) break;
       addBeam(prev.x, prev.y, cur.x, cur.y, t.color, 0.20);
-      applyDamage(cur, curDmg);
+      applyDmgVs(cur, curDmg, t);
       hit.add(cur);
       // 다음 적
       let next = null, bd = t.chainRange * t.chainRange;
@@ -1756,7 +1787,7 @@ function stepProjectiles(dt){
         if (e.flying && !p.antiAir) continue;
         const dx = e.x - p.x, dy = e.y - p.y;
         if (dx*dx + dy*dy < p.aoeRadius * p.aoeRadius){
-          applyDamage(e, p.dmg);
+          applyDmgVs(e, p.dmg, p);
         }
       }
       p.life = 0;
@@ -2935,9 +2966,17 @@ function buildCodexHTML(){
     const def = TOWER_STATS[kind];
     const synBonus = (KIND_SYNERGY[kind] && KIND_SYNERGY[kind].dmg) || ADJ_BONUS_PER;
     const aa = def.antiAir ? ' <span style="color:#7cc4ff; font-size:9px; margin-left:4px;">AA</span>' : '';
+    const cs = (def.strongVs || []).map(k => ENEMY_STATS[k].name).join(',');
+    const cw = (def.weakVs || []).map(k => ENEMY_STATS[k].name).join(',');
     html += `<div style="margin-top: 6px;"><span style="color:${def.color}; font-weight:800; letter-spacing:.06em;">${def.name}</span>` +
       ` <span style="color:#9a8cd6; font-size:11px;">— ${describeFire(def.fire)}</span>${aa}` +
       ` <span style="color:#ffd96b; font-size:10px; margin-left:6px;">· 시너지 +${Math.round(synBonus*100)}%/인접</span></div>`;
+    if (cs || cw){
+      html += `<div style="font-size:10px; margin-top:2px;">`;
+      if (cs) html += `<span style="color:#86d6a8">💪 ${cs}</span> `;
+      if (cw) html += `<span style="color:#ff7799">🔻 ${cw}</span>`;
+      html += `</div>`;
+    }
     html += '<div class="tower-chain">';
     for (let tier = 1; tier <= 4; tier++){
       const s = def.tiers[tier];
