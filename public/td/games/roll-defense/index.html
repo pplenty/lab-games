@@ -714,6 +714,22 @@ const MODIFIERS = [
   { id:'purge',  name:'정화',      icon:'☢',  tag:'once', desc:'현재 필드 전체 처치',       apply:(s)=>{ for (const e of s.enemies){ if (!e.dead) e.hp = 0; } } }
 ];
 
+/* ---------- Sprite asset override (PoC) ----------
+ * 기본은 절차적 캔버스 드로잉. 실제 일러스트를 쓰려면
+ *   public/td/games/roll-defense/assets/enemy-<type>.png 를 넣고
+ *   아래 ENEMY_SPRITE_MANIFEST 에 type 을 추가하면 자동으로 대체됩니다.
+ *   (정사각 투명 PNG 권장, 64~128px). 빈 배열이면 404 없이 절차 폴백.
+ */
+const ENEMY_SPRITE_MANIFEST = []; // 예: ['grunt', 'tank', 'boss']
+const ENEMY_IMG = {};
+function loadEnemySprites(){
+  for (const type of ENEMY_SPRITE_MANIFEST){
+    const img = new Image();
+    img.onload = () => { ENEMY_IMG[type] = img; };
+    img.src = 'assets/enemy-' + type + '.png';
+  }
+}
+
 const BOSS_ABILITIES = ['summon', 'heal', 'warden', 'rush'];
 const BOSS_ABILITY_INFO = {
   summon: { name:'소환', color:'#86d6a8', desc:'주변에 그런트 소환' },
@@ -907,6 +923,7 @@ let guideStep = 0;
 
 function init(){
   root = document.getElementById('root');
+  loadEnemySprites();
   document.getElementById('guide-backdrop').addEventListener('click', (e) => {
     if (e.target.id === 'guide-backdrop') closeGuide();
   });
@@ -3275,7 +3292,15 @@ function drawEnemy(e){
     ctx.restore();
   }
 
-  drawEnemyShape(ctx, e.x, e.y, e.type, e.color, e.r, state.time);
+  // 에셋 PNG가 있으면 그것으로 대체 (없으면 절차 드로잉)
+  if (ENEMY_IMG[e.type]){
+    const img = ENEMY_IMG[e.type];
+    const s = e.r * 2.6;
+    ctx.drawImage(img, e.x - s/2, e.y - s/2, s, s);
+  } else {
+    drawEnemyShape(ctx, e.x, e.y, e.type, e.color, e.r, state.time);
+    drawEnemyEyes(ctx, e);
+  }
 
   // rush 가속 인디케이터
   if (e.rushUntil > state.time){
@@ -3336,6 +3361,45 @@ function drawEnemy(e){
       ctx.fillRect(bx, by - bh - 1, bw * sf, bh);
     }
   }
+}
+
+// 적에 눈을 그려 "캐릭터" 느낌을 준다 (절차 드로잉 폴백용).
+function drawEnemyEyes(c, e){
+  const x = e.x, y = e.y, r = e.r;
+  c.save();
+  if (e.type === 'boss'){
+    // 외눈 — 화난 큰 눈
+    c.fillStyle = '#fff';
+    c.beginPath(); c.arc(x, y, r * 0.34, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#c01030';
+    c.beginPath(); c.arc(x, y + Math.sin(state.time * 2) * 1.5, r * 0.17, 0, Math.PI * 2); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.85)';
+    c.beginPath(); c.arc(x - r * 0.08, y - r * 0.08, r * 0.05, 0, Math.PI * 2); c.fill();
+  } else if (e.type === 'flying' || e.type === 'runner'){
+    // 방향성 모양 — 앞쪽 눈 1개
+    c.fillStyle = '#fff';
+    c.beginPath(); c.arc(x + r * 0.12, y - r * 0.04, r * 0.18, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#0a0420';
+    c.beginPath(); c.arc(x + r * 0.16, y - r * 0.02, r * 0.09, 0, Math.PI * 2); c.fill();
+  } else {
+    // 일반 — 눈 2개 + 하이라이트
+    c.fillStyle = '#fff';
+    c.beginPath();
+    c.arc(x - r * 0.30, y - r * 0.05, r * 0.20, 0, Math.PI * 2);
+    c.arc(x + r * 0.30, y - r * 0.05, r * 0.20, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#0a0420';
+    c.beginPath();
+    c.arc(x - r * 0.27, y - r * 0.02, r * 0.10, 0, Math.PI * 2);
+    c.arc(x + r * 0.33, y - r * 0.02, r * 0.10, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = 'rgba(255,255,255,.9)';
+    c.beginPath();
+    c.arc(x - r * 0.31, y - r * 0.08, r * 0.04, 0, Math.PI * 2);
+    c.arc(x + r * 0.29, y - r * 0.08, r * 0.04, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.restore();
 }
 
 function drawEnemyShape(c, x, y, type, color, r, time){
