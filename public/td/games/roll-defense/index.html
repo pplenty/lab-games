@@ -323,7 +323,10 @@ const ECONOMY = {
 const TIER_ROLL_PROB = [0.94, 0.05, 0.01, 0.00];
 
 // 종류 출현 가중치 (합 자동 정규화)
-const KIND_WEIGHT = { pulse: 22, burst: 18, frost: 18, rail: 14, guard: 16, rocket: 12 };
+const KIND_WEIGHT = { pulse: 20, burst: 16, frost: 16, rail: 12, guard: 14, rocket: 11, chain: 11 };
+
+// 인접 시너지: 같은 종류 4-이웃 (상하좌우) 1개당 +N% 데미지
+const ADJ_BONUS_PER = 0.10;
 
 /* ---------- Tower stats: kind × tier (1..4) ---------- */
 const TOWER_STATS = {
@@ -388,9 +391,20 @@ const TOWER_STATS = {
       { dmg:148, range: 192, cd: 1.30, missileSpeed: 360, aoeRadius: 56 },
       { dmg:335, range: 220, cd: 1.15, missileSpeed: 400, aoeRadius: 70 }
     ]
+  },
+  chain: {
+    name: 'CHAIN', color: '#a4ff5c', fire: 'chain',
+    // 첫 적 명중 + 사거리(=chainRange) 내 다른 적으로 점프, 매 점프 dmg × dmgFalloff
+    tiers: [
+      null,
+      { dmg: 12, range: 110, cd: 0.9,  chains: 2, chainRange: 70, dmgFalloff: 0.62 },
+      { dmg: 28, range: 124, cd: 0.85, chains: 3, chainRange: 80, dmgFalloff: 0.66 },
+      { dmg: 64, range: 142, cd: 0.78, chains: 5, chainRange: 90, dmgFalloff: 0.70 },
+      { dmg:150, range: 166, cd: 0.70, chains: 7, chainRange:100, dmgFalloff: 0.74 }
+    ]
   }
 };
-const KIND_ORDER = ['pulse', 'burst', 'frost', 'rail', 'guard', 'rocket'];
+const KIND_ORDER = ['pulse', 'burst', 'frost', 'rail', 'guard', 'rocket', 'chain'];
 
 /* ---------- Enemy stats ----------
  * flags:
@@ -517,7 +531,7 @@ function showTitle(){
       <p>스타2 랜덤 타워 디펜스 풍.<br>뽑기로 받은 타워를 합성해 더 강한 등급으로.</p>
       ${best.bestScore > 0 ? `<div class="ribbon">B E S T &nbsp; ${best.bestScore} (W${best.bestWave})</div>` : ''}
       <div class="rules">
-        <h3>T O W E R S &nbsp;·&nbsp; 6 K I N D S</h3>
+        <h3>T O W E R S &nbsp;·&nbsp; 7 K I N D S</h3>
         <div class="row"><span class="sw" style="background:#5cd6ea"></span>
           <div><b>PULSE</b> · 단일 빔 / 균형</div></div>
         <div class="row"><span class="sw" style="background:#ff8a3c"></span>
@@ -529,7 +543,15 @@ function showTitle(){
         <div class="row"><span class="sw" style="background:#ff5577"></span>
           <div><b>GUARD</b> · 고속 외곽 sweep · <i>격자 외곽 1~2줄 전용 (가운데에 두면 트랙 못 침)</i></div></div>
         <div class="row"><span class="sw" style="background:#ffd96b"></span>
-          <div><b>ROCKET</b> · 추적 미사일 (날아가서 폭발)</div></div>
+          <div><b>ROCKET</b> · 추적 미사일 (날아가서 폭발, AA)</div></div>
+        <div class="row"><span class="sw" style="background:#a4ff5c"></span>
+          <div><b>CHAIN</b> · 체인 라이트닝 (적 → 다른 적으로 점프, 매 점프 감쇠)</div></div>
+      </div>
+      <div class="rules">
+        <h3>S Y N E R G Y</h3>
+        <div>· 같은 종류 타워가 <b>상하좌우</b>로 인접하면 <b>+10% 데미지</b>씩 보너스.</div>
+        <div>· 4면 인접 시 최대 +40%. 본체 외곽에 골드 점 표시 + 선택 패널에서 확인.</div>
+        <div>· <b>RAIL · ROCKET만 anti-air</b> (FLYING 적 명중 가능). CHAIN/PULSE/BURST/FROST/GUARD는 지상만.</div>
       </div>
       <div class="rules">
         <h3>R U L E S</h3>
@@ -722,6 +744,7 @@ function handleSlotClick(idx){
       state.slots[idx] = src;
       state.slots[state.selectedSlot] = dst;
       updateTowerPositions();
+      recomputeSynergy();
       state.selectedSlot = -1;
       if (state.autoMerge) tryAutoMerge();
     }
@@ -760,13 +783,35 @@ function placeTowerIntoSlot(idx, kind, tier){
     dmg: s.dmg, range: s.range, cd: s.cd,
     aoeRadius: s.aoeRadius, slowDur: s.slowDur, slowFactor: s.slowFactor,
     missileSpeed: s.missileSpeed,
+    chains: s.chains, chainRange: s.chainRange, dmgFalloff: s.dmgFalloff,
     antiAir: !!s.antiAir,
     cooldown: 0,
     angle: 0,
     x: c.x, y: c.y,
     slotIdx: idx,
-    flash: 0
+    flash: 0,
+    synergy: 0
   };
+  recomputeSynergy();
+}
+
+function recomputeSynergy(){
+  for (let i = 0; i < state.slots.length; i++){
+    const t = state.slots[i];
+    if (!t) continue;
+    const col = i % GRID_COLS;
+    const row = (i / GRID_COLS) | 0;
+    let count = 0;
+    const neighbors = [
+      [col - 1, row], [col + 1, row], [col, row - 1], [col, row + 1]
+    ];
+    for (const [nc, nr] of neighbors){
+      if (nc < 0 || nc >= GRID_COLS || nr < 0 || nr >= GRID_ROWS) continue;
+      const n = state.slots[nr * GRID_COLS + nc];
+      if (n && n.kind === t.kind) count += 1;
+    }
+    t.synergy = count;
+  }
 }
 
 /* ============================================================
@@ -857,18 +902,27 @@ function refreshPanel(){
   const t = state.slots[state.selectedSlot];
   const refund = Math.floor(towerCost(t.kind, t.tier) * 0.5);
   const tierStars = '★'.repeat(t.tier);
+  const synMult = 1 + ADJ_BONUS_PER * (t.synergy || 0);
+  const synPct = t.synergy > 0
+    ? `<span style="color:#ffd96b">+${Math.round((synMult - 1) * 100)}%</span>`
+    : '<span style="color:#8888aa">없음</span>';
   panelEl.classList.add('on');
   panelEl.innerHTML = `
-    <div class="tname" style="color: ${t.color};">${t.name} ${tierStars}</div>
+    <div class="tname" style="color: ${t.color};">${t.name} ${tierStars}
+      ${t.antiAir ? '<span style="color:#7cc4ff; font-size:10px; margin-left:6px;">AA</span>' : ''}
+    </div>
     <div class="row"><span>사거리</span><span>${t.range}</span></div>
-    <div class="row"><span>데미지</span><span>${t.dmg}${t.fire === 'aoe' ? ' (AoE)' : t.fire === 'pierce' ? ' (관통)' : ''}</span></div>
+    <div class="row"><span>데미지</span><span>${t.dmg}${t.fire === 'aoe' ? ' (AoE)' : t.fire === 'pierce' ? ' (관통)' : t.fire === 'chain' ? ' (체인)' : ''}</span></div>
     <div class="row"><span>발사 간격</span><span>${t.cd}s</span></div>
     ${t.fire === 'slow' ? `<div class="row"><span>슬로우</span><span>${Math.round((1 - t.slowFactor)*100)}% / ${t.slowDur}s</span></div>` : ''}
     ${t.fire === 'aoe' ? `<div class="row"><span>폭발 반경</span><span>${t.aoeRadius}</span></div>` : ''}
+    ${t.fire === 'missile' ? `<div class="row"><span>폭발 반경</span><span>${t.aoeRadius}</span></div>` : ''}
+    ${t.fire === 'chain' ? `<div class="row"><span>점프</span><span>${t.chains}회 · 감쇠 ${Math.round(t.dmgFalloff*100)}%</span></div>` : ''}
+    <div class="row"><span>인접 시너지</span><span>${synPct} <span style="color:#9a8cd6">(${t.synergy || 0}/4)</span></span></div>
     <div class="actions">
       <button class="btn" id="btn-sell" style="background: rgba(200,50,80,.4); border-color: rgba(255,120,150,.4);">판매 +${refund}g</button>
     </div>
-    <div class="row" style="font-size:11px; color:#8888aa; margin-top:6px;">다른 슬롯 클릭으로 이동/스왑</div>
+    <div class="row" style="font-size:11px; color:#8888aa; margin-top:6px;">다른 슬롯 클릭으로 이동/스왑 · AA = anti-air</div>
   `;
   document.getElementById('btn-sell').onclick = sellSelected;
 }
@@ -885,6 +939,7 @@ function sellSelected(){
   floatAt(t.x, t.y, '+' + refund + 'g', '#ffd96b');
   state.slots[idx] = null;
   state.selectedSlot = -1;
+  recomputeSynergy();
   refreshPanel();
 }
 
@@ -1034,8 +1089,10 @@ function finishUI(won){
  * Tower fire
  * ============================================================ */
 function fireTower(t, target){
+  const mult = 1 + ADJ_BONUS_PER * (t.synergy || 0);
+  const dmg = t.dmg * mult;
   if (t.fire === 'single'){
-    applyDamage(target, t.dmg);
+    applyDamage(target, dmg);
     addBeam(t.x, t.y, target.x, target.y, t.color, 0.13);
   } else if (t.fire === 'aoe'){
     addBeam(t.x, t.y, target.x, target.y, t.color, 0.16);
@@ -1045,11 +1102,11 @@ function fireTower(t, target){
       if (e.flying && !t.antiAir) continue;
       const dx = e.x - target.x, dy = e.y - target.y;
       if (dx*dx + dy*dy <= t.aoeRadius * t.aoeRadius){
-        applyDamage(e, t.dmg);
+        applyDamage(e, dmg);
       }
     }
   } else if (t.fire === 'slow'){
-    applyDamage(target, t.dmg);
+    applyDamage(target, dmg);
     target.slowUntil = state.time + t.slowDur;
     target.slowFactor = t.slowFactor;
     addBeam(t.x, t.y, target.x, target.y, t.color, 0.18);
@@ -1062,17 +1119,16 @@ function fireTower(t, target){
       if (e.dead) continue;
       const dist = pointSegDist(e.x, e.y, t.x, t.y, ex, ey);
       if (dist < e.r + 5){
-        applyDamage(e, t.dmg);
+        applyDamage(e, dmg);
       }
     }
   } else if (t.fire === 'sweep'){
-    // 사거리 내 모든 적에게 즉시 데미지 + sweep 확장 링
     for (const e of state.enemies){
       if (e.dead) continue;
       if (e.flying && !t.antiAir) continue;
       const dx = e.x - t.x, dy = e.y - t.y;
       if (dx*dx + dy*dy < t.range * t.range){
-        applyDamage(e, t.dmg);
+        applyDamage(e, dmg);
       }
     }
     state.sweeps.push({ x: t.x, y: t.y, r: t.range, color: t.color, life: 0.22, maxLife: 0.22 });
@@ -1085,12 +1141,37 @@ function fireTower(t, target){
       vy: (dy / d) * t.missileSpeed,
       speed: t.missileSpeed,
       targetRef: target,
-      dmg: t.dmg,
+      dmg: dmg,
       aoeRadius: t.aoeRadius,
       color: t.color,
+      antiAir: !!t.antiAir,
       life: 3.5,
       trail: []
     });
+  } else if (t.fire === 'chain'){
+    // 체인 라이트닝: 사거리 내 다른 적으로 점프, 매 점프 dmg × dmgFalloff
+    let prev = { x: t.x, y: t.y };
+    let cur = target;
+    let curDmg = dmg;
+    const hit = new Set();
+    for (let i = 0; i <= t.chains; i++){
+      if (!cur) break;
+      addBeam(prev.x, prev.y, cur.x, cur.y, t.color, 0.20);
+      applyDamage(cur, curDmg);
+      hit.add(cur);
+      // 다음 적
+      let next = null, bd = t.chainRange * t.chainRange;
+      for (const e of state.enemies){
+        if (e.dead || hit.has(e)) continue;
+        if (e.flying && !t.antiAir) continue;
+        const dx2 = e.x - cur.x, dy2 = e.y - cur.y;
+        const d2 = dx2*dx2 + dy2*dy2;
+        if (d2 <= bd){ bd = d2; next = e; }
+      }
+      prev = { x: cur.x, y: cur.y };
+      cur = next;
+      curDmg *= t.dmgFalloff;
+    }
   }
 }
 
@@ -1102,6 +1183,7 @@ function stepProjectiles(dt){
       let best = null, bd = 1e9;
       for (const e of state.enemies){
         if (e.dead) continue;
+        if (e.flying && !p.antiAir) continue;
         const dx = e.x - p.x, dy = e.y - p.y;
         const d2 = dx*dx + dy*dy;
         if (d2 < bd){ bd = d2; best = e; }
@@ -1130,6 +1212,7 @@ function stepProjectiles(dt){
     let exploded = false;
     for (const e of state.enemies){
       if (e.dead) continue;
+      if (e.flying && !p.antiAir) continue;
       const dx = e.x - p.x, dy = e.y - p.y;
       if (dx*dx + dy*dy < (e.r + 5) * (e.r + 5)){
         exploded = true; break;
@@ -1139,6 +1222,7 @@ function stepProjectiles(dt){
       addExplosion(p.x, p.y, p.aoeRadius, p.color);
       for (const e of state.enemies){
         if (e.dead) continue;
+        if (e.flying && !p.antiAir) continue;
         const dx = e.x - p.x, dy = e.y - p.y;
         if (dx*dx + dy*dy < p.aoeRadius * p.aoeRadius){
           applyDamage(e, p.dmg);
@@ -1653,6 +1737,21 @@ function drawTower(t){
   // 등급 점 (코너에 작은 별, 비회전)
   drawTierPips(ctx, t);
 
+  // 인접 시너지 표시 (본체 외곽 골드 점)
+  if (t.synergy > 0){
+    ctx.save();
+    ctx.fillStyle = '#ffd96b';
+    ctx.shadowColor = '#ffd96b';
+    ctx.shadowBlur = 6;
+    for (let i = 0; i < Math.min(4, t.synergy); i++){
+      const ang = (i / 4) * Math.PI * 2 - Math.PI / 2;
+      ctx.beginPath();
+      ctx.arc(Math.cos(ang) * 16, Math.sin(ang) * 16, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 
@@ -1663,6 +1762,7 @@ function drawTowerBody(c, t){
   else if (t.kind === 'rail')   drawRailBody(c, t);
   else if (t.kind === 'guard')  drawGuardBody(c, t);
   else if (t.kind === 'rocket') drawRocketBody(c, t);
+  else if (t.kind === 'chain')  drawChainBody(c, t);
 }
 
 function drawPulseBody(ctx, t){
@@ -1850,6 +1950,43 @@ function drawRocketBody(c, t){
   c.fillStyle = t.color;
   c.beginPath();
   c.arc(0, 4, 2.5, 0, Math.PI * 2);
+  c.fill();
+}
+
+function drawChainBody(c, t){
+  // 원 본체 + 위쪽 번개 모양 + 내부 코어
+  c.fillStyle = '#1a0b30';
+  c.beginPath();
+  c.arc(0, 0, 11, 0, Math.PI * 2);
+  c.fill();
+  c.strokeStyle = t.color;
+  c.lineWidth = 1.5 + (t.tier - 1) * 0.3;
+  c.beginPath();
+  c.arc(0, 0, 11, 0, Math.PI * 2);
+  c.stroke();
+  // 위쪽 번개 지그재그
+  c.strokeStyle = t.color;
+  c.lineWidth = 2;
+  c.lineJoin = 'round';
+  c.beginPath();
+  c.moveTo(0, -10);
+  c.lineTo(3, -14);
+  c.lineTo(-2, -17);
+  c.lineTo(2, -22);
+  c.stroke();
+  // 작은 측면 점 (테슬라 코일 느낌)
+  c.fillStyle = t.color;
+  c.beginPath();
+  c.arc(-9, 6, 1.8, 0, Math.PI * 2);
+  c.arc( 9, 6, 1.8, 0, Math.PI * 2);
+  c.fill();
+  // 코어
+  const grad = c.createRadialGradient(0, 0, 0, 0, 0, 6);
+  grad.addColorStop(0, '#fff');
+  grad.addColorStop(1, t.color);
+  c.fillStyle = grad;
+  c.beginPath();
+  c.arc(0, 0, 3 + t.tier * 0.4, 0, Math.PI * 2);
   c.fill();
 }
 
@@ -2122,7 +2259,8 @@ function describeFire(f){
     slow: '단일 + 슬로우',
     pierce: '관통 라인',
     sweep: '고속 외곽 sweep',
-    missile: '추적 미사일'
+    missile: '추적 미사일',
+    chain: '체인 라이트닝'
   })[f] || f;
 }
 function buildCodexHTML(){
@@ -2140,7 +2278,8 @@ function buildCodexHTML(){
       const extra = def.fire === 'aoe' && s.aoeRadius ? `<br>aoe ${s.aoeRadius}` :
                      def.fire === 'slow' ? `<br>${Math.round((1 - s.slowFactor)*100)}% ${s.slowDur}s` :
                      def.fire === 'missile' ? `<br>aoe ${s.aoeRadius}` :
-                     def.fire === 'sweep' ? `<br>sweep all` : '';
+                     def.fire === 'sweep' ? `<br>sweep all` :
+                     def.fire === 'chain' ? `<br>${s.chains} jumps · ${(s.dmgFalloff*100)|0}%` : '';
       html += `<div class="tower-card-mini">
         <canvas data-tower="${kind}-${tier}"></canvas>
         <div class="lbl">${'★'.repeat(tier)}</div>
