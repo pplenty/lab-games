@@ -1101,44 +1101,6 @@
       "path": "games/tetris-lite/"
     },
     {
-      "id": "probability-gut",
-      "title": "확률 직감",
-      "short": "두 상황 중 어느 쪽이 더 가능?",
-      "icon": "🎲",
-      "tags": [
-        "chance",
-        "logic",
-        "math"
-      ],
-      "tagLabels": [
-        "확률",
-        "논리",
-        "숫자"
-      ],
-      "accent": "#6ca0c0",
-      "duration": "3~4분",
-      "slug": "probability-gut",
-      "path": "games/probability-gut/"
-    },
-    {
-      "id": "lucky-day",
-      "title": "오늘의 운세",
-      "short": "재미로 보는 하루치 운세",
-      "icon": "🌟",
-      "tags": [
-        "daily",
-        "mix"
-      ],
-      "tagLabels": [
-        "데일리",
-        "종합"
-      ],
-      "accent": "#d49f3b",
-      "duration": "30초",
-      "slug": "lucky-day",
-      "path": "games/lucky-day/"
-    },
-    {
       "id": "trivia-korea",
       "title": "한국 상식 퀴즈",
       "short": "한국에 대한 일반 상식 8문제",
@@ -1397,26 +1359,6 @@
       "path": "games/rotation-match/"
     },
     {
-      "id": "dice-net",
-      "title": "주사위 전개도",
-      "short": "마주 보는 면의 합은 7",
-      "icon": "🎲",
-      "tags": [
-        "space",
-        "math",
-        "pattern"
-      ],
-      "tagLabels": [
-        "공간",
-        "숫자",
-        "패턴"
-      ],
-      "accent": "#6d8c5b",
-      "duration": "2~3분",
-      "slug": "dice-net",
-      "path": "games/dice-net/"
-    },
-    {
       "id": "maze-rush",
       "title": "미로 러시 · 30초",
       "short": "30초에 미로 몇 개 연속 탈출?",
@@ -1639,6 +1581,195 @@
       "duration": "3~5분",
       "slug": "micro-defense",
       "path": "games/micro-defense/"
+    },
+    {
+      "id": "shadow-route",
+      "title": "섀도 루트",
+      "short": "감시 시야를 피해 코어 회수",
+      "icon": "◐",
+      "tags": [
+        "strategy",
+        "space",
+        "focus",
+        "reflex"
+      ],
+      "tagLabels": [
+        "전략",
+        "공간",
+        "집중"
+      ],
+      "accent": "#247a7d",
+      "duration": "3~5분",
+      "slug": "shadow-route",
+      "path": "games/shadow-route/"
+    },
+    {
+      "id": "factory-switch",
+      "title": "팩토리 스위치",
+      "short": "컨베이어 게이트로 화물 분류",
+      "icon": "⇄",
+      "tags": [
+        "strategy",
+        "pattern",
+        "timing",
+        "focus"
+      ],
+      "tagLabels": [
+        "전략",
+        "패턴",
+        "타이밍"
+      ],
+      "accent": "#356fc3",
+      "duration": "75초",
+      "slug": "factory-switch",
+      "path": "games/factory-switch/"
+    },
+    {
+      "id": "sky-control",
+      "title": "스카이 컨트롤",
+      "short": "항로를 그려 비행체 착륙 유도",
+      "icon": "✈",
+      "tags": [
+        "strategy",
+        "space",
+        "timing",
+        "focus"
+      ],
+      "tagLabels": [
+        "전략",
+        "공간",
+        "타이밍"
+      ],
+      "accent": "#4766c7",
+      "duration": "80초",
+      "slug": "sky-control",
+      "path": "games/sky-control/"
+    },
+    {
+      "id": "tension-fishing",
+      "title": "텐션 피싱",
+      "short": "장력을 조절해 물고기 낚기",
+      "icon": "◡",
+      "tags": [
+        "timing",
+        "focus",
+        "reflex",
+        "arcade"
+      ],
+      "tagLabels": [
+        "타이밍",
+        "집중",
+        "순발"
+      ],
+      "accent": "#1984a3",
+      "duration": "90초",
+      "slug": "tension-fishing",
+      "path": "games/tension-fishing/"
+    },
+    {
+      "id": "relic-brush",
+      "title": "릴릭 브러시",
+      "short": "모래를 걷어 유물 발굴",
+      "icon": "▧",
+      "tags": [
+        "focus",
+        "space",
+        "timing",
+        "pattern"
+      ],
+      "tagLabels": [
+        "집중",
+        "공간",
+        "타이밍"
+      ],
+      "accent": "#a66f2f",
+      "duration": "3~5분",
+      "slug": "relic-brush",
+      "path": "games/relic-brush/"
+    },
+    {
+      "id": "sonar-dive",
+      "title": "소나 다이브",
+      "short": "소나로 해저 광석 탐사",
+      "icon": "◌",
+      "tags": [
+        "space",
+        "strategy",
+        "focus",
+        "arcade"
+      ],
+      "tagLabels": [
+        "공간",
+        "전략",
+        "집중"
+      ],
+      "accent": "#176f9c",
+      "duration": "100초",
+      "slug": "sonar-dive",
+      "path": "games/sonar-dive/"
+    },
+    {
+      "id": "frame-hunt",
+      "title": "프레임 헌트",
+      "short": "초점과 프레임을 맞춰 촬영",
+      "icon": "▣",
+      "tags": [
+        "focus",
+        "timing",
+        "reflex",
+        "space"
+      ],
+      "tagLabels": [
+        "집중",
+        "타이밍",
+        "순발"
+      ],
+      "accent": "#7a5aa6",
+      "duration": "75초",
+      "slug": "frame-hunt",
+      "path": "games/frame-hunt/"
+    },
+    {
+      "id": "chroma-lab",
+      "title": "크로마 랩",
+      "short": "시약 밸브로 목표 색상 혼합",
+      "icon": "◍",
+      "tags": [
+        "pattern",
+        "timing",
+        "focus",
+        "strategy"
+      ],
+      "tagLabels": [
+        "패턴",
+        "타이밍",
+        "집중"
+      ],
+      "accent": "#4a8a8f",
+      "duration": "95초",
+      "slug": "chroma-lab",
+      "path": "games/chroma-lab/"
+    },
+    {
+      "id": "tumbler-pick",
+      "title": "텀블러 픽",
+      "short": "픽 각도와 토크로 자물쇠 해제",
+      "icon": "⌁",
+      "tags": [
+        "focus",
+        "timing",
+        "logic",
+        "strategy"
+      ],
+      "tagLabels": [
+        "집중",
+        "타이밍",
+        "논리"
+      ],
+      "accent": "#6d7180",
+      "duration": "3~5분",
+      "slug": "tumbler-pick",
+      "path": "games/tumbler-pick/"
     }
   ]
 }

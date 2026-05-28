@@ -286,16 +286,6 @@
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://games.jdgrid.com/brain/games/probability-gut/</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://games.jdgrid.com/brain/games/lucky-day/</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
     <loc>https://games.jdgrid.com/brain/games/trivia-korea/</loc>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
@@ -361,11 +351,6 @@
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://games.jdgrid.com/brain/games/dice-net/</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
     <loc>https://games.jdgrid.com/brain/games/maze-rush/</loc>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
@@ -417,6 +402,51 @@
   </url>
   <url>
     <loc>https://games.jdgrid.com/brain/games/micro-defense/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://games.jdgrid.com/brain/games/shadow-route/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://games.jdgrid.com/brain/games/factory-switch/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://games.jdgrid.com/brain/games/sky-control/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://games.jdgrid.com/brain/games/tension-fishing/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://games.jdgrid.com/brain/games/relic-brush/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://games.jdgrid.com/brain/games/sonar-dive/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://games.jdgrid.com/brain/games/frame-hunt/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://games.jdgrid.com/brain/games/chroma-lab/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://games.jdgrid.com/brain/games/tumbler-pick/</loc>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
