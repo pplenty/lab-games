@@ -96,11 +96,11 @@ for (let i = 0; i < WAVES.length; i++){
   console.log(`${(i+1).toString().padStart(2)}  ${n.toString().padStart(4)}  ${hp.toString().padStart(6)}  ${dur.toFixed(1).padStart(5)}s  ${(hp/dur).toFixed(0).padStart(5)}   ${types}`);
 }
 
-console.log('\n=== 무한 스케일링 (cycle = wave-15, HP ×(1+0.18·cycle)) ===');
+console.log('\n=== 무한 스케일링 (cycle = wave-15, HP ×1.09^cycle 지수) ===');
 for (const w of [16,20,25,30,40,50,70,100]){
   const cycle = w - 15;
-  const mult = 1 + 0.18 * cycle;
-  console.log(`  W${w.toString().padStart(3)}  cycle ${cycle.toString().padStart(3)}  HP×${mult.toFixed(2).padStart(5)}  (grunt ${Math.round(42*mult)} / tank ${Math.round(220*mult)} / boss ${Math.round(1100*mult)})`);
+  const mult = Math.pow(1.09, cycle);
+  console.log(`  W${w.toString().padStart(3)}  cycle ${cycle.toString().padStart(3)}  HP×${mult.toFixed(1).padStart(7)}  (grunt ${Math.round(42*mult)} / tank ${Math.round(220*mult)} / boss ${Math.round(1100*mult)})`);
 }
 
 // 플레이어 capacity 모델: 누적 뽑기 → 등급 분포 → 총 DPS

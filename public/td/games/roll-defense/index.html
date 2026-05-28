@@ -1045,7 +1045,7 @@ function showTitle(){
       <div class="rules">
         <h3>E N D L E S S</h3>
         <div>· <b>1~15웨이브</b>는 정해진 패턴. <b>16웨이브부터는 무한 절차 생성</b>으로 끝없이 진행됩니다.</div>
-        <div>· 사이클(5웨이브)마다 적 HP <b>+18%</b>, 골드 보상 +8%, REGEN 회복 +10% 누적.</div>
+        <div>· 사이클(5웨이브)마다 적 HP <b>×1.09 (지수, 후반 급가속)</b>, 골드 +8%, REGEN +10% 누적.</div>
         <div>· 5의 배수 웨이브는 <b>보스 웨이브</b>. 사이클이 깊어질수록 보스 수도 늘어남.</div>
         <div>· 보스는 <b>무작위 능력</b> 보유: ★소환(그런트) / ★치유(주변 HP) / ★수호(쉴드 부여) / ★질주(슬로우 해제+가속).</div>
         <div>· <b>WAVE 15</b> + 매 <b>25웨이브</b>마다 마일스톤 골드+스코어 보너스.</div>
@@ -1957,8 +1957,10 @@ function spawnEnemy(type, atSeg, atProgress){
   const t = segProgress / TRACK_SEG_LEN[segIdx];
 
   // 무한 모드 스케일링 (16웨이브부터)
+  // HP는 지수(×1.09^cycle) — 플레이어 성장(합성·모디파이어)이 지수라
+  // 선형으로는 후반에 무적이 됨. 골드/회복은 선형 유지.
   const cycle = Math.max(0, state.waveIdx - WAVES.length);
-  const hpMult   = 1 + 0.18 * cycle;
+  const hpMult   = Math.pow(1.09, cycle);
   const goldMult = 1 + 0.08 * cycle;
   const regenMult = 1 + 0.10 * cycle;
 
