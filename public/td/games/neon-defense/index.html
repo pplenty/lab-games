@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>네온 디펜스 · 전략 디펜스</title>
-<meta name="description" content="네온 격자 위에서 타워를 세워 적의 흐름을 막는 본격 타워 디펜스 — 4종 타워, 3종 적, 15웨이브">
+<meta name="description" content="굽이치는 길목에 타워를 세우고 3단계 업그레이드하는 배치 전략 타워 디펜스. 적 상성(비행/장갑/실드/군집) 카운터, 인컴·이자 경제, 보스 웨이브, 15웨이브 후 무한.">
 <link rel="canonical" href="https://games.jdgrid.com/td/games/neon-defense/">
 <meta property="og:title" content="네온 디펜스">
 <meta property="og:description" content="격자 위 본격 타워 디펜스">
@@ -220,100 +220,157 @@ const ROWS = H / CELL;   // 20
 
 const KEY = 'neon_defense_stats';
 
-/* ---------- Path: S-curve through 5 rows ---------- */
+/* ---------- Map: 7-lane serpentine (SC2 랜타디풍) ----------
+ * 굽이치는 7개 가로 레인 + 좌우 길목. 레인 사이 빈 띠 = 건설 포켓
+ * (여러 레인을 동시에 사정권에 두는 고가치 자리).
+ */
+const LANE_Y = [1, 4, 6, 9, 11, 14, 16];   // 7 lanes
+const LANE_XL = 1, LANE_XR = 13;
 const PATH_CELLS = (() => {
   const cells = [];
-  const push = (x, y) => cells.push([x, y]);
-  // Row 2 left → right
-  for (let x = 0; x <= 13; x++) push(x, 2);
-  // Col 13 down to 5
-  for (let y = 3; y <= 5; y++) push(13, y);
-  // Row 5 right → left
-  for (let x = 12; x >= 1; x--) push(x, 5);
-  // Col 1 down to 8
-  for (let y = 6; y <= 8; y++) push(1, y);
-  // Row 8 left → right
-  for (let x = 2; x <= 13; x++) push(x, 8);
-  // Col 13 down to 11
-  for (let y = 9; y <= 11; y++) push(13, y);
-  // Row 11 right → left
-  for (let x = 12; x >= 1; x--) push(x, 11);
-  // Col 1 down to 14
-  for (let y = 12; y <= 14; y++) push(1, y);
-  // Row 14 left → right
-  for (let x = 2; x <= 13; x++) push(x, 14);
-  // Col 13 down to 17
-  for (let y = 15; y <= 17; y++) push(13, y);
-  // Row 17 right → left
-  for (let x = 12; x >= 1; x--) push(x, 17);
-  // Col 1 down to 19 (exit)
-  for (let y = 18; y <= 19; y++) push(1, y);
-  return cells;
+  let dir = 1; // 1: L→R, -1: R→L
+  for (let li = 0; li < LANE_Y.length; li++){
+    const y = LANE_Y[li];
+    if (dir === 1) for (let x = LANE_XL; x <= LANE_XR; x++) cells.push([x, y]);
+    else            for (let x = LANE_XR; x >= LANE_XL; x--) cells.push([x, y]);
+    const endX = dir === 1 ? LANE_XR : LANE_XL;
+    const nextY = li < LANE_Y.length - 1 ? LANE_Y[li + 1] : ROWS - 1; // exit row 19
+    for (let y2 = y + 1; y2 <= nextY; y2++) cells.push([endX, y2]);
+    dir *= -1;
+  }
+  // 연속 중복 웨이포인트 제거 (코너 셀)
+  const out = [];
+  for (const c of cells){ const p = out[out.length - 1]; if (!p || p[0] !== c[0] || p[1] !== c[1]) out.push(c); }
+  return out;
 })();
 const PATH_SET = new Set(PATH_CELLS.map(([x, y]) => `${x},${y}`));
+// 건설 포켓: 길이 아닌 칸 중 상하좌우로 길에 2개 이상 접한 고가치 자리
+const POCKET_SET = (() => {
+  const s = new Set();
+  for (let cy = 0; cy < ROWS; cy++) for (let cx = 0; cx < COLS; cx++){
+    if (PATH_SET.has(`${cx},${cy}`)) continue;
+    let n = 0;
+    if (PATH_SET.has(`${cx-1},${cy}`)) n++;
+    if (PATH_SET.has(`${cx+1},${cy}`)) n++;
+    if (PATH_SET.has(`${cx},${cy-1}`)) n++;
+    if (PATH_SET.has(`${cx},${cy+1}`)) n++;
+    if (n >= 2) s.add(`${cx},${cy}`);
+  }
+  return s;
+})();
 const PATH_POINTS = PATH_CELLS.map(([x, y]) => ({
   x: x * CELL + CELL / 2,
   y: y * CELL + CELL / 2
 }));
 
-/* ---------- Tower defs ---------- */
+/* ---------- Tower defs — 3 levels each (배치 전략 TD) ----------
+ *  lv[1..3]: { damage, range, interval, ...special }, upCost = 그 레벨로 올리는 비용
+ *  strongVs / weakVs: 적 종류 카운터 (×1.5 / ×0.6). antiAir: 비행 명중 가능.
+ */
 const TOWERS = {
   pulse: {
-    id: 'pulse', name: 'PULSE', cost: 30, color: '#5cd6ea',
-    range: 96, damage: 8, interval: 0.5, fire: 'beam',
-    desc: '단일 / 빠른 사거리'
+    id: 'pulse', name: 'PULSE', cost: 30, color: '#5cd6ea', fire: 'beam',
+    antiAir: true, strongVs: ['runner', 'swarm'], weakVs: ['tank'],
+    desc: '단일 속사 · 대공 가능 · 만능형',
+    lv: [null,
+      { damage:  8, range:  96, interval: 0.50 },
+      { damage: 18, range: 108, interval: 0.45, upCost: 35 },
+      { damage: 42, range: 122, interval: 0.40, upCost: 75 }
+    ]
   },
   burst: {
-    id: 'burst', name: 'BURST', cost: 60, color: '#ff8a3c',
-    range: 80, damage: 12, interval: 1.2, fire: 'aoe',
-    aoeRadius: 48,
-    desc: '광역 폭발'
+    id: 'burst', name: 'BURST', cost: 55, color: '#ff8a3c', fire: 'aoe',
+    antiAir: false, strongVs: ['swarm', 'grunt'], weakVs: ['shield'],
+    desc: '광역 폭발 · 군집 학살 · 지상만',
+    lv: [null,
+      { damage: 12, range:  80, interval: 1.20, aoeRadius: 48 },
+      { damage: 26, range:  92, interval: 1.05, aoeRadius: 56, upCost: 60 },
+      { damage: 58, range: 106, interval: 0.92, aoeRadius: 68, upCost: 120 }
+    ]
   },
   frost: {
-    id: 'frost', name: 'FROST', cost: 50, color: '#80e8ff',
-    range: 112, damage: 3, interval: 0.6, fire: 'slow',
-    slowDuration: 1.6, slowFactor: 0.45,
-    desc: '슬로우 단일'
+    id: 'frost', name: 'FROST', cost: 50, color: '#80e8ff', fire: 'slow',
+    antiAir: false, strongVs: ['shield'], weakVs: [],
+    desc: '슬로우 · 실드 카운터 · 길목 핵심',
+    lv: [null,
+      { damage:  3, range: 112, interval: 0.60, slowFactor: 0.55, slowDuration: 1.6 },
+      { damage:  8, range: 124, interval: 0.55, slowFactor: 0.42, slowDuration: 2.0, upCost: 45 },
+      { damage: 18, range: 138, interval: 0.50, slowFactor: 0.30, slowDuration: 2.5, upCost: 95 }
+    ]
   },
   rail: {
-    id: 'rail', name: 'RAIL', cost: 80, color: '#ff5b9c',
-    range: 160, damage: 14, interval: 1.5, fire: 'pierce',
-    desc: '관통 라인'
+    id: 'rail', name: 'RAIL', cost: 80, color: '#ff5b9c', fire: 'pierce',
+    antiAir: true, strongVs: ['flyer', 'tank'], weakVs: ['swarm'],
+    desc: '장거리 관통 · 대공 · 장갑 카운터',
+    lv: [null,
+      { damage: 14, range: 160, interval: 1.50 },
+      { damage: 32, range: 180, interval: 1.35, upCost: 85 },
+      { damage: 74, range: 200, interval: 1.20, upCost: 170 }
+    ]
   }
 };
 const TOWER_ORDER = ['pulse', 'burst', 'frost', 'rail'];
+const MAX_LEVEL = 3;
+const COUNTER_STRONG = 1.5, COUNTER_WEAK = 0.6;
 
-/* ---------- Enemy defs ---------- */
+/* ---------- Enemy defs — 카운터/특성 ----------
+ *  armored: rail/strongVs로 카운터 / shield N: 본체 앞 흡수막
+ *  flying: antiAir 타워만 명중 / boss: 두꺼움
+ */
 const ENEMIES = {
-  grunt:  { name:'GRUNT',  hp: 30,  speed:  56, gold:  8, r: 10, color:'#86d6a8' },
-  runner: { name:'RUNNER', hp: 18,  speed: 104, gold: 12, r:  8, color:'#ffd96b' },
-  tank:   { name:'TANK',   hp: 120, speed:  36, gold: 25, r: 13, color:'#ff7799' }
+  grunt:  { name:'GRUNT',  hp:  30, speed:  56, gold:  8, r: 10, color:'#86d6a8', desc:'기본 적' },
+  runner: { name:'RUNNER', hp:  18, speed: 104, gold: 12, r:  8, color:'#ffd96b', desc:'빠르고 약함' },
+  swarm:  { name:'SWARM',  hp:  12, speed:  80, gold:  4, r:  6, color:'#a4ff5c', desc:'싸고 떼로 · AoE에 약함' },
+  tank:   { name:'TANK',   hp: 130, speed:  36, gold: 25, r: 13, color:'#ff7799', desc:'장갑 · 느리고 단단함', armored:true },
+  shield: { name:'SHIELD', hp:  70, speed:  48, gold: 20, r: 12, color:'#bcc6ff', desc:'실드 60 먼저 · FROST 카운터', shield:60 },
+  flyer:  { name:'FLYER',  hp:  72, speed:  70, gold: 22, r:  9, color:'#7cc4ff', desc:'비행 · PULSE·RAIL만 명중', flying:true },
+  boss:   { name:'BOSS',   hp: 900, speed:  30, gold:120, r: 17, color:'#ff5577', desc:'매우 두꺼움 · 누수 시 -10', boss:true }
 };
 
-/* ---------- 15 Wave schedule ----------
+/* ---------- 15 Wave schedule (이후 무한) ----------
  *  entries: [type, count, interval_seconds, optional pre_delay]
+ *  5·10·15 = 보스 웨이브.
  */
 const WAVES = [
   [['grunt', 8, 0.7]],
-  [['grunt', 12, 0.6]],
-  [['grunt', 8, 0.6], ['runner', 4, 0.5, 1.0]],
-  [['grunt', 16, 0.45]],
-  [['runner', 12, 0.5]],
-  [['grunt', 10, 0.55], ['tank', 2, 1.5, 2.0]],
-  [['grunt', 12, 0.5], ['runner', 6, 0.5, 1.0]],
-  [['tank', 5, 1.4]],
-  [['runner', 18, 0.35]],
-  [['grunt', 14, 0.4], ['tank', 4, 1.2, 1.5]],
-  [['runner', 16, 0.35], ['grunt', 10, 0.5, 2.0]],
-  [['tank', 7, 1.1]],
-  [['grunt', 20, 0.3], ['runner', 10, 0.4, 3.0]],
-  [['tank', 5, 1.2], ['runner', 14, 0.4, 1.0]],
-  [['grunt', 25, 0.3], ['runner', 14, 0.35, 4.0], ['tank', 5, 1.2, 8.0]]
+  [['grunt', 10, 0.6], ['swarm', 6, 0.3, 1.5]],
+  [['grunt', 8, 0.55], ['runner', 5, 0.5, 1.0]],
+  [['shield', 4, 1.2], ['grunt', 10, 0.45, 1.0]],
+  [['boss', 1, 0], ['swarm', 10, 0.35, 1.0]],
+  [['flyer', 6, 0.8], ['runner', 8, 0.45, 1.0]],
+  [['tank', 4, 1.4], ['swarm', 12, 0.3, 1.5]],
+  [['shield', 6, 1.0], ['flyer', 6, 0.7, 2.0]],
+  [['runner', 18, 0.32], ['tank', 3, 1.3, 2.0]],
+  [['boss', 1, 0], ['flyer', 8, 0.6, 1.0], ['tank', 3, 1.2, 3.0]],
+  [['swarm', 24, 0.22], ['shield', 6, 1.0, 2.0]],
+  [['tank', 7, 1.0], ['flyer', 8, 0.55, 2.0]],
+  [['shield', 8, 0.8], ['runner', 14, 0.35, 2.0], ['swarm', 14, 0.3, 4.0]],
+  [['flyer', 12, 0.5], ['tank', 5, 1.1, 2.0], ['runner', 12, 0.35, 4.0]],
+  [['boss', 2, 5.0], ['tank', 6, 1.0, 1.0], ['flyer', 10, 0.5, 4.0], ['swarm', 20, 0.25, 8.0]]
 ];
 
-const START_GOLD = 100;
+const START_GOLD = 120;
 const START_LIVES = 20;
-const WAVE_BONUS = 30; // 웨이브 클리어 보너스
+const BOSS_LEAK = 10;        // 보스 누수 시 -10 (일반은 -1)
+const WAVE_BONUS = 24;       // 웨이브 클리어 기본 인컴
+const INTEREST_RATE = 0.08;  // 보유 골드 이자 (빌드오더 결정 유도)
+const INTEREST_CAP = 40;     // 이자 상한
+const HP_EXP = 1.10;         // 무한 모드 HP 지수 스케일
+
+/* ---------- Combat helpers ---------- */
+function towerStat(t){ return TOWERS[t.type].lv[t.level]; }   // 현재 레벨 능력치
+function counterMult(def, e){
+  if (def.strongVs && def.strongVs.includes(e.type)) return COUNTER_STRONG;
+  if (def.weakVs   && def.weakVs.includes(e.type))   return COUNTER_WEAK;
+  return 1;
+}
+// 데미지 적용: 실드(shield) 먼저 차감 후 본체
+function applyDamage(e, dmg){
+  if (dmg <= 0) return;
+  if (e.shield > 0){ const a = Math.min(e.shield, dmg); e.shield -= a; dmg -= a; }
+  if (dmg > 0) e.hp -= dmg;
+}
+function canHit(def, e){ return !e.flying || def.antiAir; }   // 비행은 대공만
 
 /* ============================================================
  * State + Rendering
@@ -340,27 +397,33 @@ function showTitle(){
   const best = loadStats();
   root.innerHTML = `
     <section id="title">
-      <span class="badge">PHASE 1 · MVP</span>
+      <span class="badge">전략 디펜스</span>
       <h1>네온 디펜스</h1>
-      <p>네온 격자 위 본격 타워 디펜스.<br>4종 타워, 3종 적, 15 웨이브.</p>
+      <p>굽이치는 길목에 타워를 세우고 <b>업그레이드</b>하라.<br>적 상성을 읽는 본격 배치 전략 TD.</p>
       ${best.bestScore > 0 ? `<div class="ribbon">B E S T &nbsp; ${best.bestScore}</div>` : ''}
       <div class="rules">
-        <h3>T O W E R S</h3>
+        <h3>T O W E R S &nbsp;·&nbsp; 3단계 업그레이드</h3>
         <div class="row"><span class="sw" style="background:#5cd6ea"></span>
-          <div><b>PULSE</b> · 30g · 단일 / 빠른 사거리</div></div>
+          <div><b>PULSE</b> · 30g · 단일 속사 · <b>대공</b> · 만능</div></div>
         <div class="row"><span class="sw" style="background:#ff8a3c"></span>
-          <div><b>BURST</b> · 60g · 광역 폭발 (반경 48px)</div></div>
+          <div><b>BURST</b> · 55g · 광역 폭발 · 군집 학살 (지상)</div></div>
         <div class="row"><span class="sw" style="background:#80e8ff"></span>
-          <div><b>FROST</b> · 50g · 슬로우 (55% 1.6초)</div></div>
+          <div><b>FROST</b> · 50g · 슬로우 · 실드 카운터</div></div>
         <div class="row"><span class="sw" style="background:#ff5b9c"></span>
-          <div><b>RAIL</b> · 80g · 관통 라인 (사거리 160px)</div></div>
+          <div><b>RAIL</b> · 80g · 장거리 관통 · <b>대공</b> · 장갑 카운터</div></div>
+      </div>
+      <div class="rules">
+        <h3>S T R A T E G Y</h3>
+        <div>· <b>상성</b>: 비행은 PULSE·RAIL만 명중 / 실드는 FROST / 군집은 BURST / 장갑은 RAIL.</div>
+        <div>· 타워 클릭 → <b>업그레이드(Lv3)</b> · 타깃 우선순위 · 판매(투자 60% 환불).</div>
+        <div>· 웨이브마다 <b>인컴 + 보유 골드 이자(8%)</b> → 저축 vs 투자 빌드오더.</div>
+        <div>· 5·10·15 <b>보스</b> 웨이브 (누수 시 -10♥). <b>15 이후 무한</b> 스케일링.</div>
       </div>
       <div class="rules">
         <h3>C O N T R O L S</h3>
-        <div>· 하단 팔레트 또는 키 <b>1·2·3·4</b>로 타워 선택 → 빈 칸 클릭/탭으로 배치</div>
-        <div>· 배치된 타워 클릭 → 사거리 + 판매 (비용 60% 환불)</div>
+        <div>· 팔레트 또는 키 <b>1·2·3·4</b> 선택 → 빈 칸 클릭/탭 배치 (길 위 불가).</div>
         <div>· 키 <b>P</b> 일시정지 / <b>F</b> 2배속 / <b>Space</b> 다음 웨이브</div>
-        <div>· 라이프 0 = 패배, 15웨이브 클리어 = 승리</div>
+        <div>· 라이프 <b>0 = 패배</b>. 도달 웨이브가 곧 점수.</div>
       </div>
       <button class="btn primary" id="btn-start" style="width:100%; padding: 14px;">출 발</button>
     </section>
@@ -431,7 +494,7 @@ function buildLayout(){
       <button class="btn" id="btn-speed">2×</button>
       <button class="btn" id="btn-quit">그만</button>
     </div>
-    <div class="info">단축키: 1·2·3·4 타워 / P 일시정지 / F 배속 / Space 웨이브 시작</div>
+    <div class="info">1·2·3·4 타워 선택 · 빈 칸 배치 · 타워 클릭=업그레이드/판매/타깃 · P 일시 · F 배속 · Space 웨이브</div>
   `;
 
   hudEls = {
@@ -569,13 +632,14 @@ function placeTower(typeId, cx, cy){
   const def = TOWERS[typeId];
   state.towers.push({
     id: 't' + (state.time * 1000 | 0) + Math.floor(Math.random() * 1000),
-    type: typeId, cx, cy,
+    type: typeId, cx, cy, level: 1,
     x: cx * CELL + CELL / 2,
     y: cy * CELL + CELL / 2,
     cooldown: 0,
     targetId: null,
     angle: -Math.PI / 2,
-    cost: def.cost
+    spent: def.cost,           // 누적 투자 (판매 환불 기준)
+    priority: 'first'          // first | strong | weak | close
   });
 }
 
@@ -594,33 +658,74 @@ function refreshPalette(){
   }
 }
 
+const PRIORITY_ORDER = ['first', 'strong', 'weak', 'close'];
+const PRIORITY_LABEL = { first: '선두', strong: '강한 적', weak: '약한 적', close: '근접' };
+
+function upgradeCost(t){
+  const next = TOWERS[t.type].lv[t.level + 1];
+  return next ? next.upCost : null;
+}
 function refreshDetail(){
   if (state.selectedTower){
     const t = state.selectedTower;
     const def = TOWERS[t.type];
-    const refund = Math.floor(t.cost * 0.6);
+    const st = towerStat(t);
+    const refund = Math.floor(t.spent * 0.6);
+    const upCost = upgradeCost(t);
+    const cs = (def.strongVs || []).map(k => ENEMIES[k].name).join(', ');
+    const cw = (def.weakVs || []).map(k => ENEMIES[k].name).join(', ');
     detailEl.classList.add('on');
     detailEl.innerHTML = `
-      <div class="tname" style="color:${def.color}">${def.name}</div>
-      <div class="row"><span>사거리</span><span>${def.range}px</span></div>
-      <div class="row"><span>데미지</span><span>${def.damage}${def.fire === 'aoe' ? ' (AoE)' : def.fire === 'pierce' ? ' (관통)' : ''}</span></div>
-      <div class="row"><span>발사 간격</span><span>${def.interval}s</span></div>
-      ${def.fire === 'slow' ? `<div class="row"><span>슬로우</span><span>${Math.round((1 - def.slowFactor)*100)}% / ${def.slowDuration}s</span></div>` : ''}
+      <div class="tname" style="color:${def.color}">${def.name} <span style="font-size:11px; color:#ffd96b;">Lv.${t.level}${'★'.repeat(t.level)}</span>${def.antiAir ? ' <span style="font-size:9px;color:#7cc4ff;">AA</span>' : ''}</div>
+      <div class="row"><span>사거리</span><span>${st.range}px</span></div>
+      <div class="row"><span>데미지</span><span>${st.damage}${def.fire === 'aoe' ? ' (AoE ' + st.aoeRadius + ')' : def.fire === 'pierce' ? ' (관통)' : ''}</span></div>
+      <div class="row"><span>발사 간격</span><span>${st.interval}s</span></div>
+      ${def.fire === 'slow' ? `<div class="row"><span>슬로우</span><span>${Math.round((1 - st.slowFactor)*100)}% / ${st.slowDuration}s</span></div>` : ''}
+      ${cs || cw ? `<div class="row" style="font-size:11px;"><span>상성</span><span>${cs ? '<span style="color:#86d6a8">💪' + cs + '</span> ' : ''}${cw ? '<span style="color:#ff7799">🔻' + cw + '</span>' : ''}</span></div>` : ''}
+      <div class="row"><span>타깃</span><span><button class="btn" id="btn-prio" style="padding:2px 8px; font-size:11px;">${PRIORITY_LABEL[t.priority || 'first']}</button></span></div>
       <div class="actions">
+        ${upCost != null
+          ? `<button class="btn primary" id="btn-up" ${state.gold < upCost ? 'disabled' : ''}>업그레이드 Lv.${t.level + 1} · ${upCost}g</button>`
+          : `<span style="font-size:11px; color:#ffd96b; align-self:center;">★ 최대 레벨</span>`}
         <button class="btn danger" id="btn-sell">판매 +${refund}g</button>
       </div>
     `;
     document.getElementById('btn-sell').onclick = sellSelected;
+    document.getElementById('btn-prio').onclick = cyclePriority;
+    const up = document.getElementById('btn-up');
+    if (up) up.onclick = upgradeSelected;
   } else {
     detailEl.classList.remove('on');
     detailEl.innerHTML = '';
   }
 }
 
+function upgradeSelected(){
+  const t = state.selectedTower;
+  if (!t) return;
+  const cost = upgradeCost(t);
+  if (cost == null || state.gold < cost) return;
+  state.gold -= cost;
+  t.level += 1;
+  t.spent += cost;
+  addExplosion(t.x, t.y, 22, TOWERS[t.type].color);
+  addFloatText(t.x, t.y - 8, 'Lv.' + t.level, TOWERS[t.type].color);
+  refreshDetail();
+  refreshPalette();
+}
+
+function cyclePriority(){
+  const t = state.selectedTower;
+  if (!t) return;
+  const cur = t.priority || 'first';
+  t.priority = PRIORITY_ORDER[(PRIORITY_ORDER.indexOf(cur) + 1) % PRIORITY_ORDER.length];
+  refreshDetail();
+}
+
 function sellSelected(){
   const t = state.selectedTower;
   if (!t) return;
-  const refund = Math.floor(t.cost * 0.6);
+  const refund = Math.floor(t.spent * 0.6);
   state.gold += refund;
   addFloatText(t.x, t.y, '+' + refund + 'g', '#ffd96b');
   state.towers = state.towers.filter(x => x !== t);
@@ -651,9 +756,52 @@ function toggleSpeed(){
   hudEls.speed.textContent = state.speed + '×';
 }
 
+function getWave(idx){
+  if (idx < WAVES.length) return WAVES[idx];
+  return generateInfiniteWave(idx);
+}
+// 15웨이브 이후 무한 절차 생성. 5의 배수(subStep 4) = 보스 웨이브.
+function generateInfiniteWave(idx){
+  const cycle = idx - WAVES.length;
+  const tier = Math.floor(cycle / 5);
+  const sub = cycle % 5;
+  if (sub === 4){
+    const bossCount = 1 + Math.floor(tier / 2);
+    return [
+      ['boss',  bossCount,   4.5, 1.0],
+      ['flyer', 8 + tier * 2, 0.5, 2.0],
+      ['shield', 4 + tier,   1.0, 4.0]
+    ];
+  }
+  const wts = {
+    grunt: 22, runner: 20 + tier * 2, swarm: 18 + tier * 3,
+    tank: 10 + tier * 3, shield: 8 + tier * 3, flyer: 6 + tier * 4
+  };
+  const numTypes = 2 + Math.floor(Math.random() * 3);
+  const picked = new Set();
+  let guard = 0;
+  while (picked.size < numTypes && guard++ < 20) picked.add(weightedPick(wts));
+  const entries = [];
+  let delay = 0;
+  for (const type of picked){
+    const tough = ENEMIES[type].hp >= 70;
+    const count = tough ? (4 + tier * 2) : (10 + tier * 3);
+    const interval = Math.max(0.18, 0.5 - tier * 0.02 + Math.random() * 0.12);
+    entries.push([type, count, interval, delay]);
+    delay += 0.8 + Math.random() * 1.8;
+  }
+  return entries;
+}
+function weightedPick(weights){
+  const tot = Object.values(weights).reduce((a, b) => a + b, 0);
+  let r = Math.random() * tot;
+  for (const k in weights){ if (r < weights[k]) return k; r -= weights[k]; }
+  return Object.keys(weights)[0];
+}
+
 function startNextWave(){
   if (state.phase !== 'prepare') return;
-  const wave = WAVES[state.waveIdx];
+  const wave = getWave(state.waveIdx);
   if (!wave) return;
   state.spawnEntries = wave.map(e => ({
     type: e[0],
@@ -670,16 +818,25 @@ function startNextWave(){
 function spawnEnemy(type){
   const def = ENEMIES[type];
   const start = PATH_POINTS[0];
+  // 무한 모드 스케일링: 15웨이브 이후 HP·골드 증가
+  const cycle = Math.max(0, state.waveIdx - WAVES.length);
+  const hpMult = Math.pow(HP_EXP, cycle);
+  const goldMult = 1 + 0.06 * cycle;
+  const hp = Math.round(def.hp * hpMult);
   state.enemies.push({
     type, x: start.x, y: start.y,
-    hp: def.hp, maxHp: def.hp,
+    hp, maxHp: hp,
+    shield: Math.round((def.shield || 0) * hpMult),
+    maxShield: Math.round((def.shield || 0) * hpMult),
     speed: def.speed,
     pathIdx: 1,
     slowUntil: 0,
     slowFactor: 1,
     r: def.r,
     color: def.color,
-    reward: def.gold,
+    flying: !!def.flying,
+    boss: !!def.boss,
+    reward: Math.max(1, Math.round(def.gold * goldMult)),
     dead: false,
     escaped: false
   });
@@ -709,8 +866,9 @@ function step(dt){
     const target = PATH_POINTS[e.pathIdx];
     if (!target){
       e.escaped = true;
-      state.lives -= 1;
-      if (state.lives <= 0) return loseGame();
+      state.lives -= e.boss ? BOSS_LEAK : 1;
+      addFloatText(e.x, e.y, '-' + (e.boss ? BOSS_LEAK : 1) + '♥', '#ff5577');
+      if (state.lives <= 0){ state.lives = 0; return loseGame(); }
       continue;
     }
     const dx = target.x - e.x, dy = target.y - e.y;
@@ -745,22 +903,27 @@ function step(dt){
   for (const t of state.towers){
     t.cooldown -= dt;
     const def = TOWERS[t.type];
-    let target = null, bestProgress = -1;
+    const st = towerStat(t);
+    let target = null, bestVal = -Infinity;
+    const pr = t.priority || 'first';
     for (const e of state.enemies){
       if (e.dead || e.escaped) continue;
+      if (!canHit(def, e)) continue;           // 비행은 대공 타워만
       const dx = e.x - t.x, dy = e.y - t.y;
       const d2 = dx*dx + dy*dy;
-      if (d2 > def.range * def.range) continue;
-      if (e.pathIdx > bestProgress){
-        bestProgress = e.pathIdx;
-        target = e;
-      }
+      if (d2 > st.range * st.range) continue;
+      let val;
+      if (pr === 'strong')      val = e.hp + e.shield;
+      else if (pr === 'weak')   val = -(e.hp + e.shield);
+      else if (pr === 'close')  val = -d2;
+      else                      val = e.pathIdx;   // first (가장 앞선 적)
+      if (val > bestVal){ bestVal = val; target = e; }
     }
     if (target){
       t.angle = Math.atan2(target.y - t.y, target.x - t.x);
       if (t.cooldown <= 0){
         fire(t, target);
-        t.cooldown = def.interval;
+        t.cooldown = st.interval;
       }
     }
   }
@@ -798,34 +961,37 @@ function step(dt){
 
 function fire(t, target){
   const def = TOWERS[t.type];
+  const st = towerStat(t);
   if (def.fire === 'beam'){
-    target.hp -= def.damage;
+    applyDamage(target, st.damage * counterMult(def, target));
     addBeam(t.x, t.y, target.x, target.y, def.color, 0.13);
   } else if (def.fire === 'aoe'){
     addBeam(t.x, t.y, target.x, target.y, def.color, 0.16);
-    addExplosion(target.x, target.y, def.aoeRadius, def.color);
+    addExplosion(target.x, target.y, st.aoeRadius, def.color);
     for (const e of state.enemies){
       if (e.dead || e.escaped) continue;
+      if (!canHit(def, e)) continue;
       const dx = e.x - target.x, dy = e.y - target.y;
-      if (dx*dx + dy*dy <= def.aoeRadius * def.aoeRadius){
-        e.hp -= def.damage;
+      if (dx*dx + dy*dy <= st.aoeRadius * st.aoeRadius){
+        applyDamage(e, st.damage * counterMult(def, e));
       }
     }
   } else if (def.fire === 'slow'){
-    target.hp -= def.damage;
-    target.slowUntil = state.time + def.slowDuration;
-    target.slowFactor = def.slowFactor;
+    applyDamage(target, st.damage * counterMult(def, target));
+    target.slowUntil = state.time + st.slowDuration;
+    target.slowFactor = st.slowFactor;
     addBeam(t.x, t.y, target.x, target.y, def.color, 0.18);
   } else if (def.fire === 'pierce'){
     const dx = Math.cos(t.angle), dy = Math.sin(t.angle);
-    const ex = t.x + dx * def.range;
-    const ey = t.y + dy * def.range;
+    const ex = t.x + dx * st.range;
+    const ey = t.y + dy * st.range;
     addBeam(t.x, t.y, ex, ey, def.color, 0.28);
     for (const e of state.enemies){
       if (e.dead || e.escaped) continue;
+      if (!canHit(def, e)) continue;
       const dist = pointSegDist(e.x, e.y, t.x, t.y, ex, ey);
       if (dist < e.r + 5){
-        e.hp -= def.damage;
+        applyDamage(e, st.damage * counterMult(def, e));
       }
     }
   }
@@ -834,21 +1000,28 @@ function fire(t, target){
 function endWave(){
   state.wavesCleared += 1;
   state.waveIdx += 1;
-  state.gold += WAVE_BONUS;
   state.score += 100;
-  addFloatText(W/2, H/2 - 30, '+' + WAVE_BONUS + 'g', '#ffd96b');
-  if (state.waveIdx >= WAVES.length){
-    return winGame();
+  // 인컴 = 기본 보너스 + 보유 골드 이자 (저축 vs 투자 빌드오더 결정)
+  const interest = Math.min(INTEREST_CAP, Math.floor(state.gold * INTEREST_RATE));
+  const income = WAVE_BONUS + interest;
+  state.gold += income;
+  addFloatText(W/2, H/2 - 30, '+' + income + 'g' + (interest > 0 ? ' (이자 +' + interest + ')' : ''), '#ffd96b');
+  // 15웨이브 마일스톤 — 이후 무한
+  if (state.waveIdx === WAVES.length){
+    state.gold += 80;
+    state.score += 1000;
+    addFloatText(W/2, H/2 - 52, '★ STAGE CLEAR · +80g · 무한 모드 ★', '#5cd6ea');
   }
   state.phase = 'prepare';
   waveBtn.disabled = false;
+  const label = state.waveIdx >= WAVES.length ? ('웨이브 ' + (state.waveIdx + 1) + ' (∞)') : ('다음 웨이브: ' + (state.waveIdx + 1) + '/15');
   setOverlay(`
     <h2>웨이브 ${state.wavesCleared} 클리어</h2>
-    <p>+${WAVE_BONUS}g 보너스 · 다음 웨이브: ${state.waveIdx + 1}/15</p>
+    <p>+${income}g${interest > 0 ? ' (이자 +' + interest + ')' : ''} · ${label}</p>
   `, false);
   setTimeout(() => {
     if (state.phase === 'prepare') {
-      setOverlay(`<h2>준비 단계</h2><p>타워를 배치하고 <b>다음 웨이브</b>를 누르세요.</p>`, false);
+      setOverlay(`<h2>준비 단계</h2><p>타워를 배치·업그레이드하고 <b>다음 웨이브</b>를 누르세요.</p>`, false);
     }
   }, 1500);
 }
@@ -873,9 +1046,12 @@ function finishUI(won){
     bestWave: Math.max(best.bestWave, state.wavesCleared)
   };
   saveStats(next);
+  const reached = state.wavesCleared >= WAVES.length
+    ? `웨이브 ${state.wavesCleared} 도달 ∞`
+    : `웨이브 ${state.wavesCleared}/15`;
   setOverlay(`
     <h2>${won ? '🏆 클리어!' : '💥 게임 오버'}</h2>
-    <p>웨이브 ${state.wavesCleared}/15 · 라이프 ${Math.max(0, state.lives)} · 골드 ${state.gold}</p>
+    <p>${reached} · 라이프 ${Math.max(0, state.lives)} · 골드 ${state.gold}</p>
     <div class="big" style="font-size:48px; font-weight:900; color:${won ? '#5cd6ea' : '#ff7799'}; margin: 12px 0;">${state.score}</div>
     ${isBest ? '<div class="ribbon">NEW BEST</div>' : ''}
     <div style="margin-top: 16px;">
@@ -963,10 +1139,26 @@ function render(){
   // 입구/출구 표시
   drawSpawnExit();
 
+  // 건설 포켓 힌트 (준비 단계에만 · 비어있는 고가치 자리)
+  if (state.phase === 'prepare'){
+    ctx.save();
+    for (const key of POCKET_SET){
+      const [cx, cy] = key.split(',').map(Number);
+      if (state.towers.some(t => t.cx === cx && t.cy === cy)) continue;
+      const px = cx * CELL + CELL / 2, py = cy * CELL + CELL / 2;
+      ctx.fillStyle = 'rgba(124,255,196,.16)';
+      ctx.beginPath();
+      ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   // 호버 셀 + 사거리 미리보기
   if (state.placeMode && state.hoverCell){
     const c = state.hoverCell;
     const def = TOWERS[state.placeMode];
+    const rng = def.lv[1].range;
     const valid = canPlace(c.cx, c.cy);
     ctx.save();
     ctx.fillStyle = valid ? 'rgba(90,210,234,.25)' : 'rgba(255,80,120,.25)';
@@ -976,7 +1168,7 @@ function render(){
     ctx.strokeRect(c.cx * CELL + 1, c.cy * CELL + 1, CELL - 2, CELL - 2);
     if (valid){
       ctx.beginPath();
-      ctx.arc(c.cx * CELL + CELL/2, c.cy * CELL + CELL/2, def.range, 0, Math.PI * 2);
+      ctx.arc(c.cx * CELL + CELL/2, c.cy * CELL + CELL/2, rng, 0, Math.PI * 2);
       ctx.fillStyle = `${def.color}22`;
       ctx.fill();
       ctx.strokeStyle = `${def.color}88`;
@@ -992,7 +1184,7 @@ function render(){
     const def = TOWERS[t.type];
     ctx.save();
     ctx.beginPath();
-    ctx.arc(t.x, t.y, def.range, 0, Math.PI * 2);
+    ctx.arc(t.x, t.y, towerStat(t).range, 0, Math.PI * 2);
     ctx.fillStyle = `${def.color}1a`;
     ctx.fill();
     ctx.strokeStyle = `${def.color}aa`;
@@ -1075,7 +1267,10 @@ function render(){
   // HUD 업데이트
   hudEls.gold.textContent = state.gold;
   hudEls.lives.textContent = state.lives;
-  hudEls.wave.textContent = (state.phase === 'wave' ? (state.waveIdx + 1) : state.wavesCleared) + '/15';
+  {
+    const cur = state.phase === 'wave' ? (state.waveIdx + 1) : state.wavesCleared;
+    hudEls.wave.textContent = state.wavesCleared >= WAVES.length ? (cur + ' ∞') : (cur + '/15');
+  }
   hudEls.speed.textContent = state.paused ? '||' : state.speed + '×';
 }
 
@@ -1142,6 +1337,22 @@ function drawTower(t){
   ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+
+  // 레벨 표시 (본체 아래 작은 점 1~3개)
+  if (t.level > 1){
+    ctx.save();
+    ctx.fillStyle = '#ffd96b';
+    ctx.shadowColor = '#ffd96b';
+    ctx.shadowBlur = 4;
+    const gap = 4;
+    const sx = t.x - ((t.level - 1) * gap) / 2;
+    for (let i = 0; i < t.level; i++){
+      ctx.beginPath();
+      ctx.arc(sx + i * gap, t.y + 13, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
 }
 
 function drawEnemy(e){
@@ -1177,8 +1388,8 @@ function drawEnemy(e){
       ctx.closePath();
       ctx.fill();
     }
-  } else if (e.type === 'tank'){
-    // 두꺼운 6각형
+  } else if (e.type === 'tank' || e.type === 'boss'){
+    // 두꺼운 6각형 (보스는 더 큼 + 이중 테두리)
     ctx.translate(e.x, e.y);
     ctx.beginPath();
     for (let i = 0; i < 6; i++){
@@ -1192,10 +1403,63 @@ function drawEnemy(e){
     ctx.fill();
     ctx.strokeStyle = '#fff';
     ctx.globalAlpha = 0.6;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = e.boss ? 2 : 1;
     ctx.stroke();
+    if (e.boss){
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, e.r + 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (e.type === 'swarm'){
+    // 작은 삼각형
+    ctx.translate(e.x, e.y);
+    ctx.beginPath();
+    ctx.moveTo(0, -e.r);
+    ctx.lineTo(e.r * 0.9, e.r * 0.7);
+    ctx.lineTo(-e.r * 0.9, e.r * 0.7);
+    ctx.closePath();
+    ctx.fill();
+  } else if (e.type === 'shield'){
+    // 둥근 사각형 (실드)
+    ctx.translate(e.x, e.y);
+    roundRect(ctx, -e.r, -e.r, e.r * 2, e.r * 2, 4);
+    ctx.fill();
+  } else if (e.type === 'flyer'){
+    // 비행: 위로 살짝 띄우고 그림자 + 원형 본체
+    ctx.translate(e.x, e.y - 6);
+    ctx.beginPath();
+    ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-e.r - 3, 0); ctx.lineTo(e.r + 3, 0);   // 날개
+    ctx.stroke();
+  } else {
+    ctx.translate(e.x, e.y);
+    ctx.beginPath();
+    ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+    ctx.fill();
   }
   ctx.restore();
+
+  // 비행체 지면 그림자
+  if (e.flying){
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.35)';
+    ctx.beginPath();
+    ctx.ellipse(e.x, e.y + 4, e.r * 0.7, e.r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  // 실드 막대
+  if (e.maxShield > 0 && e.shield > 0){
+    const bw = e.r * 2.4, bh = 3;
+    const bx = e.x - bw / 2, by = e.y - e.r - 11 - (e.flying ? 6 : 0);
+    ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = '#bcc6ff'; ctx.fillRect(bx, by, bw * (e.shield / e.maxShield), bh);
+  }
 
   // 슬로우 표시
   if (slowed){
