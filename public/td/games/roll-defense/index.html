@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>롤 디펜스 · 전략 디펜스</title>
-<meta name="description" content="랜덤 뽑기로 받은 타워를 8x8 슬롯에 배치하고 같은 종류 3개를 합성해 더 강한 등급으로 진화시키는 랜타디 풍 타워 디펜스">
+<meta name="description" content="랜덤 뽑기 타워를 8x8 슬롯에 배치하고 같은 등급 2개를 합성해 일반→희귀→영웅→전설→신 5등급으로. 누수=목숨 차감, 균열 보스 소환, 영웅 건설권까지 — 스타2 랜덤 타워 디펜스 오마주">
 <link rel="canonical" href="https://games.jdgrid.com/td/games/roll-defense/">
 <meta property="og:title" content="롤 디펜스">
 <meta property="og:description" content="랜덤 뽑기 · 3→1 합성 · 8×8 슬롯">
@@ -492,7 +492,7 @@ const META_KEY = 'roll_defense_meta';
 const CORE_PER_SCORE = 80;   // score / 80 = cores earned
 const UPGRADES = {
   gold:   { name:'시작 골드', icon:'💰', max:5, baseCost:40, costInc:30, fmt:(lv)=>`+${lv*15}g 시작` },
-  cap:    { name:'필드 한계', icon:'🛡', max:5, baseCost:60, costInc:45, fmt:(lv)=>`maxAlive +${lv*4}` },
+  cap:    { name:'예비 목숨', icon:'❤', max:5, baseCost:60, costInc:45, fmt:(lv)=>`시작 목숨 +${lv*3}` },
   haste:  { name:'스킬 가속', icon:'⚡', max:4, baseCost:70, costInc:55, fmt:(lv)=>`스킬 쿨다운 -${lv*10}%` },
   luck:   { name:'행운 뽑기', icon:'🎲', max:5, baseCost:55, costInc:45, fmt:(lv)=>`2성 확률 +${lv*2}%` },
   refund: { name:'합성 환급', icon:'♻', max:3, baseCost:50, costInc:45, fmt:(lv)=>`환급 +${lv*8}%` }
@@ -537,19 +537,38 @@ const TRACK_SEG_LEN = TRACK_SEGS.map(s => Math.hypot(s.x2 - s.x1, s.y2 - s.y1));
 /* ---------- Economy ---------- */
 const ECONOMY = {
   startGold: 70,
-  maxAlive: 34,             // 화면에 동시 N마리 초과 시 게임 오버 (38→34, 압박 ↑)
-  warnAlive: 25,            // HUD 경고 색 임계
+  maxAlive: 45,             // 보조 안전장치 — 동시 N마리 초과 시 즉시 게임 오버
+  warnAlive: 34,            // HUD 경고 색 임계
   rollBaseCost: 16,         // 14→16 (뽑기 경제 조임)
-  rollCostInc: 0.5,         // 0.4→0.5
-  rollCostMax: 45,          // 40→45
+  rollCostInc: 0.6,         // 0.5→0.6 (뽑기 스팸 억제)
+  rollCostMax: 48,
   mergeBonusGold: 4,        // 합성 1회당 환급
-  waveBonusGold: 16,        // 22→16 (후반 골드 누적 과잉 완화)
+  waveBonusGold: 14,        // 후반 골드 누적 과잉 완화
   betweenWaveSec: 4
 };
 
+/* ---------- 누수-목숨 (랜타디 오마주) ----------
+ * 적이 트랙을 한 바퀴 완주(=누수)하면 목숨 차감 후 이탈.
+ * 일반 -1 / 보스 -BOSS_LEAK. 목숨 0이면 게임 오버. */
+const START_LIVES = 20;
+const BOSS_LEAK = 10;
+function maxLivesFor(meta){ return START_LIVES + upLevel(meta, 'cap') * 3; }
+
+/* ---------- Grades (랜타디 오마주: 5등급) ----------
+ * 1 일반 / 2 희귀 / 3 영웅 / 4 전설 / 5 신
+ * 단계당 공격력 정확히 ×2 (SC2 랜덤 타워 디펜스 규칙).
+ */
+const MAX_GRADE = 5;
+const GRADE_NAMES  = [null, '일반', '희귀', '영웅', '전설', '신'];
+const GRADE_COLORS = [null, '#cfd6e4', '#5aa9ff', '#c98aff', '#ffb13c', '#7cffc4'];
+const LEGEND_GRADE = 4;   // 전설 — 천장/영웅 토큰 기준
+function gradeName(tier){ return GRADE_NAMES[tier] || ('T' + tier); }
+function gradeColor(tier){ return GRADE_COLORS[tier] || '#ffffff'; }
+function gradeStars(tier){ return '★'.repeat(Math.min(tier, MAX_GRADE)); }
+
 /* ---------- Tower roll probability ---------- */
-// 뽑기 시 등급 (1~4) 출현 확률. 합 1.0
-const TIER_ROLL_PROB = [0.94, 0.05, 0.01, 0.00];
+// 뽑기 시 등급 (1~5) 출현 확률. 합 1.0 — 합성으로 상위 등급을 만든다.
+const TIER_ROLL_PROB = [0.92, 0.07, 0.01, 0.00, 0.00];
 
 // 종류 출현 가중치 (합 자동 정규화)
 const KIND_WEIGHT = { pulse: 20, burst: 16, frost: 16, rail: 12, guard: 14, rocket: 11, chain: 11 };
@@ -596,7 +615,10 @@ const FREEZE_FACTOR = 0.40;
 const GOLDRUSH_DUR = 30;
 const GOLDRUSH_MULT = 1.5;
 
-/* ---------- Tower stats: kind × tier (1..4) ---------- */
+/* ---------- Tower stats: kind × grade (1..5) ----------
+ * 랜타디 오마주: dmg 는 한 등급 오를 때마다 정확히 ×2.
+ * cd 는 점감 / range 는 점증 / 특수치는 등급별 강화.
+ */
 const TOWER_STATS = {
   pulse: {
     name: 'PULSE', color: '#5cd6ea', fire: 'single',
@@ -604,10 +626,11 @@ const TOWER_STATS = {
     // 단일타깃이라 멀티 보너스 없음 → dmg/cd 상향으로 균형 타워다운 위상
     tiers: [
       null,
-      { dmg: 11, range:  88, cd: 0.50 },
-      { dmg: 28, range: 102, cd: 0.46 },
-      { dmg: 68, range: 118, cd: 0.40 },
-      { dmg:160, range: 140, cd: 0.34 }
+      { dmg:  11, range:  88, cd: 0.50 },
+      { dmg:  22, range: 100, cd: 0.45 },
+      { dmg:  44, range: 112, cd: 0.40 },
+      { dmg:  88, range: 126, cd: 0.35 },
+      { dmg: 176, range: 142, cd: 0.30 }
     ]
   },
   burst: {
@@ -615,10 +638,11 @@ const TOWER_STATS = {
     strongVs: ['splitter'], weakVs: ['shielded'],
     tiers: [
       null,
-      { dmg: 14, range:  80, cd: 1.20, aoeRadius: 42 },
-      { dmg: 36, range:  94, cd: 1.05, aoeRadius: 50 },
-      { dmg: 88, range: 110, cd: 0.95, aoeRadius: 60 },
-      { dmg:205, range: 130, cd: 0.85, aoeRadius: 72 }
+      { dmg:  14, range:  80, cd: 1.20, aoeRadius: 42 },
+      { dmg:  28, range:  92, cd: 1.08, aoeRadius: 50 },
+      { dmg:  56, range: 104, cd: 0.97, aoeRadius: 58 },
+      { dmg: 112, range: 118, cd: 0.88, aoeRadius: 66 },
+      { dmg: 224, range: 132, cd: 0.80, aoeRadius: 76 }
     ]
   },
   frost: {
@@ -627,10 +651,11 @@ const TOWER_STATS = {
     // 슬로우 유틸이 본업이라 DPS는 낮게 두되, 단독으로도 의미있게 소폭 상향
     tiers: [
       null,
-      { dmg:  7, range:  96, cd: 0.58, slowDur: 1.6, slowFactor: 0.55 },
-      { dmg: 16, range: 108, cd: 0.53, slowDur: 2.0, slowFactor: 0.45 },
-      { dmg: 38, range: 124, cd: 0.48, slowDur: 2.4, slowFactor: 0.35 },
-      { dmg: 88, range: 144, cd: 0.44, slowDur: 2.8, slowFactor: 0.25 }
+      { dmg:   7, range:  96, cd: 0.58, slowDur: 1.6, slowFactor: 0.55 },
+      { dmg:  14, range: 108, cd: 0.53, slowDur: 2.0, slowFactor: 0.46 },
+      { dmg:  28, range: 120, cd: 0.49, slowDur: 2.4, slowFactor: 0.38 },
+      { dmg:  56, range: 132, cd: 0.45, slowDur: 2.8, slowFactor: 0.30 },
+      { dmg: 112, range: 146, cd: 0.42, slowDur: 3.2, slowFactor: 0.22 }
     ]
   },
   rail: {
@@ -638,10 +663,11 @@ const TOWER_STATS = {
     strongVs: ['flying'], weakVs: [],
     tiers: [
       null,
-      { dmg: 14, range: 152, cd: 1.30 },
-      { dmg: 36, range: 174, cd: 1.18 },
-      { dmg: 84, range: 196, cd: 1.05 },
-      { dmg:190, range: 222, cd: 0.92 }
+      { dmg:  14, range: 152, cd: 1.30 },
+      { dmg:  28, range: 170, cd: 1.18 },
+      { dmg:  56, range: 188, cd: 1.07 },
+      { dmg: 112, range: 206, cd: 0.97 },
+      { dmg: 224, range: 226, cd: 0.88 }
     ]
   },
   guard: {
@@ -652,9 +678,10 @@ const TOWER_STATS = {
     tiers: [
       null,
       { dmg:  5, range: 56, cd: 0.32 },
-      { dmg: 12, range: 70, cd: 0.28 },
-      { dmg: 28, range: 86, cd: 0.23 },
-      { dmg: 68, range:104, cd: 0.18 }
+      { dmg: 10, range: 68, cd: 0.28 },
+      { dmg: 20, range: 80, cd: 0.25 },
+      { dmg: 40, range: 92, cd: 0.22 },
+      { dmg: 80, range:106, cd: 0.19 }
     ]
   },
   rocket: {
@@ -662,10 +689,11 @@ const TOWER_STATS = {
     strongVs: ['boss', 'tank'], weakVs: ['runner'],
     tiers: [
       null,
-      { dmg: 26, range: 150, cd: 1.6,  missileSpeed: 280, aoeRadius: 38 },
-      { dmg: 64, range: 170, cd: 1.45, missileSpeed: 320, aoeRadius: 46 },
-      { dmg:148, range: 192, cd: 1.30, missileSpeed: 360, aoeRadius: 56 },
-      { dmg:335, range: 220, cd: 1.15, missileSpeed: 400, aoeRadius: 70 }
+      { dmg:  26, range: 150, cd: 1.60, missileSpeed: 280, aoeRadius: 38 },
+      { dmg:  52, range: 168, cd: 1.46, missileSpeed: 320, aoeRadius: 46 },
+      { dmg: 104, range: 186, cd: 1.33, missileSpeed: 360, aoeRadius: 54 },
+      { dmg: 208, range: 204, cd: 1.21, missileSpeed: 400, aoeRadius: 62 },
+      { dmg: 416, range: 224, cd: 1.10, missileSpeed: 440, aoeRadius: 72 }
     ]
   },
   chain: {
@@ -674,10 +702,11 @@ const TOWER_STATS = {
     // 첫 적 명중 + 사거리(=chainRange) 내 다른 적으로 점프, 매 점프 dmg × dmgFalloff
     tiers: [
       null,
-      { dmg: 12, range: 110, cd: 0.9,  chains: 2, chainRange: 70, dmgFalloff: 0.62 },
-      { dmg: 28, range: 124, cd: 0.85, chains: 3, chainRange: 80, dmgFalloff: 0.66 },
-      { dmg: 64, range: 142, cd: 0.78, chains: 5, chainRange: 90, dmgFalloff: 0.70 },
-      { dmg:150, range: 166, cd: 0.70, chains: 7, chainRange:100, dmgFalloff: 0.74 }
+      { dmg:  12, range: 110, cd: 0.90, chains: 2, chainRange: 70, dmgFalloff: 0.62 },
+      { dmg:  24, range: 124, cd: 0.84, chains: 3, chainRange: 80, dmgFalloff: 0.66 },
+      { dmg:  48, range: 138, cd: 0.79, chains: 4, chainRange: 90, dmgFalloff: 0.70 },
+      { dmg:  96, range: 152, cd: 0.74, chains: 5, chainRange:100, dmgFalloff: 0.73 },
+      { dmg: 192, range: 168, cd: 0.70, chains: 7, chainRange:110, dmgFalloff: 0.76 }
     ]
   }
 };
@@ -710,7 +739,7 @@ const MODIFIERS = [
   { id:'bond',   name:'결속',      icon:'🔗', tag:'good', desc:'시너지 +4%/면',            apply:(s)=>{ s.mods.synergyAdd += 0.04; } },
   { id:'haste',  name:'신속',      icon:'⚡', tag:'good', desc:'스킬 쿨다운 -25%',          apply:(s)=>{ s.mods.skillCdMult *= 0.75; } },
   { id:'gamble', name:'한탕',      icon:'🎲', tag:'risk', desc:'데미지 +40% · 적 HP +20%',  apply:(s)=>{ s.mods.dmgMult *= 1.4; s.mods.enemyHpMult *= 1.2; } },
-  { id:'greed',  name:'탐욕',      icon:'🤑', tag:'risk', desc:'골드 +60% · 필드 한계 -4',  apply:(s)=>{ s.mods.goldMult *= 1.6; s.maxAlive = Math.max(10, s.maxAlive - 4); } },
+  { id:'greed',  name:'탐욕',      icon:'🤑', tag:'risk', desc:'골드 +60% · 최대 목숨 -3',  apply:(s)=>{ s.mods.goldMult *= 1.6; s.maxLives = Math.max(5, s.maxLives - 3); s.lives = Math.min(s.lives, s.maxLives); } },
   { id:'mass',   name:'대량생산',   icon:'🏭', tag:'risk', desc:'뽑기 -30% · 적 속도 +12%',  apply:(s)=>{ s.mods.rollCostMult *= 0.7; s.mods.enemySpeedMult *= 1.12; } },
   { id:'cash',   name:'긴급 자금',  icon:'💵', tag:'once', desc:'즉시 +120g',               apply:(s)=>{ s.gold += 120; } },
   { id:'purge',  name:'정화',      icon:'☢',  tag:'once', desc:'현재 필드 전체 처치',       apply:(s)=>{ for (const e of s.enemies){ if (!e.dead) e.hp = 0; } } }
@@ -815,7 +844,8 @@ const SFX = {
   modifier(){ tone(600, 0.10, 'triangle', 0.10, 900); setTimeout(()=>tone(900, 0.12, 'triangle', 0.09, 1300), 90); },
   wave(){ tone(660, 0.10, 'square', 0.09); setTimeout(()=>tone(990, 0.14, 'square', 0.09), 100); },
   gameover(){ tone(440, 0.5, 'sawtooth', 0.13, 70); },
-  bossSkill(){ tone(180, 0.18, 'sawtooth', 0.08, 90); }
+  bossSkill(){ tone(180, 0.18, 'sawtooth', 0.08, 90); },
+  leak(){ tone(160, 0.22, 'sawtooth', 0.11, 60); }
 };
 
 /* ============================================================
@@ -914,12 +944,12 @@ let pauseBtn = null;
 let mergeBtn = null;
 
 const TUTORIAL = [
-  { icon:'🎯', title:'목표', body:'적은 격자 외곽 <b>사각 루프</b>를 빙글빙글 돕니다. 죽이지 못해 화면에 쌓인 적이 <b>필드 한계(FIELD)</b>를 넘으면 게임 오버. 끝까지 버텨 깊은 웨이브에 도달하는 게 목표입니다.' },
-  { icon:'🎲', title:'뽑기 & 배치', body:'<b>뽑기</b> 버튼(골드 소모)으로 무작위 ★1 타워를 빈 슬롯에 받습니다 (가끔 ★2). 슬롯을 클릭해 선택하고, 다른 빈 슬롯을 클릭하면 이동/스왑됩니다.' },
-  { icon:'⭐', title:'합성', body:'<b>같은 종류 · 같은 등급 3개</b>가 모이면 격자에 금색 테두리가 깜빡입니다. 그 타워 클릭 → <b>합성 ▶</b>:<br>· <b>EVOLVE</b> 같은 종류 한 단계 위<br>· <b>CONVERT</b> 무작위 다른 종류로<br>· <b>REFUND</b> 골드 환급' },
+  { icon:'❤', title:'목표 · 목숨', body:'적은 격자 외곽 <b>사각 루프</b>를 돕니다. 적이 <b>한 바퀴를 완주(누수)</b>하면 <b>목숨(LIVES)</b>이 깎입니다 — 일반 -1, <b style="color:#ff5577">보스 -10</b>. 목숨이 0이 되면 게임 오버. 모든 적을 <b>한 바퀴 안에</b> 처치하는 게 핵심입니다. (랜덤 타워 디펜스 오마주)' },
+  { icon:'🎲', title:'뽑기 & 배치', body:'<b>뽑기</b> 버튼(골드 소모)으로 무작위 <b>일반</b> 타워를 빈 슬롯에 받습니다. 슬롯을 클릭해 선택하고, 다른 빈 슬롯을 클릭하면 이동/스왑됩니다.' },
+  { icon:'⭐', title:'5등급 합성', body:'<b>같은 종류 · 같은 등급 2개</b>가 모이면 금색 테두리가 깜빡입니다. 클릭 → <b>합성 ▶</b>: 한 등급 오를 때마다 <b>공격력 ×2</b>.<br><b style="color:#cfd6e4">일반</b>→<b style="color:#5aa9ff">희귀</b>→<b style="color:#c98aff">영웅</b>→<b style="color:#ffb13c">전설</b>→<b style="color:#7cffc4">신</b><br>· EVOLVE 같은 종류 / CONVERT 무작위 종류 / REFUND 환급' },
   { icon:'🔗', title:'시너지 & 상성', body:'같은 종류 타워가 <b>상하좌우 인접</b>하면 데미지 보너스(종류별 차등). 각 타워는 적 종류에 <b>💪강함 / 🔻약함</b> — FROST→쉴드, RAIL·ROCKET→비행 등. <b>도감(C)</b>에서 전부 확인.' },
-  { icon:'⚡', title:'스킬 & 모디파이어', body:'골드로 <b>액티브 스킬</b>을 씁니다 (💣BOMB · ❄FREEZE · 💰GOLD-RUSH · 🎲REROLL). <b>5웨이브마다</b> 3택 보상(💚이득/❤위험/💛즉시)으로 빌드를 굳혀갑니다.' },
-  { icon:'◆', title:'영구 성장', body:'게임이 끝나면 점수가 <b>◆ CORE</b>로 적립됩니다. 타이틀의 <b>◆ 강화</b>에서 시작 골드·필드 한계·스킬 가속 등을 영구 구매 → 다음 판이 더 강해집니다.' }
+  { icon:'☄', title:'균열 & 영웅', body:'<b style="color:#ff5577">☄ 균열</b>(V): 강력한 균열 보스를 <b>자발적으로</b> 소환 — 랜덤 광역버프로 위험하지만 처치 시 <b>대량 골드 + 영웅 건설권</b>. <b style="color:#ffd96b">👑 영웅</b>(H): 전설을 만들거나 30웨이브 돌파 시 받는 토큰으로 <b>확정 전설</b>을 즉시 건설.' },
+  { icon:'◆', title:'영구 성장', body:'게임이 끝나면 점수가 <b>◆ CORE</b>로 적립됩니다. 타이틀의 <b>◆ 강화</b>에서 시작 골드·예비 목숨·스킬 가속 등을 영구 구매 → 다음 판이 더 강해집니다.' }
 ];
 let guideStep = 0;
 
@@ -1020,18 +1050,18 @@ function showTitle(){
       </div>
       <div class="rules">
         <h3>R U L E S</h3>
-        <div>· <b>뽑기</b>로 무작위 타워 1개를 빈 슬롯에 받음 (1성, 가끔 2성).</div>
-        <div>· <b>같은 종류 + 같은 등급 3개 → 1단 위로 합성</b> (자동/수동 토글).</div>
-        <div>· 적은 격자 외곽 사각 루프를 시계방향으로 <b>빙글빙글</b> 돕니다 (죽지 않으면 영원히).</div>
-        <div>· 누적되어 화면에 <b>${ECONOMY.maxAlive}마리 초과</b>하면 즉시 게임 오버.</div>
+        <div>· <b>뽑기</b>로 무작위 <b>일반</b> 타워 1개를 빈 슬롯에 받음.</div>
+        <div>· <b>같은 종류 + 같은 등급 2개 → 1단 위로 합성</b> (등급당 공격력 ×2, 자동/수동 토글).</div>
+        <div>· 5등급: <b style="color:#cfd6e4">일반</b> → <b style="color:#5aa9ff">희귀</b> → <b style="color:#c98aff">영웅</b> → <b style="color:#ffb13c">전설</b> → <b style="color:#7cffc4">신</b>.</div>
+        <div>· 적은 사각 루프를 돕니다. <b>한 바퀴 완주(누수) = 목숨 차감</b> — 일반 -1, <b style="color:#ff5577">보스 -10</b>.</div>
+        <div>· <b>목숨(LIVES)이 0</b>이 되면 게임 오버. 한 바퀴 안에 처치하라.</div>
         <div>· <b>FLYING</b>은 RAIL · ROCKET (anti-air)만 명중. <b>REGEN</b>은 초당 HP 회복.</div>
-        <div>· 슬롯 클릭으로 선택 → 다른 슬롯 클릭으로 이동/스왑, 또는 판매.</div>
-        <div>· 키: <b>R</b> 뽑기 / <b>M</b> 자동합성 / <b>P</b> 일시정지 / <b>F</b> 배속 / <b>Esc</b> 해제 / <b>C</b> 도감</div>
+        <div>· 키: <b>R</b> 뽑기 / <b>V</b> 균열 / <b>H</b> 영웅 / <b>M</b> 자동합성 / <b>P</b> 일시 / <b>F</b> 배속 / <b>C</b> 도감</div>
       </div>
       <div class="rules">
         <h3>M O D I F I E R S &nbsp;·&nbsp; 5웨이브마다</h3>
         <div>· 5웨이브마다 <b>3택 보상</b> — 💚이득 / ❤위험 / 💛즉시 중 하나 선택.</div>
-        <div>· 위험 보상은 강력하지만 대가 동반 (적 HP↑ / 필드 한계↓ / 적 속도↑).</div>
+        <div>· 위험 보상은 강력하지만 대가 동반 (적 HP↑ / 최대 목숨↓ / 적 속도↑).</div>
         <div>· 영구 누적되어 매판 다른 빌드. 화면 좌하단에 활성 모디파이어 표시.</div>
       </div>
       <div class="rules">
@@ -1045,11 +1075,17 @@ function showTitle(){
       <div class="rules">
         <h3>E N D L E S S</h3>
         <div>· <b>1~15웨이브</b>는 정해진 패턴. <b>16웨이브부터는 무한 절차 생성</b>으로 끝없이 진행됩니다.</div>
-        <div>· 사이클(5웨이브)마다 적 HP <b>×1.09 (지수, 후반 급가속)</b>, 골드 +8%, REGEN +10% 누적.</div>
+        <div>· 매 웨이브 적 HP <b>×1.11 (지수, 후반 급가속)</b>, 골드 +8%, REGEN +10% 누적.</div>
         <div>· 5의 배수 웨이브는 <b>보스 웨이브</b>. 사이클이 깊어질수록 보스 수도 늘어남.</div>
         <div>· 보스는 <b>무작위 능력</b> 보유: ★소환(그런트) / ★치유(주변 HP) / ★수호(쉴드 부여) / ★질주(슬로우 해제+가속).</div>
-        <div>· <b>WAVE 15</b> + 매 <b>25웨이브</b>마다 마일스톤 골드+스코어 보너스.</div>
-        <div>· 라이프 = 필드 적 수가 <b>${ECONOMY.maxAlive}마리</b> 넘는 순간 종료. 도달 웨이브가 곧 점수.</div>
+        <div>· <b>WAVE 15</b> + 매 <b>25웨이브</b>마다 마일스톤 골드+스코어 보너스. <b>30웨이브마다 영웅 건설권</b>.</div>
+        <div>· 도달 웨이브가 곧 점수. 누수로 목숨이 0이 되면 종료.</div>
+      </div>
+      <div class="rules">
+        <h3>R I S K &nbsp;·&nbsp; R E W A R D</h3>
+        <div>· <b style="color:#ff5577">☄ 균열(V)</b> — 강력한 보스를 자발적으로 소환. 랜덤 광역버프(광란/철벽/흡수)로 난이도↑.</div>
+        <div>· 균열 보스 처치 시 <b>대량 골드 + 영웅 건설권</b>. 자신있을 때 푸시하는 스킬 표현.</div>
+        <div>· <b style="color:#ffd96b">👑 영웅(H)</b> — 전설 ${LEGEND_PITY}개 제작 또는 30웨이브 돌파 시 토큰 획득 → <b>확정 전설</b> 즉시 건설.</div>
       </div>
       <div style="display:flex; gap:8px; margin-top: 4px;">
         <button class="btn primary" id="btn-start" style="
@@ -1147,7 +1183,16 @@ function startGame(){
   state = {
     meta,
     gold: ECONOMY.startGold + upLevel(meta, 'gold') * 15,
-    maxAlive: ECONOMY.maxAlive + upLevel(meta, 'cap') * 4,
+    maxAlive: ECONOMY.maxAlive,
+    lives: maxLivesFor(meta),
+    maxLives: maxLivesFor(meta),
+    leaks: 0,
+    heroTokens: 0,
+    legendsMade: 0,
+    riftAlive: 0,
+    riftBuff: null,
+    riftSpeedMult: 1,
+    heroPrompted: false,
     score: 0,
     waveIdx: 0,
     wavesCleared: 0,
@@ -1197,7 +1242,7 @@ function buildLayout(){
   root.innerHTML = `
     <div class="hud">
       <div class="stat gold"><span class="l">GOLD</span><span class="v" id="hud-gold">0</span></div>
-      <div class="stat lives"><span class="l">FIELD</span><span class="v" id="hud-field">0/${state.maxAlive}</span></div>
+      <div class="stat lives"><span class="l">LIVES</span><span class="v" id="hud-lives">20</span></div>
       <div class="stat wave"><span class="l">WAVE</span><span class="v" id="hud-wave">1/15</span></div>
       <div class="stat speed"><span class="l">SPEED</span><span class="v" id="hud-speed">1×</span></div>
     </div>
@@ -1209,6 +1254,8 @@ function buildLayout(){
     <div class="skills" id="skill-bar"></div>
     <div class="controls">
       <button class="btn primary" id="btn-roll">뽑기 (12g)</button>
+      <button class="btn" id="btn-rift" style="background:linear-gradient(180deg,#ff5577,#7a1d33); border-color:#ff5577; color:#fff; font-weight:900;">☄ 균열</button>
+      <button class="btn" id="btn-hero" style="display:none; background:linear-gradient(180deg,#ffd96b,#c08a1a); border-color:#ffd96b; color:#1a0b30; font-weight:900;">👑 영웅</button>
       <button class="btn" id="btn-merge">자동합성 OFF</button>
       <button class="btn" id="btn-codex">도감</button>
       <button class="btn" id="btn-pause">일시정지</button>
@@ -1231,7 +1278,7 @@ function buildLayout(){
   `;
   hudEls = {
     gold: document.getElementById('hud-gold'),
-    field: document.getElementById('hud-field'),
+    lives: document.getElementById('hud-lives'),
     wave: document.getElementById('hud-wave'),
     speed: document.getElementById('hud-speed')
   };
@@ -1379,11 +1426,90 @@ function fireReroll(){
   floatAt(state.slots[idx].x, state.slots[idx].y - 14, '→ ' + state.slots[idx].name, '#c98aff');
 }
 
+/* ============================================================
+ * 균열 보스 (자발적 소환) + 영웅 토큰 — 랜타디 오마주
+ * ============================================================ */
+const RIFT_BUFFS = [
+  { id:'frenzy',  name:'광란', desc:'모든 적 이동속도 +30%' },
+  { id:'bulwark', name:'철벽', desc:'이후 등장 적 HP +40%' },
+  { id:'leech',   name:'흡수', desc:'이후 등장 적 초당 회복' }
+];
+function canSummonRift(){
+  return state && (state.waveState === 'wave' || state.waveState === 'between')
+    && !state.paused && state.riftAlive < 1;
+}
+function summonRift(){
+  if (state.waveState === 'won' || state.waveState === 'lost') return;
+  if (!canSummonRift()){
+    floatAt(W/2, GRID_Y + GRID_H/2, state.riftAlive >= 1 ? '균열 보스 처치 후 가능' : '지금은 불가', '#ff9bb0');
+    return;
+  }
+  // 랜덤 광역 버프 선택
+  const buff = RIFT_BUFFS[Math.floor(Math.random() * RIFT_BUFFS.length)];
+  state.riftBuff = buff.id;
+  state.riftSpeedMult = buff.id === 'frenzy' ? 1.3 : 1;
+  state.riftAlive += 1;
+  // 매우 두꺼운 보스 — 웨이브가 깊을수록 강하되 상한을 둬 후반에도 도전 가능
+  const riftMult = Math.min(12, 3.2 + state.waveIdx * 0.2);
+  const seg = Math.floor(Math.random() * TRACK_SEGS.length);
+  spawnEnemy('boss', seg, TRACK_SEG_LEN[seg] * 0.5, { rift: true, hpMult: riftMult, rewardMult: 0 });
+  SFX.bossSkill && SFX.bossSkill();
+  floatAt(W/2, GRID_Y + GRID_H/2 - 14, '☄ 균열 보스 — ' + buff.name, '#ff5577');
+  floatAt(W/2, GRID_Y + GRID_H/2 + 4, buff.desc, '#ff9bb0');
+  refreshRiftBtn();
+}
+function onRiftCleanup(e){
+  if (!e || !e.rift) return;
+  state.riftAlive = Math.max(0, state.riftAlive - 1);
+  if (state.riftAlive === 0){ state.riftBuff = null; state.riftSpeedMult = 1; }
+  refreshRiftBtn();
+}
+function refreshRiftBtn(){
+  const btn = document.getElementById('btn-rift');
+  if (!btn) return;
+  const active = state.riftAlive >= 1;
+  btn.textContent = active ? '☄ 활성' : '☄ 균열';
+  btn.disabled = !canSummonRift();
+  btn.style.opacity = canSummonRift() ? '1' : '0.5';
+}
+
+function useHeroToken(){
+  if (state.waveState === 'won' || state.waveState === 'lost') return;
+  if ((state.heroTokens || 0) <= 0){
+    floatAt(W/2, GRID_Y + GRID_H/2, '영웅 건설권 없음', '#9a8cd6');
+    return;
+  }
+  const empties = emptySlots();
+  if (empties.length === 0){
+    floatAt(W/2, GRID_Y + GRID_H/2, '빈 슬롯 필요', '#ff7799');
+    return;
+  }
+  state.heroTokens -= 1;
+  // 확정 전설(4등급) 무작위 종류
+  const kind = weightedPick(KIND_WEIGHT);
+  const idx = empties[Math.floor(Math.random() * empties.length)];
+  placeTowerIntoSlot(idx, kind, LEGEND_GRADE);
+  state.slots[idx].flash = 1.0;
+  addExplosion(state.slots[idx].x, state.slots[idx].y, 40, gradeColor(LEGEND_GRADE));
+  floatAt(state.slots[idx].x, state.slots[idx].y - 14, '👑 ' + state.slots[idx].name + ' ' + gradeName(LEGEND_GRADE), gradeColor(LEGEND_GRADE));
+  SFX.merge && SFX.merge();
+  refreshHeroBtn();
+}
+function refreshHeroBtn(){
+  const btn = document.getElementById('btn-hero');
+  if (!btn) return;
+  const n = state.heroTokens || 0;
+  btn.style.display = n > 0 ? '' : 'none';
+  btn.textContent = '👑 영웅 ' + (n > 0 ? '×' + n : '');
+}
+
 function bindEvents(){
   rollBtn.onclick = doRoll;
   mergeBtn.onclick = toggleAutoMerge;
   pauseBtn.onclick = togglePause;
   speedBtn.onclick = toggleSpeed;
+  document.getElementById('btn-rift').onclick = summonRift;
+  document.getElementById('btn-hero').onclick = useHeroToken;
   document.getElementById('btn-codex').onclick = openCodex;
   document.getElementById('btn-mute').onclick = () => {
     const m = toggleMute();
@@ -1410,6 +1536,8 @@ function bindEvents(){
 
 function onKey(e){
   if (e.code === 'KeyR'){ doRoll(); e.preventDefault(); }
+  else if (e.code === 'KeyV'){ summonRift(); e.preventDefault(); }
+  else if (e.code === 'KeyH'){ useHeroToken(); e.preventDefault(); }
   else if (e.code === 'KeyM'){ toggleAutoMerge(); e.preventDefault(); }
   else if (e.code === 'KeyP'){ togglePause(); e.preventDefault(); }
   else if (e.code === 'KeyF'){ toggleSpeed(); e.preventDefault(); }
@@ -1530,6 +1658,25 @@ function placeTowerIntoSlot(idx, kind, tier){
   recomputeSynergy();
 }
 
+/* 합성으로 등급이 오를 때 호출 — 천장(pity) 카운터.
+ * 전설(4등급)을 만들 때마다 적립, LEGEND_PITY개마다 영웅 토큰 1개. */
+const LEGEND_PITY = 3;   // 전설 3개 만들 때마다 확정 전설 건설권
+function onTowerGradeUp(t){
+  if (!t || !state) return;
+  if (t.tier >= LEGEND_GRADE){
+    state.legendsMade = (state.legendsMade || 0) + 1;
+    if (state.legendsMade % LEGEND_PITY === 0){
+      grantHeroToken('전설 ' + LEGEND_PITY + '개 달성');
+    }
+  }
+}
+function grantHeroToken(reason){
+  state.heroTokens = (state.heroTokens || 0) + 1;
+  floatAt(W / 2, GRID_Y + GRID_H / 2 - 30, '👑 영웅 건설권! (' + reason + ')', '#ffd96b');
+  if (SFX.modifier) SFX.modifier();
+  refreshHeroBtn();
+}
+
 function recomputeSynergy(){
   for (let i = 0; i < state.slots.length; i++){
     const t = state.slots[i];
@@ -1572,7 +1719,7 @@ function doRoll(){
   const kind = weightedPick(KIND_WEIGHT);
   let tier = pickTierByProb();
   // 등급 상한 보장
-  if (tier > 4) tier = 4;
+  if (tier > MAX_GRADE) tier = MAX_GRADE;
   // 빈 슬롯 중 무작위
   const idx = empties[Math.floor(Math.random() * empties.length)];
   placeTowerIntoSlot(idx, kind, tier);
@@ -1583,49 +1730,51 @@ function doRoll(){
 }
 
 function findMergeGroup(kind, tier){
+  // 랜타디 오마주: 같은 종류·등급 2개 → 1단 위
   const result = [];
   for (let i = 0; i < state.slots.length; i++){
     const t = state.slots[i];
     if (t && t.kind === kind && t.tier === tier && !t.locked){
       result.push(i);
-      if (result.length >= 3) break;
+      if (result.length >= 2) break;
     }
   }
-  return result.length >= 3 ? result : null;
+  return result.length >= 2 ? result : null;
 }
 
 function canMergeTower(t){
-  if (!t || t.tier >= 4) return false;
+  if (!t || t.tier >= MAX_GRADE) return false;
   return !!findMergeGroup(t.kind, t.tier);
 }
 
 function openMergeModal(kind, tier){
   const group = findMergeGroup(kind, tier);
-  if (!group || tier >= 4) return;
+  if (!group || tier >= MAX_GRADE) return;
   state.mergeModalGroup = { kind, tier, group };
   const def = TOWER_STATS[kind];
-  const refundAmt = Math.floor(towerCost(kind, tier) * 3 * refundRate(0.8));
-  const nextStars = '★'.repeat(tier + 1);
+  const refundAmt = Math.floor(towerCost(kind, tier) * 2 * refundRate(0.8));
+  const nextStars = gradeStars(tier + 1);
+  const nextName = gradeName(tier + 1);
   const panel = document.getElementById('merge-panel');
   panel.innerHTML = `
-    <h2 style="color:${def.color};">${def.name} ★${'★'.repeat(tier).slice(0)} · 합성 분기</h2>
-    <div class="sub">3장의 ${def.name} ★${tier}을 어떻게 처리할까?</div>
+    <h2 style="color:${def.color};">${def.name} <span style="color:${gradeColor(tier)}">${gradeName(tier)}</span> · 합성 분기</h2>
+    <div class="sub">${def.name} ${gradeName(tier)} 2장을 어떻게 처리할까?</div>
     <div class="merge-preview">
-      <div class="merge-preview-card"><canvas data-prev="curr"></canvas><div class="stars">★${tier} ×3</div></div>
+      <div class="merge-preview-card"><canvas data-prev="curr"></canvas><div class="stars">${gradeName(tier)} ×2</div></div>
       <div class="arrow">→</div>
-      <div class="merge-preview-card"><canvas data-prev="next"></canvas><div class="stars">${nextStars}</div></div>
+      <div class="merge-preview-card"><canvas data-prev="next"></canvas><div class="stars" style="color:${gradeColor(tier+1)}">${nextName}</div></div>
     </div>
     <button class="merge-option evolve" data-action="evolve">
-      <span class="opt-label">EVOLVE — 같은 종류 ${nextStars} (안전)</span>
-      <span class="opt-desc">${def.name} ${nextStars}로 진화. 동일한 종류 시너지 유지에 좋음.</span>
+      <span class="opt-label">EVOLVE — 같은 종류 <span style="color:${gradeColor(tier+1)}">${nextName}</span> (안전)</span>
+      <span class="opt-desc">${def.name} ${nextName}로 진화 (공격력 ×2). 동일한 종류 시너지 유지에 좋음.</span>
     </button>
     <button class="merge-option convert" data-action="convert">
-      <span class="opt-label">CONVERT — 무작위 다른 종류 ${nextStars}</span>
-      <span class="opt-desc">${KIND_ORDER.length - 1}종 중 1개 무작위 ${nextStars}로 변환. 빌드 다양화 / 시너지 깨기.</span>
+      <span class="opt-label">CONVERT — 무작위 다른 종류 ${nextName}</span>
+      <span class="opt-desc">${KIND_ORDER.length - 1}종 중 1개 무작위 ${nextName}로 변환. 빌드 다양화 / 시너지 깨기.</span>
     </button>
     <button class="merge-option refund" data-action="refund">
       <span class="opt-label">REFUND — 합성 포기 +${refundAmt}g</span>
-      <span class="opt-desc">3장 합성 비용의 80% 환급, 슬롯 모두 비움. 잘못된 종류 정리에.</span>
+      <span class="opt-desc">2장 합성 비용의 80% 환급, 슬롯 모두 비움. 잘못된 종류 정리에.</span>
     </button>
     <button class="merge-cancel" data-action="cancel">취소 (Esc)</button>
   `;
@@ -1647,7 +1796,7 @@ function drawMergePreview(kind, tier){
     c.scale(dpr, dpr);
     c.translate(22, 24);
     const useTier = which === 'curr' ? tier : (tier + 1);
-    if (useTier === 4){
+    if (useTier === MAX_GRADE){
       c.save();
       c.strokeStyle = 'rgba(255,217,107,.6)';
       c.lineWidth = 1.2;
@@ -1680,31 +1829,30 @@ function performMergeAction(action){
   if (!m){ closeMergeModal(); return; }
   if (action === 'cancel'){ closeMergeModal(); return; }
   const { kind, tier, group } = m;
-  const [a, b, cIdx] = group;
+  const [a, b] = group;
   if (action === 'evolve'){
     state.slots[b] = null;
-    state.slots[cIdx] = null;
     placeTowerIntoSlot(a, kind, tier + 1);
     state.slots[a].flash = 0.7;
     addExplosion(state.slots[a].x, state.slots[a].y, 26, state.slots[a].color);
-    floatAt(state.slots[a].x, state.slots[a].y - 10, '★' + state.slots[a].tier, '#ffd96b');
+    floatAt(state.slots[a].x, state.slots[a].y - 10, gradeName(state.slots[a].tier), gradeColor(state.slots[a].tier));
+    onTowerGradeUp(state.slots[a]);
     state.gold += ECONOMY.mergeBonusGold;
     floatAt(state.slots[a].x + 20, state.slots[a].y + 8, '+' + ECONOMY.mergeBonusGold + 'g', '#ffd96b');
   } else if (action === 'convert'){
     state.slots[b] = null;
-    state.slots[cIdx] = null;
     const others = KIND_ORDER.filter(k => k !== kind);
     const newKind = others[Math.floor(Math.random() * others.length)];
     placeTowerIntoSlot(a, newKind, tier + 1);
     state.slots[a].flash = 0.9;
     addExplosion(state.slots[a].x, state.slots[a].y, 32, state.slots[a].color);
-    floatAt(state.slots[a].x, state.slots[a].y - 12, '→ ' + state.slots[a].name + ' ★' + (tier + 1), '#c98aff');
+    floatAt(state.slots[a].x, state.slots[a].y - 12, '→ ' + state.slots[a].name + ' ' + gradeName(tier + 1), '#c98aff');
+    onTowerGradeUp(state.slots[a]);
     state.gold += ECONOMY.mergeBonusGold;
   } else if (action === 'refund'){
-    const refund = Math.floor(towerCost(kind, tier) * 3 * refundRate(0.8));
+    const refund = Math.floor(towerCost(kind, tier) * 2 * refundRate(0.8));
     state.slots[a] = null;
     state.slots[b] = null;
-    state.slots[cIdx] = null;
     state.gold += refund;
     const sc = slotCenter(a);
     floatAt(sc.x, sc.y, '+' + refund + 'g', '#ffd96b');
@@ -1722,7 +1870,7 @@ function performMergeAction(action){
 }
 
 function tryAutoMerge(){
-  // 같은 kind + 같은 tier 가 3개 이상 모이면 자동 합성
+  // 같은 kind + 같은 tier 가 2개 이상 모이면 자동 합성 (랜타디 오마주)
   let merged = false;
   let safety = 0;
   do {
@@ -1738,19 +1886,18 @@ function tryAutoMerge(){
     }
     for (const key in buckets){
       const idxs = buckets[key];
-      if (idxs.length < 3) continue;
+      if (idxs.length < 2) continue;
       const sample = state.slots[idxs[0]];
-      if (sample.tier >= 4) continue;
-      // 3개 사용 → 상위 1개
-      const [a, b, c] = idxs;
-      const cnt = state.slots[a];
+      if (sample.tier >= MAX_GRADE) continue;
+      // 2개 사용 → 상위 1개
+      const [a, b] = idxs;
       state.slots[b] = null;
-      state.slots[c] = null;
       // 첫 슬롯 위치는 유지, 등급만 올림
       placeTowerIntoSlot(a, sample.kind, sample.tier + 1);
       state.slots[a].flash = 0.7;
       addExplosion(state.slots[a].x, state.slots[a].y, 26, state.slots[a].color);
-      floatAt(state.slots[a].x, state.slots[a].y - 10, '★' + state.slots[a].tier, '#ffd96b');
+      floatAt(state.slots[a].x, state.slots[a].y - 10, gradeName(state.slots[a].tier), gradeColor(state.slots[a].tier));
+      onTowerGradeUp(state.slots[a]);
       state.gold += ECONOMY.mergeBonusGold;
       floatAt(state.slots[a].x + 20, state.slots[a].y + 8, '+' + ECONOMY.mergeBonusGold + 'g', '#ffd96b');
       if (state.stats) state.stats.mergeCount += 1;
@@ -1759,7 +1906,7 @@ function tryAutoMerge(){
       break; // 한 번에 한 그룹만 (다음 루프에서 다시 검사)
     }
     safety += 1;
-  } while (merged && safety < 30);
+  } while (merged && safety < 40);
   if (state.selectedSlot !== -1 && !state.slots[state.selectedSlot]){
     state.selectedSlot = -1;
     refreshPanel();
@@ -1778,7 +1925,7 @@ function refreshPanel(){
   }
   const t = state.slots[state.selectedSlot];
   const refund = Math.floor(towerCost(t.kind, t.tier) * refundRate(0.5));
-  const tierStars = '★'.repeat(t.tier);
+  const tierStars = `<span style="color:${gradeColor(t.tier)}">${gradeName(t.tier)} ${gradeStars(t.tier)}</span>`;
   const synMult = synergyDmgMult(t);
   const synPer = (KIND_SYNERGY[t.kind] && KIND_SYNERGY[t.kind].dmg) || ADJ_BONUS_PER;
   const synPct = t.synergy > 0
@@ -1804,7 +1951,7 @@ function refreshPanel(){
       <button class="btn" id="btn-lock" style="background:${t.locked ? 'rgba(255,217,107,.6)' : 'rgba(60,28,120,.7)'}; color:#fff; border-color:${t.locked ? '#ffd96b' : 'rgba(160,120,255,.4)'};">${t.locked ? '🔒 잠김' : '🔓 잠금'}</button>
       <button class="btn" id="btn-sell" style="background: rgba(200,50,80,.4); border-color: rgba(255,120,150,.4);">판매 +${refund}g</button>
     </div>
-    <div class="row" style="font-size:11px; color:#8888aa; margin-top:6px;">${canMergeTower(t) ? '★ 같은 종류·등급 3개 → 합성 분기 선택' : '잠긴 타워는 자동 합성 제외 · AA = anti-air'}</div>
+    <div class="row" style="font-size:11px; color:#8888aa; margin-top:6px;">${canMergeTower(t) ? '★ 같은 종류·등급 2개 → 합성 분기 선택' : '잠긴 타워는 자동 합성 제외 · AA = anti-air'}</div>
   `;
   document.getElementById('btn-sell').onclick = sellSelected;
   const mn = document.getElementById('btn-merge-now');
@@ -1818,8 +1965,8 @@ function refreshPanel(){
   };
 }
 function towerCost(kind, tier){
-  // 합성 비용 누적: tier 1 기준 12g, tier 2는 ~36g, tier 3 ~108g, tier 4 ~324g
-  return Math.floor(ECONOMY.rollBaseCost * Math.pow(3, tier - 1));
+  // 2-merge 누적 비용: 한 등급 위 = 아래 등급 2장. base × 2^(tier-1)
+  return Math.floor(ECONOMY.rollBaseCost * Math.pow(2, tier - 1));
 }
 function refundRate(base){
   return base + upLevel(state.meta, 'refund') * 0.08;
@@ -1949,7 +2096,8 @@ function tickSpawns(dt){
   }
 }
 
-function spawnEnemy(type, atSeg, atProgress){
+function spawnEnemy(type, atSeg, atProgress, opts){
+  opts = opts || {};
   const def = ENEMY_STATS[type];
   const segIdx = atSeg != null ? atSeg : 0;
   const segProgress = atProgress != null ? atProgress : 0;
@@ -1957,18 +2105,23 @@ function spawnEnemy(type, atSeg, atProgress){
   const t = segProgress / TRACK_SEG_LEN[segIdx];
 
   // 무한 모드 스케일링 (16웨이브부터)
-  // HP는 지수(×1.09^cycle) — 플레이어 성장(합성·모디파이어)이 지수라
-  // 선형으로는 후반에 무적이 됨. 골드/회복은 선형 유지.
+  // HP는 지수(×1.11^cycle) — 누수-목숨 체제에서 한 바퀴 안에 못 죽이면
+  // 곧장 목숨을 깎으므로, 후반 벽을 명확히 세워 난이도를 끌어올린다.
   const cycle = Math.max(0, state.waveIdx - WAVES.length);
-  const hpMult   = Math.pow(1.09, cycle);
+  const hpMult   = Math.pow(1.11, cycle);
   const goldMult = 1 + 0.08 * cycle;
   const regenMult = 1 + 0.10 * cycle;
 
-  const ehm = (state && state.mods) ? state.mods.enemyHpMult : 1;
-  const hp = Math.floor(def.hp * hpMult * ehm);
-  const shield = Math.floor((def.shield || 0) * hpMult * ehm);
+  // 균열 광역 버프 (rift 보스가 살아있는 동안 새로 등장하는 적에 적용)
+  const riftHp    = state.riftBuff === 'bulwark' ? 1.4 : 1;
+  const riftRegen = state.riftBuff === 'leech' ? 8 : 0;
 
-  state.enemies.push({
+  const ehm = (state && state.mods) ? state.mods.enemyHpMult : 1;
+  const localHpMult = (opts.hpMult || 1) * riftHp;
+  const hp = Math.floor(def.hp * hpMult * ehm * localHpMult);
+  const shield = Math.floor((def.shield || 0) * hpMult * ehm * localHpMult);
+
+  const e = {
     type, name: def.name,
     x: seg.x1 + (seg.x2 - seg.x1) * t,
     y: seg.y1 + (seg.y2 - seg.y1) * t,
@@ -1977,21 +2130,26 @@ function spawnEnemy(type, atSeg, atProgress){
     speed: def.speed,
     slowUntil: 0,
     slowFactor: 1,
-    r: def.r,
+    r: opts.rift ? def.r + 5 : def.r,
     color: def.color,
-    reward: Math.max(1, Math.floor(def.gold * goldMult)),
+    reward: Math.max(1, Math.floor(def.gold * goldMult * (opts.rewardMult || 1))),
     split: def.split || 0,
     flying: !!def.flying,
-    regen: (def.regen || 0) * regenMult,
+    boss: !!def.boss,
+    rift: !!opts.rift,
+    regen: (def.regen || 0) * regenMult + riftRegen,
     rushUntil: 0,
     segIdx, segProgress,
     laps: 0,
+    leaked: false,
     dead: false,
     pulse: Math.random() * Math.PI * 2,
     bossAbility: def.boss ? BOSS_ABILITIES[Math.floor(Math.random() * BOSS_ABILITIES.length)] : null,
     abilityTimer: 4,
     abilityFlash: 0
-  });
+  };
+  state.enemies.push(e);
+  return e;
 }
 
 function bossAbilityInterval(){
@@ -2073,6 +2231,10 @@ function endWave(){
     state.gold += 60;
     state.score += 500;
     floatAt(W/2, GRID_Y + GRID_H/2 - 22, '★ WAVE ' + state.waveIdx + ' · +60g ★', '#c98aff');
+  }
+  // 30웨이브마다 영웅 건설권 (랜타디 오마주: 30R 후 영웅 선택)
+  if (state.waveIdx > 0 && state.waveIdx % 30 === 0){
+    grantHeroToken('WAVE ' + state.waveIdx + ' 돌파');
   }
   // 5웨이브마다 모디파이어 선택 (게임 시작 직후 제외)
   if (state.waveIdx > 0 && state.waveIdx % 5 === 0){
@@ -2169,15 +2331,15 @@ function finishUI(won){
     <section id="title" style="padding-top: 18px;">
       <h1 style="font-size: 30px;">${won ? '🏆 클리어' : '💥 격침'}</h1>
       <div style="font-size: 44px; font-weight: 900; color:${won ? '#c98aff' : '#ff7799'}; line-height: 1; margin: 6px 0;">${state.score}</div>
-      <div style="color:#9a8cd6; margin-bottom: 4px;">${reached} · 필드 ${state.enemies.length}/${state.maxAlive}</div>
+      <div style="color:#9a8cd6; margin-bottom: 4px;">${reached} · ❤ ${state.lives}/${state.maxLives}</div>
       <div style="color:#ffd96b; font-weight: 800; margin-bottom: 10px;">◆ CORE +${earned} <span style="color:#9a8cd6; font-weight: 600;">(보유 ${meta.cores})</span></div>
       ${isBest ? '<div class="ribbon" style="margin-bottom: 10px;">NEW BEST</div>' : ''}
       <div class="result-grid">
         <div class="stat-mini"><span>처치</span><b>${s.kills}</b></div>
-        <div class="stat-mini"><span>최고 등급</span><b>★${s.maxTier}</b></div>
+        <div class="stat-mini"><span>최고 등급</span><b style="color:${gradeColor(s.maxTier)}">${gradeName(s.maxTier)}</b></div>
         <div class="stat-mini"><span>합성</span><b>${s.mergeCount}</b></div>
+        <div class="stat-mini"><span>누수</span><b style="color:#ff7799">${state.leaks}</b></div>
         <div class="stat-mini"><span>스킬</span><b>${s.skillUses}</b></div>
-        <div class="stat-mini"><span>최대 필드</span><b>${s.peakField}</b></div>
         <div class="stat-mini"><span>잔여 골드</span><b>${state.gold}</b></div>
       </div>
       ${dmgRows ? `<div style="font-size: 11px; color:#9a8cd6; letter-spacing:.15em; margin: 14px 0 6px; text-align: left;">종류별 데미지 기여</div><div class="dmg-bars">${dmgRows}</div>` : ''}
@@ -2365,7 +2527,7 @@ function step(dt){
     if (e.dead) continue;
     const slow = e.slowUntil > state.time ? e.slowFactor : 1;
     const rush = e.rushUntil > state.time ? 1.6 : 1;
-    let remaining = e.speed * slow * rush * state.mods.enemySpeedMult * dt;
+    let remaining = e.speed * slow * rush * state.mods.enemySpeedMult * state.riftSpeedMult * dt;
     let guard = 0;
     while (remaining > 0 && guard < 8){
       const segLen = TRACK_SEG_LEN[e.segIdx];
@@ -2377,7 +2539,13 @@ function step(dt){
         remaining -= left;
         e.segIdx = (e.segIdx + 1) % TRACK_SEGS.length;
         e.segProgress = 0;
-        if (e.segIdx === 0) e.laps += 1;
+        if (e.segIdx === 0){
+          // 트랙 한 바퀴 완주 = 누수 (랜타디 오마주)
+          e.laps += 1;
+          e.leaked = true;
+          remaining = 0;
+          break;
+        }
       }
       guard += 1;
     }
@@ -2413,6 +2581,29 @@ function step(dt){
   }
   if (state.freezeFlash > 0) state.freezeFlash = Math.max(0, state.freezeFlash - dt * 1.2);
 
+  // 누수 처리 — 트랙을 한 바퀴 완주한 적은 목숨을 깎고 이탈한다
+  let lifeLoss = 0;
+  for (const e of state.enemies){
+    if (e.leaked && !e.dead){
+      const cost = e.boss ? BOSS_LEAK : 1;
+      lifeLoss += cost;
+      e.dead = true;
+      state.leaks += 1;
+      floatAt(e.x, e.y, '-' + cost + '❤', '#ff5577');
+      onRiftCleanup(e);
+    }
+  }
+  if (lifeLoss > 0){
+    state.lives -= lifeLoss;
+    if (SFX.leak) SFX.leak();
+    if (state.lives <= 0){
+      state.lives = 0;
+      state.enemies = state.enemies.filter(e => !e.dead);
+      loseGame();
+      return;
+    }
+  }
+
   // 사망 처리
   const newSpawns = [];
   const rushOn = state.goldRushUntil > state.time;
@@ -2432,6 +2623,16 @@ function step(dt){
         for (let i = 0; i < e.split; i++){
           newSpawns.push({ type: 'grunt', segIdx: e.segIdx, segProgress: Math.max(0, e.segProgress - 6 - i * 4) });
         }
+      }
+      // 균열 보스 처치 보상 (리스크/리워드)
+      if (e.rift){
+        const bonus = 60 + state.waveIdx * 6;
+        state.gold += bonus;
+        state.score += 300;
+        floatAt(e.x, e.y - 18, '☄ 균열 격파 +' + bonus + 'g', '#ff9bb0');
+        addExplosion(e.x, e.y, 60, '#ff5577');
+        grantHeroToken('균열 보스 격파');
+        onRiftCleanup(e);
       }
     }
   }
@@ -2626,7 +2827,7 @@ function render(){
     const pulse = 0.4 + 0.5 * Math.sin(state.time * 4.5);
     const checked = new Set();
     for (const t of state.slots){
-      if (!t || t.tier >= 4) continue;
+      if (!t || t.tier >= MAX_GRADE) continue;
       const key = t.kind + ':' + t.tier;
       if (checked.has(key)) continue;
       checked.add(key);
@@ -2805,9 +3006,9 @@ function render(){
   // HUD 업데이트
   hudEls.gold.textContent = state.gold;
   const alive = state.enemies.length;
-  hudEls.field.textContent = alive + '/' + state.maxAlive;
-  const warn = state.maxAlive * 0.74;
-  hudEls.field.style.color = alive >= warn ? '#ff7799' : (alive >= warn * 0.65 ? '#ffd96b' : '#fff');
+  hudEls.lives.textContent = '❤ ' + state.lives;
+  const lr = state.lives / state.maxLives;
+  hudEls.lives.style.color = lr <= 0.25 ? '#ff5577' : (lr <= 0.5 ? '#ffd96b' : '#ff9bb0');
   {
     const cur = state.waveState === 'wave' ? (state.waveIdx + 1) : (state.wavesCleared + (state.waveState === 'between' ? 1 : 0));
     hudEls.wave.textContent = state.wavesCleared >= WAVES.length
@@ -2817,6 +3018,8 @@ function render(){
   hudEls.speed.textContent = state.paused ? '||' : state.speed + '×';
   refreshRollBtn();
   refreshSkillBar();
+  refreshRiftBtn();
+  refreshHeroBtn();
 }
 
 function drawTrack(){
@@ -2945,17 +3148,19 @@ function drawTower(t){
   ctx.save();
   ctx.translate(t.x, t.y);
 
-  // 등급 4: 회전하는 골드 후광
-  if (t.tier === 4){
+  // 전설(4)·신(5): 회전하는 등급 후광 (신은 더 밝게)
+  if (t.tier >= LEGEND_GRADE){
+    const halo = gradeColor(t.tier);
     ctx.save();
     ctx.rotate(state.time * 1.4);
-    ctx.strokeStyle = 'rgba(255,217,107,.55)';
-    ctx.lineWidth = 1.5;
-    ctx.shadowColor = '#ffd96b';
-    ctx.shadowBlur = 14;
+    ctx.strokeStyle = halo;
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = t.tier >= MAX_GRADE ? 2 : 1.5;
+    ctx.shadowColor = halo;
+    ctx.shadowBlur = t.tier >= MAX_GRADE ? 18 : 14;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
-    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.arc(0, 0, t.tier >= MAX_GRADE ? 20 : 18, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.restore();
@@ -3254,17 +3459,17 @@ function drawChainBody(c, t){
 }
 
 function drawTierPips(ctx, t){
-  // 본체 아래쪽에 작은 점 1~4개 (등급 표시)
+  // 본체 아래쪽에 작은 점 1~5개 (등급 표시) — 등급 색
   ctx.save();
   ctx.shadowBlur = 0;
   const pips = t.tier;
-  const total = pips;
-  const gap = 4;
-  const startX = -((total - 1) * gap) / 2;
+  const gap = 3.4;
+  const startX = -((pips - 1) * gap) / 2;
+  const col = gradeColor(t.tier);
   for (let i = 0; i < pips; i++){
-    ctx.fillStyle = t.tier === 4 ? '#ffd96b' : t.color;
+    ctx.fillStyle = col;
     ctx.beginPath();
-    ctx.arc(startX + i * gap, 17, 1.5, 0, Math.PI * 2);
+    ctx.arc(startX + i * gap, 17, 1.4, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
@@ -3615,7 +3820,7 @@ function describeFire(f){
 }
 function buildCodexHTML(){
   let html = '<h2>도감 & 합성표</h2>';
-  html += `<div class="lead">같은 종류 + 같은 등급 3개 → 1단 위로 합성. 모든 능력치는 데이터 객체로 정의되어 즉시 변경 가능.</div>`;
+  html += `<div class="lead">같은 종류 + 같은 등급 <b>2개 → 1단 위</b>로 합성 (등급당 공격력 ×2). 5등급: ${GRADE_NAMES.slice(1).map((n,i)=>`<span style="color:${GRADE_COLORS[i+1]}">${n}</span>`).join(' → ')}.</div>`;
 
   html += '<h3>합성 체인 · 종류별 시너지</h3>';
   for (const kind of KIND_ORDER){
@@ -3634,7 +3839,7 @@ function buildCodexHTML(){
       html += `</div>`;
     }
     html += '<div class="tower-chain">';
-    for (let tier = 1; tier <= 4; tier++){
+    for (let tier = 1; tier <= MAX_GRADE; tier++){
       const s = def.tiers[tier];
       const extra = def.fire === 'aoe' && s.aoeRadius ? `<br>aoe ${s.aoeRadius}` :
                      def.fire === 'slow' ? `<br>${Math.round((1 - s.slowFactor)*100)}% ${s.slowDur}s` :
@@ -3643,10 +3848,10 @@ function buildCodexHTML(){
                      def.fire === 'chain' ? `<br>${s.chains} jumps · ${(s.dmgFalloff*100)|0}%` : '';
       html += `<div class="tower-card-mini">
         <canvas data-tower="${kind}-${tier}"></canvas>
-        <div class="lbl">${'★'.repeat(tier)}</div>
+        <div class="lbl" style="color:${gradeColor(tier)}">${gradeName(tier)}</div>
         <div class="sub">${s.dmg}d · ${s.range}r${extra}</div>
       </div>`;
-      if (tier < 4) html += '<div class="chain-arrow">×3</div>';
+      if (tier < MAX_GRADE) html += '<div class="chain-arrow">×2</div>';
     }
     html += '</div>';
   }
@@ -3689,11 +3894,12 @@ function drawCodexPreviews(){
     const c = cv.getContext('2d');
     c.scale(dpr, dpr);
     c.translate(28, 30);
-    if (tier === 4){
+    if (tier >= LEGEND_GRADE){
       c.save();
-      c.strokeStyle = 'rgba(255,217,107,.6)';
+      c.strokeStyle = gradeColor(tier);
+      c.globalAlpha = 0.6;
       c.lineWidth = 1.5;
-      c.shadowColor = '#ffd96b';
+      c.shadowColor = gradeColor(tier);
       c.shadowBlur = 10;
       c.setLineDash([3, 3]);
       c.beginPath();

@@ -4,16 +4,19 @@
  *   node tools/td-balance.mjs
  */
 
+// 5등급, dmg는 등급당 ×2 (랜타디 오마주)
 const TOWERS = {
-  pulse:  { fire:'single', tiers:[null,{d:11,cd:.50},{d:28,cd:.46},{d:68,cd:.40},{d:160,cd:.34}] },
-  burst:  { fire:'aoe',    tiers:[null,{d:14,cd:1.20},{d:36,cd:1.05},{d:88,cd:.95},{d:205,cd:.85}] },
-  frost:  { fire:'slow',   tiers:[null,{d:7,cd:.58},{d:16,cd:.53},{d:38,cd:.48},{d:88,cd:.44}] },
-  rail:   { fire:'pierce', tiers:[null,{d:14,cd:1.30},{d:36,cd:1.18},{d:84,cd:1.05},{d:190,cd:.92}] },
-  guard:  { fire:'sweep',  tiers:[null,{d:5,cd:.32},{d:12,cd:.28},{d:28,cd:.23},{d:68,cd:.18}] },
-  rocket: { fire:'missile',tiers:[null,{d:26,cd:1.6},{d:64,cd:1.45},{d:148,cd:1.30},{d:335,cd:1.15}] },
+  pulse:  { fire:'single', tiers:[null,{d:11,cd:.50},{d:22,cd:.45},{d:44,cd:.40},{d:88,cd:.35},{d:176,cd:.30}] },
+  burst:  { fire:'aoe',    tiers:[null,{d:14,cd:1.20},{d:28,cd:1.08},{d:56,cd:.97},{d:112,cd:.88},{d:224,cd:.80}] },
+  frost:  { fire:'slow',   tiers:[null,{d:7,cd:.58},{d:14,cd:.53},{d:28,cd:.49},{d:56,cd:.45},{d:112,cd:.42}] },
+  rail:   { fire:'pierce', tiers:[null,{d:14,cd:1.30},{d:28,cd:1.18},{d:56,cd:1.07},{d:112,cd:.97},{d:224,cd:.88}] },
+  guard:  { fire:'sweep',  tiers:[null,{d:5,cd:.32},{d:10,cd:.28},{d:20,cd:.25},{d:40,cd:.22},{d:80,cd:.19}] },
+  rocket: { fire:'missile',tiers:[null,{d:26,cd:1.6},{d:52,cd:1.46},{d:104,cd:1.33},{d:208,cd:1.21},{d:416,cd:1.10}] },
   chain:  { fire:'chain',  tiers:[null,
-    {d:12,cd:.9,ch:2,f:.62},{d:28,cd:.85,ch:3,f:.66},{d:64,cd:.78,ch:5,f:.70},{d:150,cd:.70,ch:7,f:.74}] }
+    {d:12,cd:.9,ch:2,f:.62},{d:24,cd:.84,ch:3,f:.66},{d:48,cd:.79,ch:4,f:.70},{d:96,cd:.74,ch:5,f:.73},{d:192,cd:.70,ch:7,f:.76}] }
 };
+const MAX_GRADE = 5;
+const GRADE_NAMES = ['', '일반', '희귀', '영웅', '전설', '신'];
 const KIND_ORDER = ['pulse','burst','frost','rail','guard','rocket','chain'];
 const KIND_WEIGHT = { pulse:20, burst:16, frost:16, rail:12, guard:14, rocket:11, chain:11 };
 
@@ -32,7 +35,8 @@ const WAVES = [
   [['shielded',8,.9],['flying',10,.55,2],['regen',4,1.6,6]],
   [['grunt',28,.3],['flying',14,.5,4],['regen',6,1.4,8],['tank',6,.9,10],['boss',2,5,16]]
 ];
-const ECON = { startGold:70, rollBase:16, rollInc:0.5, rollMax:45, waveBonus:16, mergeBonus:4 };
+const ECON = { startGold:70, rollBase:16, rollInc:0.6, rollMax:48, waveBonus:14, mergeBonus:4 };
+const HP_EXP = 1.11;   // 무한 HP 지수
 
 // multi-target assumptions
 const MT = { single:1, slow:1, aoe:2.5, pierce:2.2, sweep:3.5, missile:2.5, chain:'chain' };
@@ -50,13 +54,12 @@ function towerDPS(kind, tier, single){
   return (t.d * hits) / t.cd;
 }
 
-console.log('=== 타워 DPS (멀티타깃 가정 / 단일타깃) ===');
-console.log('kind    T1       T2       T3       T4      |  단일T1  단일T4');
+console.log('=== 타워 DPS (멀티타깃 가정) · 5등급 ===');
+console.log('kind    일반    희귀    영웅    전설     신    |  단일신');
 for (const k of KIND_ORDER){
-  const mt = [1,2,3,4].map(t => towerDPS(k,t,false).toFixed(0).padStart(5));
-  const st1 = towerDPS(k,1,true).toFixed(0).padStart(5);
-  const st4 = towerDPS(k,4,true).toFixed(0).padStart(5);
-  console.log(`${k.padEnd(7)} ${mt.join('   ')}  | ${st1}   ${st4}`);
+  const mt = [1,2,3,4,5].map(t => towerDPS(k,t,false).toFixed(0).padStart(5));
+  const st5 = towerDPS(k,5,true).toFixed(0).padStart(5);
+  console.log(`${k.padEnd(7)} ${mt.join('  ')}  | ${st5}`);
 }
 
 console.log('\n=== 1성 DPS 랭킹 (멀티) — 종류 밸런스 ===');
@@ -96,11 +99,11 @@ for (let i = 0; i < WAVES.length; i++){
   console.log(`${(i+1).toString().padStart(2)}  ${n.toString().padStart(4)}  ${hp.toString().padStart(6)}  ${dur.toFixed(1).padStart(5)}s  ${(hp/dur).toFixed(0).padStart(5)}   ${types}`);
 }
 
-console.log('\n=== 무한 스케일링 (cycle = wave-15, HP ×1.09^cycle 지수) ===');
+console.log(`\n=== 무한 스케일링 (cycle = wave-15, HP ×${HP_EXP}^cycle 지수) ===`);
 for (const w of [16,20,25,30,40,50,70,100]){
   const cycle = w - 15;
-  const mult = Math.pow(1.09, cycle);
-  console.log(`  W${w.toString().padStart(3)}  cycle ${cycle.toString().padStart(3)}  HP×${mult.toFixed(1).padStart(7)}  (grunt ${Math.round(42*mult)} / tank ${Math.round(220*mult)} / boss ${Math.round(1100*mult)})`);
+  const mult = Math.pow(HP_EXP, cycle);
+  console.log(`  W${w.toString().padStart(3)}  cycle ${cycle.toString().padStart(3)}  HP×${mult.toFixed(1).padStart(8)}  (grunt ${Math.round(42*mult)} / tank ${Math.round(220*mult)} / boss ${Math.round(1100*mult)})`);
 }
 
 // 플레이어 capacity 모델: 누적 뽑기 → 등급 분포 → 총 DPS
@@ -128,15 +131,15 @@ for (let i = 0; i < WAVES.length; i++){
 // capacity: "안정 플레이" 모델 — N개 뽑기, 3:1 합성, 종류 가중 분포
 console.log('\n=== 플레이어 DPS capacity 모델 (격자 채움) ===');
 function buildDPS(rolls){
-  // rolls개 1성 → 합성으로 등급 분포 (3개=1단위). 단순 3진수 모델.
-  // 1성 r1, 2성 r2=floor(r1/3), 3성 r3=floor(r2/3), 4성=floor(r3/3)
-  // 잔여 1성 = r1 % 3 ...
+  // 2-merge 모델: 한 등급 위 = 아래 등급 2개. 잔여를 등급별로 누적 (2진수).
   let t1 = rolls;
-  const t2 = Math.floor(t1/3); t1 -= t2*3;
+  const t2 = Math.floor(t1/2); t1 -= t2*2;
   let t2r = t2;
-  const t3 = Math.floor(t2r/3); t2r -= t3*3;
+  const t3 = Math.floor(t2r/2); t2r -= t3*2;
   let t3r = t3;
-  const t4 = Math.floor(t3r/3); t3r -= t4*3;
+  const t4 = Math.floor(t3r/2); t3r -= t4*2;
+  let t4r = t4;
+  const t5 = Math.floor(t4r/2); t4r -= t5*2;
   // 종류 평균 DPS (가중)
   const totalW = Object.values(KIND_WEIGHT).reduce((a,b)=>a+b,0);
   function avgDPS(tier){
@@ -144,7 +147,7 @@ function buildDPS(rolls){
     for (const k of KIND_ORDER) s += towerDPS(k,tier,false) * KIND_WEIGHT[k];
     return s / totalW;
   }
-  return t1*avgDPS(1) + t2r*avgDPS(2) + t3r*avgDPS(3) + t4*avgDPS(4);
+  return t1*avgDPS(1) + t2r*avgDPS(2) + t3r*avgDPS(3) + t4r*avgDPS(4) + t5*avgDPS(5);
 }
 for (const rolls of [10, 20, 30, 45, 60]){
   console.log(`  ${rolls}회 뽑기 → 총 DPS ≈ ${buildDPS(rolls).toFixed(0)}`);

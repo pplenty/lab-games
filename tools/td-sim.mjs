@@ -2,11 +2,13 @@
  * Measures average reached wave over many games to gauge true difficulty.
  *   node tools/td-sim.mjs [games]
  *
- * Faithful to the game: rectangular loop track, range-gated firing from
- * grid cells, multi-target AoE/sweep/pierce/chain on real enemy positions,
- * 3→1 auto-merge, gold economy, infinite wave scaling, maxAlive game-over,
- * counters (strongVs/weakVs). Synergy approximated as a flat factor.
- * Auto-play places towers on cells whose range reaches the track.
+ * Faithful to the game (랜타디 오마주 patch):
+ *   rectangular loop track, range-gated firing from grid cells,
+ *   multi-target AoE/sweep/pierce/chain, 5 grades w/ ×2 dmg doubling,
+ *   2→1 auto-merge, gold economy, infinite scaling, counters, slow.
+ *   PRIMARY game-over = lives reach 0 via leaks (enemy completes one lap:
+ *   normal -1, boss -10). maxAlive overflow is a secondary safety.
+ *   Rift boss / hero token are player-driven → omitted (conservative).
  */
 
 // ---- layout (matches game) ----
@@ -19,23 +21,31 @@ const SEGS=[
 const SEGLEN = SEGS.map(s=>Math.hypot(s.x2-s.x1,s.y2-s.y1));
 const TRACK_TOTAL = SEGLEN.reduce((a,b)=>a+b,0);
 
-// ---- data (matches game after the last patch) ----
+// ---- data (matches game: 5 grades, dmg doubles each grade) ----
 const TOWERS = {
-  pulse:  { fire:'single', anti:false, strong:['runner'], weak:['tank'],     t:[null,{d:11,cd:.50,r:88},{d:28,cd:.46,r:102},{d:68,cd:.40,r:118},{d:160,cd:.34,r:140}] },
-  burst:  { fire:'aoe',    anti:false, strong:['splitter'], weak:['shielded'],t:[null,{d:14,cd:1.20,r:80,aoe:42},{d:36,cd:1.05,r:94,aoe:50},{d:88,cd:.95,r:110,aoe:60},{d:205,cd:.85,r:130,aoe:72}] },
-  frost:  { fire:'slow',   anti:false, strong:['shielded'], weak:[],          t:[null,{d:7,cd:.58,r:96,sf:.55},{d:16,cd:.53,r:108,sf:.45},{d:38,cd:.48,r:124,sf:.35},{d:88,cd:.44,r:144,sf:.25}] },
-  rail:   { fire:'pierce', anti:true,  strong:['flying'], weak:[],            t:[null,{d:14,cd:1.30,r:152},{d:36,cd:1.18,r:174},{d:84,cd:1.05,r:196},{d:190,cd:.92,r:222}] },
-  guard:  { fire:'sweep',  anti:false, strong:['splitter','grunt'], weak:['tank'], t:[null,{d:5,cd:.32,r:56},{d:12,cd:.28,r:70},{d:28,cd:.23,r:86},{d:68,cd:.18,r:104}] },
-  rocket: { fire:'missile',anti:true,  strong:['boss','tank'], weak:['runner'],t:[null,{d:26,cd:1.6,r:150,aoe:38},{d:64,cd:1.45,r:170,aoe:46},{d:148,cd:1.30,r:192,aoe:56},{d:335,cd:1.15,r:220,aoe:70}] },
-  chain:  { fire:'chain',  anti:false, strong:['grunt','runner'], weak:['shielded'], t:[null,{d:12,cd:.9,r:110,ch:2,cr:70,f:.62},{d:28,cd:.85,r:124,ch:3,cr:80,f:.66},{d:64,cd:.78,r:142,ch:5,cr:90,f:.70},{d:150,cd:.70,r:166,ch:7,cr:100,f:.74}] }
+  pulse:  { fire:'single', anti:false, strong:['runner'], weak:['tank'],
+    t:[null,{d:11,cd:.50,r:88},{d:22,cd:.45,r:100},{d:44,cd:.40,r:112},{d:88,cd:.35,r:126},{d:176,cd:.30,r:142}] },
+  burst:  { fire:'aoe',    anti:false, strong:['splitter'], weak:['shielded'],
+    t:[null,{d:14,cd:1.20,r:80,aoe:42},{d:28,cd:1.08,r:92,aoe:50},{d:56,cd:.97,r:104,aoe:58},{d:112,cd:.88,r:118,aoe:66},{d:224,cd:.80,r:132,aoe:76}] },
+  frost:  { fire:'slow',   anti:false, strong:['shielded'], weak:[],
+    t:[null,{d:7,cd:.58,r:96,sf:.55,sd:1.6},{d:14,cd:.53,r:108,sf:.46,sd:2.0},{d:28,cd:.49,r:120,sf:.38,sd:2.4},{d:56,cd:.45,r:132,sf:.30,sd:2.8},{d:112,cd:.42,r:146,sf:.22,sd:3.2}] },
+  rail:   { fire:'pierce', anti:true,  strong:['flying'], weak:[],
+    t:[null,{d:14,cd:1.30,r:152},{d:28,cd:1.18,r:170},{d:56,cd:1.07,r:188},{d:112,cd:.97,r:206},{d:224,cd:.88,r:226}] },
+  guard:  { fire:'sweep',  anti:false, strong:['splitter','grunt'], weak:['tank'],
+    t:[null,{d:5,cd:.32,r:56},{d:10,cd:.28,r:68},{d:20,cd:.25,r:80},{d:40,cd:.22,r:92},{d:80,cd:.19,r:106}] },
+  rocket: { fire:'missile',anti:true,  strong:['boss','tank'], weak:['runner'],
+    t:[null,{d:26,cd:1.6,r:150,aoe:38},{d:52,cd:1.46,r:168,aoe:46},{d:104,cd:1.33,r:186,aoe:54},{d:208,cd:1.21,r:204,aoe:62},{d:416,cd:1.10,r:224,aoe:72}] },
+  chain:  { fire:'chain',  anti:false, strong:['grunt','runner'], weak:['shielded'],
+    t:[null,{d:12,cd:.9,r:110,ch:2,cr:70,f:.62},{d:24,cd:.84,r:124,ch:3,cr:80,f:.66},{d:48,cd:.79,r:138,ch:4,cr:90,f:.70},{d:96,cd:.74,r:152,ch:5,cr:100,f:.73},{d:192,cd:.70,r:168,ch:7,cr:110,f:.76}] }
 };
 const KIND_ORDER = ['pulse','burst','frost','rail','guard','rocket','chain'];
 const KIND_WEIGHT = { pulse:20, burst:16, frost:16, rail:12, guard:14, rocket:11, chain:11 };
+const MAX_GRADE = 5;
 
 const ENEMIES = {
   grunt:{hp:42,sp:46,g:5}, runner:{hp:28,sp:92,g:8}, tank:{hp:220,sp:30,g:24},
   swift:{hp:110,sp:72,g:15}, splitter:{hp:120,sp:42,g:17,split:2}, shielded:{hp:80,sp:36,g:20,shield:80},
-  flying:{hp:90,sp:78,g:22,flying:true}, regen:{hp:140,sp:38,g:22,regen:6}, boss:{hp:1100,sp:28,g:120}
+  flying:{hp:90,sp:78,g:22,flying:true}, regen:{hp:140,sp:38,g:22,regen:6}, boss:{hp:1100,sp:28,g:120,boss:true}
 };
 const WAVES = [
   [['grunt',10,.6]], [['grunt',14,.55]], [['runner',12,.5]],
@@ -47,10 +57,11 @@ const WAVES = [
   [['shielded',8,.9],['flying',10,.55,2],['regen',4,1.6,6]],
   [['grunt',28,.3],['flying',14,.5,4],['regen',6,1.4,8],['tank',6,.9,10],['boss',2,5,16]]
 ];
-// TUNABLES (mirror ECONOMY)
+// TUNABLES (mirror ECONOMY + 누수-목숨)
 const CFG = {
-  startGold:70, maxAlive:34, rollBase:16, rollInc:0.5, rollMax:45,
-  waveBonus:16, betweenSec:4, mergeBonus:4,
+  startGold:70, maxAlive:45, rollBase:16, rollInc:0.6, rollMax:48,
+  waveBonus:14, betweenSec:4, mergeBonus:4,
+  startLives:20, bossLeak:10,
   hpExp:1.09,                 // 무한 HP 지수 스케일 (게임과 일치)
   goldPerCycle:0.08, regenPerCycle:0.10,
   counterStrong:1.45, counterWeak:0.65, synergyFactor:1.08
@@ -65,7 +76,6 @@ function cellCenter(i){ const c=i%COLS,r=(i/COLS)|0; return {x:GRID_X+c*CELL+CEL
 const CELL_TRACK_DIST = [];
 for (let i=0;i<COLS*ROWS;i++){ const c=cellCenter(i); let m=1e9; for(const s of SEGS){ const d=pointSegDist(c.x,c.y,s.x1,s.y1,s.x2,s.y2); if(d<m)m=d; } CELL_TRACK_DIST[i]=m; }
 
-function chainMult(ch,f){ let s=1,p=1; for(let i=0;i<ch;i++){p*=f;s+=p;} return s; }
 function trackPos(seg, prog){ const s=SEGS[seg]; const t=prog/SEGLEN[seg]; return {x:s.x1+(s.x2-s.x1)*t, y:s.y1+(s.y2-s.y1)*t}; }
 function weightedKind(){ const tot=Object.values(KIND_WEIGHT).reduce((a,b)=>a+b,0); let r=Math.random()*tot; for(const k in KIND_WEIGHT){ if(r<KIND_WEIGHT[k])return k; r-=KIND_WEIGHT[k]; } return 'pulse'; }
 
@@ -83,7 +93,7 @@ function getWave(idx){
 
 function simulate(opts){
   const cfg = Object.assign({}, CFG, opts||{});
-  let gold=cfg.startGold, waveIdx=0, time=0;
+  let gold=cfg.startGold, waveIdx=0, time=0, lives=cfg.startLives, leaks=0;
   const slots=new Array(COLS*ROWS).fill(null);
   let enemies=[];
   let spawnQ=[], waveState='between', betweenT=2;
@@ -107,11 +117,11 @@ function simulate(opts){
   }
   function autoMerge(){
     let merged=true,guard=0;
-    while(merged&&guard++<40){ merged=false;
+    while(merged&&guard++<60){ merged=false;
       const buck={};
       for(let i=0;i<slots.length;i++){ const t=slots[i]; if(!t)continue; const k=t.kind+':'+t.tier; (buck[k]=buck[k]||[]).push(i); }
-      for(const k in buck){ const ix=buck[k]; if(ix.length<3)continue; const s=slots[ix[0]]; if(s.tier>=4)continue;
-        slots[ix[1]]=null; slots[ix[2]]=null; slots[ix[0]]={kind:s.kind,tier:s.tier+1,cd:0,...cellCenter(ix[0])}; gold+=cfg.mergeBonus; merged=true; break; }
+      for(const k in buck){ const ix=buck[k]; if(ix.length<2)continue; const s=slots[ix[0]]; if(s.tier>=MAX_GRADE)continue;
+        slots[ix[1]]=null; slots[ix[0]]={kind:s.kind,tier:s.tier+1,cd:0,...cellCenter(ix[0])}; gold+=cfg.mergeBonus; merged=true; break; }
     }
   }
   let rollCount=0;
@@ -128,7 +138,7 @@ function simulate(opts){
     const hpM=hpMultFor(cycle);
     enemies.push({type, hp:def.hp*hpM, maxHp:def.hp*hpM, shield:(def.shield||0)*hpM, sp:def.sp,
       g:Math.floor(def.g*(1+cfg.goldPerCycle*cycle)*mods.gold), seg:0, prog:0, slowUntil:0, slowF:1,
-      flying:!!def.flying, regen:(def.regen||0)*(1+cfg.regenPerCycle*cycle), split:def.split||0, ...trackPos(0,0)});
+      flying:!!def.flying, boss:!!def.boss, regen:(def.regen||0)*(1+cfg.regenPerCycle*cycle), split:def.split||0, leaked:false, ...trackPos(0,0)});
   }
   function counterMult(kind,e){ const def=TOWERS[kind]; if(def.strong.includes(e.type))return cfg.counterStrong; if(def.weak.includes(e.type))return cfg.counterWeak; return 1; }
   function applyDmg(e,dmg){ if(e.shield>0){ const a=Math.min(e.shield,dmg); e.shield-=a; dmg-=a; } if(dmg>0)e.hp-=dmg; }
@@ -142,7 +152,8 @@ function simulate(opts){
       const dx=e.x-t.x,dy=e.y-t.y; if(dx*dx+dy*dy>st.r*st.r)continue;
       const prog=e.seg*1e6+e.prog; if(prog>bp){bp=prog;best=e;} }
     if(!best)return false;
-    if(def.fire==='single'||def.fire==='slow'){ applyDmg(best,base*counterMult(t.kind,best)); if(def.fire==='slow'){best.slowUntil=time+st.sf?0:0;} }
+    if(def.fire==='single'){ applyDmg(best,base*counterMult(t.kind,best)); }
+    else if(def.fire==='slow'){ applyDmg(best,base*counterMult(t.kind,best)); best.slowUntil=time+st.sd; best.slowF=st.sf; }
     else if(def.fire==='aoe'||def.fire==='missile'){ for(const e of enemies){ if(e.dead)continue; if(e.flying&&!def.anti)continue; const dx=e.x-best.x,dy=e.y-best.y; if(dx*dx+dy*dy<=st.aoe*st.aoe) applyDmg(e,base*counterMult(t.kind,e)); } }
     else if(def.fire==='pierce'){ for(const e of enemies){ if(e.dead)continue; const dx=e.x-t.x,dy=e.y-t.y; if(dx*dx+dy*dy<=st.r*st.r) applyDmg(e,base*counterMult(t.kind,e)); } }
     else if(def.fire==='sweep'){ for(const e of enemies){ if(e.dead)continue; if(e.flying&&!def.anti)continue; const dx=e.x-t.x,dy=e.y-t.y; if(dx*dx+dy*dy<st.r*st.r) applyDmg(e,base*counterMult(t.kind,e)); } }
@@ -153,19 +164,23 @@ function simulate(opts){
   }
 
   const dt=0.1; let autoTimer=0;
-  for(let step=0; step<200000; step++){
+  for(let step=0; step<300000; step++){
     time+=dt;
     // 플레이어 자동 행동 (0.5s마다 뽑기 시도)
     autoTimer+=dt; if(autoTimer>=0.5){ autoTimer=0; let g2=0; while(placeRoll()&&g2++<5){} }
     // 웨이브 진행
     if(waveState==='between'){ betweenT-=dt; if(betweenT<=0) startWave(waveIdx); }
     else if(waveState==='wave'){ if(spawnQi<spawnQ.length){ const en=spawnQ[spawnQi]; en.timer-=dt; if(en.timer<=0){ spawnEnemy(en.type); en.rem--; if(en.rem<=0)spawnQi++; else en.timer=en.intv; } } }
-    // 적 이동
-    for(const e of enemies){ if(e.dead)continue; let rem=e.sp*dt; let g3=0;
-      while(rem>0&&g3++<8){ const left=SEGLEN[e.seg]-e.prog; if(rem<left){e.prog+=rem;rem=0;} else {rem-=left;e.seg=(e.seg+1)%4;e.prog=0;} }
+    // 적 이동 (한 바퀴 완주 시 누수)
+    for(const e of enemies){ if(e.dead)continue;
+      const slow=e.slowUntil>time?e.slowF:1; let rem=e.sp*slow*dt; let g3=0;
+      while(rem>0&&g3++<8){ const left=SEGLEN[e.seg]-e.prog; if(rem<left){e.prog+=rem;rem=0;} else {rem-=left;e.seg=(e.seg+1)%4;e.prog=0; if(e.seg===0){ e.leaked=true; rem=0; break; }} }
       const p=trackPos(e.seg,e.prog); e.x=p.x;e.y=p.y;
       if(e.regen>0&&e.hp<e.maxHp)e.hp=Math.min(e.maxHp,e.hp+e.regen*dt);
     }
+    // 누수 처리 → 목숨 차감
+    for(const e of enemies){ if(e.leaked&&!e.dead){ e.dead=true; leaks++; lives-=(e.boss?cfg.bossLeak:1); } }
+    if(lives<=0) return waveIdx;
     // 타워 사격
     for(const t of slots){ if(!t)continue; t.cd-=dt; if(t.cd<=0){ if(fire(t)) t.cd=TOWERS[t.kind].t[t.tier].cd; } }
     // 사망 처리 + 분열
@@ -173,17 +188,16 @@ function simulate(opts){
     for(const e of enemies){ if(!e.dead&&e.hp<=0){ e.dead=true; gold+=e.g; if(e.split){ for(let k=0;k<e.split;k++) born.push(e); } } }
     enemies=enemies.filter(e=>!e.dead);
     for(const e of born){ const def=ENEMIES.grunt; const cycle=Math.max(0,waveIdx-WAVES.length); const hpM=hpMultFor(cycle);
-      enemies.push({type:'grunt',hp:def.hp*hpM,maxHp:def.hp*hpM,shield:0,sp:def.sp,g:Math.floor(def.g*(1+cfg.goldPerCycle*cycle)),seg:e.seg,prog:Math.max(0,e.prog-6),slowUntil:0,slowF:1,flying:false,regen:0,split:0,...trackPos(e.seg,Math.max(0,e.prog-6))}); }
-    // game over
+      enemies.push({type:'grunt',hp:def.hp*hpM,maxHp:def.hp*hpM,shield:0,sp:def.sp,g:Math.floor(def.g*(1+cfg.goldPerCycle*cycle)),seg:e.seg,prog:Math.max(0,e.prog-6),slowUntil:0,slowF:1,flying:false,boss:false,regen:0,split:0,leaked:false,...trackPos(e.seg,Math.max(0,e.prog-6))}); }
+    // secondary safety: 필드 오버플로우
     if(enemies.length>cfg.maxAlive) return waveIdx;
-    // 웨이브 종료
+    // 웨이브 종료 — 게임과 동일: spawn 완료 즉시 다음 웨이브 (적은 계속 루프)
     if(waveState==='wave' && spawnQi>=spawnQ.length){
       waveIdx++; gold+=cfg.waveBonus;
       // 모디파이어 (5웨이브마다, good 자동: dmg+20% 또는 gold+30% 번갈아)
       if(waveIdx%5===0){ if((waveIdx/5)%2===1) mods.dmg*=(cfg.modDmg||1.2); else mods.gold*=1.3; }
       waveState='between'; betweenT=cfg.betweenSec;
-      if(waveIdx>=150) return waveIdx; // 사실상 무적 간주
-
+      if(waveIdx>=200) return waveIdx; // 사실상 무적 간주
     }
   }
   return waveIdx;
@@ -197,20 +211,23 @@ function runBatch(label, opts){
   const avg=res.reduce((a,b)=>a+b,0)/res.length;
   const med=res[Math.floor(res.length/2)];
   const p10=res[Math.floor(res.length*0.1)], p90=res[Math.floor(res.length*0.9)];
-  console.log(`${label.padEnd(28)} avg ${avg.toFixed(1).padStart(6)}  median ${med.toString().padStart(3)}  p10 ${p10}  p90 ${p90}  min ${res[0]} max ${res[res.length-1]}`);
+  console.log(`${label.padEnd(30)} avg ${avg.toFixed(1).padStart(6)}  median ${med.toString().padStart(3)}  p10 ${p10}  p90 ${p90}  min ${res[0]} max ${res[res.length-1]}`);
   return avg;
 }
 
-console.log(`=== Roll-defense battle sim (${N} games each, cap 150 = "endless / unbeatable") ===`);
-console.log('(reached wave when field > maxAlive; auto-play: roll+auto-merge, range-aware placement)\n');
-runBatch('current (exp 1.09)', {});
-console.log('\n-- alternative HP exponents --');
-runBatch('linear 0.18 (old/broken)', {hpExp:null, hpPerCycle:0.18});
-runBatch('hpExp 1.06', {hpExp:1.06});
-runBatch('hpExp 1.08', {hpExp:1.08});
-runBatch('hpExp 1.10', {hpExp:1.10});
-runBatch('hpExp 1.12', {hpExp:1.12});
-console.log('\n-- hpExp 1.09 + modifier dmg tweaks --');
-runBatch('hpExp 1.09, modDmg 1.20', {hpExp:1.09, modDmg:1.20});
-runBatch('hpExp 1.09, modDmg 1.15', {hpExp:1.09, modDmg:1.15});
-runBatch('hpExp 1.09 + maxAlive 30', {hpExp:1.09, maxAlive:30});
+console.log(`=== Roll-defense battle sim · 랜타디 오마주 (${N} games each, cap 200) ===`);
+console.log('(reached wave when LIVES<=0 via leaks; 2-merge, 5 grades; rift/hero omitted = conservative)\n');
+runBatch('current (lives 20, exp 1.09)', {});
+console.log('\n-- HP exponent sweep --');
+runBatch('hpExp 1.07', {hpExp:1.07});
+runBatch('hpExp 1.09', {hpExp:1.09});
+runBatch('hpExp 1.11', {hpExp:1.11});
+runBatch('hpExp 1.13', {hpExp:1.13});
+console.log('\n-- lives sweep (hpExp 1.09) --');
+runBatch('lives 12', {startLives:12});
+runBatch('lives 20', {startLives:20});
+runBatch('lives 30', {startLives:30});
+console.log('\n-- boss leak severity --');
+runBatch('bossLeak 6', {bossLeak:6});
+runBatch('bossLeak 10', {bossLeak:10});
+runBatch('bossLeak 15', {bossLeak:15});
