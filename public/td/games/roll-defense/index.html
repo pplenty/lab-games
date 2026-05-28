@@ -12,6 +12,9 @@
 <style>
   *{ box-sizing:border-box; margin:0; padding:0; }
   html, body{ height:100%; }
+  /* 타워/슬롯 선택 시 패널이 나타나며 스크롤바가 생겨도 가로 위치가
+     밀리지 않도록 스크롤바 폭을 항상 예약 (레이아웃 시프트 방지). */
+  html{ scrollbar-gutter: stable; }
   body{
     background: radial-gradient(ellipse at top, #14063a 0%, #050214 70%, #02010a 100%);
     color: #d8d0ff;
@@ -1231,6 +1234,8 @@ function startGame(){
     },
     mods: { goldMult: 1, dmgMult: 1, synergyAdd: 0, skillCdMult: 1, enemyHpMult: 1, rollCostMult: 1, enemySpeedMult: 1 },
     pendingModifier: false,
+    modifierPicks: null,
+    modifierTimer: 0,
     activeModNames: []
   };
   buildLayout();
@@ -1485,9 +1490,9 @@ function useHeroToken(){
     return;
   }
   state.heroTokens -= 1;
-  // 확정 전설(4등급) 무작위 종류
+  // 확정 전설(4등급) 무작위 종류 — 좌상단 모서리부터
   const kind = weightedPick(KIND_WEIGHT);
-  const idx = empties[Math.floor(Math.random() * empties.length)];
+  const idx = empties[0];
   placeTowerIntoSlot(idx, kind, LEGEND_GRADE);
   state.slots[idx].flash = 1.0;
   addExplosion(state.slots[idx].x, state.slots[idx].y, 40, gradeColor(LEGEND_GRADE));
@@ -1720,8 +1725,8 @@ function doRoll(){
   let tier = pickTierByProb();
   // 등급 상한 보장
   if (tier > MAX_GRADE) tier = MAX_GRADE;
-  // 빈 슬롯 중 무작위
-  const idx = empties[Math.floor(Math.random() * empties.length)];
+  // 좌상단 모서리부터 순서대로 채움 (정렬된 배치)
+  const idx = empties[0];
   placeTowerIntoSlot(idx, kind, tier);
   state.slots[idx].flash = 0.4;
   SFX.roll();
@@ -2245,6 +2250,7 @@ function endWave(){
   state.betweenTimer = ECONOMY.betweenWaveSec;
 }
 
+const MODIFIER_AUTO_SEC = 25;   // 미선택 시 자동 랜덤 선택까지의 시간(초)
 function openModifierChoice(){
   const pool = MODIFIERS.slice();
   const picks = [];
@@ -2252,6 +2258,8 @@ function openModifierChoice(){
     picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
   }
   state.pendingModifier = true;
+  state.modifierPicks = picks;
+  state.modifierTimer = MODIFIER_AUTO_SEC;
   const panel = document.getElementById('mod-panel');
   panel.innerHTML = `
     <h2>웨이브 ${state.waveIdx} 보상</h2>
@@ -2263,6 +2271,7 @@ function openModifierChoice(){
         <span class="mod-tag mod-tag-${m.tag}">${m.tag === 'good' ? '이득' : m.tag === 'risk' ? '위험' : '즉시'}</span>
       </button>
     `).join('')}
+    <div class="mod-sub" id="mod-countdown" style="margin-top:8px; color:#9a8cd6;">⏱ ${MODIFIER_AUTO_SEC}s 후 자동 선택</div>
   `;
   document.getElementById('mod-backdrop').classList.add('on');
   panel.querySelectorAll('.mod-option').forEach(b => {
@@ -2270,15 +2279,31 @@ function openModifierChoice(){
   });
 }
 
-function applyModifier(id){
+// 미선택 카운트다운 (loop에서 매 프레임 호출) — 0이 되면 랜덤 자동 선택
+function tickModifierTimer(dt){
+  if (!state.pendingModifier) return;
+  state.modifierTimer -= dt;
+  const el = document.getElementById('mod-countdown');
+  if (state.modifierTimer <= 0){
+    const picks = state.modifierPicks || MODIFIERS;
+    const pick = picks[Math.floor(Math.random() * picks.length)];
+    if (el) el.textContent = '⏱ 자동 선택: ' + pick.icon + ' ' + pick.name;
+    applyModifier(pick.id, true);
+    return;
+  }
+  if (el) el.textContent = '⏱ ' + Math.ceil(state.modifierTimer) + 's 후 자동 선택';
+}
+
+function applyModifier(id, auto){
   const m = MODIFIERS.find(x => x.id === id);
   if (m){
     m.apply(state);
     if (m.tag !== 'once') state.activeModNames.push(m.icon);
-    floatAt(W/2, GRID_Y + GRID_H/2, m.icon + ' ' + m.name, '#ffd96b');
+    floatAt(W/2, GRID_Y + GRID_H/2, (auto ? '⏱ ' : '') + m.icon + ' ' + m.name, '#ffd96b');
     SFX.modifier();
   }
   state.pendingModifier = false;
+  state.modifierPicks = null;
   document.getElementById('mod-backdrop').classList.remove('on');
   state.waveState = 'between';
   state.betweenTimer = ECONOMY.betweenWaveSec;
@@ -2413,10 +2438,12 @@ function fireTower(t, target){
       dmg: dmg,
       aoeRadius: t.aoeRadius,
       color: t.color,
+      tier: t.tier,
       antiAir: !!t.antiAir,
       strongVs: t.strongVs, weakVs: t.weakVs,
       life: 3.5,
-      trail: []
+      trail: [],
+      spin: 0
     });
   } else if (t.fire === 'chain'){
     // 체인 라이트닝: 사거리 내 다른 적으로 점프, 매 점프 dmg × dmgFalloff
@@ -2902,40 +2929,81 @@ function render(){
     ctx.restore();
   }
 
-  // missile projectiles (trail + body)
+  // missile projectiles (연기 트레일 + 미사일 본체 + 추진 화염)
+  // 성능: 매 프레임 그라데이션 생성·shadowBlur 미사용 — 평면 채움으로 가볍게
   for (const p of state.projectiles){
-    // trail
+    const tier = p.tier || 1;
+    const sc = 0.9 + tier * 0.16;          // 등급이 높을수록 큰 미사일
+    // 연기 트레일 (뒤로 갈수록 옅고 굵게)
+    ctx.save();
     for (let i = 0; i < p.trail.length; i++){
-      const a = (i + 1) / p.trail.length * 0.55;
-      ctx.save();
-      ctx.fillStyle = p.color;
+      const a = (i + 1) / p.trail.length * 0.45;
       ctx.globalAlpha = a;
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = 8;
+      ctx.fillStyle = i > p.trail.length - 4 ? '#fff6d8' : p.color;
       ctx.beginPath();
-      ctx.arc(p.trail[i].x, p.trail[i].y, 2 + i * 0.25, 0, Math.PI * 2);
+      ctx.arc(p.trail[i].x, p.trail[i].y, (1.6 + i * 0.3) * sc, 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
     }
-    // body
+    ctx.restore();
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(Math.atan2(p.vy, p.vx) + Math.PI / 2);
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 12;
-    ctx.fillStyle = p.color;
+    ctx.scale(sc, sc);
+    // 추진 화염 (깜빡이는 꼬리, 평면)
+    const flick = 0.6 + Math.random() * 0.5;
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#ffb347';
     ctx.beginPath();
-    ctx.moveTo(0, -6);
-    ctx.lineTo(3.5, 4);
-    ctx.lineTo(0, 2);
-    ctx.lineTo(-3.5, 4);
+    ctx.moveTo(-2.4, 6);
+    ctx.lineTo(0, 6 + 11 * flick);
+    ctx.lineTo(2.4, 6);
     ctx.closePath();
     ctx.fill();
-    // 흰 코어
+    ctx.fillStyle = '#fff6d8';
+    ctx.beginPath();
+    ctx.moveTo(-1.2, 6);
+    ctx.lineTo(0, 6 + 6 * flick);
+    ctx.lineTo(1.2, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // 동체 (금속 캡슐)
+    ctx.fillStyle = '#dfe3f5';
+    roundRect(ctx, -2.6, -5, 5.2, 12, 2.2);
+    ctx.fill();
+    // 꼬리 날개 (핀)
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.moveTo(-2.6, 3); ctx.lineTo(-5.5, 7); ctx.lineTo(-2.6, 6.5); ctx.closePath();
+    ctx.moveTo(2.6, 3);  ctx.lineTo(5.5, 7);  ctx.lineTo(2.6, 6.5);  ctx.closePath();
+    ctx.fill();
+    // 워헤드 (탄두) + 흰 코어
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.moveTo(0, -10);
+    ctx.quadraticCurveTo(3, -7, 2.6, -4);
+    ctx.lineTo(-2.6, -4);
+    ctx.quadraticCurveTo(-3, -7, 0, -10);
+    ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(0, -2, 1.5, 0, Math.PI * 2);
+    ctx.arc(0, -6, 1.4, 0, Math.PI * 2);
     ctx.fill();
+    // 전설+ : 회전 에너지 링 (그림자 없이)
+    if (tier >= LEGEND_GRADE){
+      p.spin = (p.spin || 0) + 0.5;
+      ctx.save();
+      ctx.rotate(p.spin);
+      ctx.strokeStyle = gradeColor(tier);
+      ctx.globalAlpha = 0.85;
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.arc(0, 0, 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
     ctx.restore();
   }
 
@@ -3148,29 +3216,14 @@ function drawTower(t){
   ctx.save();
   ctx.translate(t.x, t.y);
 
-  // 전설(4)·신(5): 회전하는 등급 후광 (신은 더 밝게)
-  if (t.tier >= LEGEND_GRADE){
-    const halo = gradeColor(t.tier);
-    ctx.save();
-    ctx.rotate(state.time * 1.4);
-    ctx.strokeStyle = halo;
-    ctx.globalAlpha = 0.55;
-    ctx.lineWidth = t.tier >= MAX_GRADE ? 2 : 1.5;
-    ctx.shadowColor = halo;
-    ctx.shadowBlur = t.tier >= MAX_GRADE ? 18 : 14;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.arc(0, 0, t.tier >= MAX_GRADE ? 20 : 18, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
+  // 등급 장식 (일반=민무늬 → 합성할수록 화려해짐)
+  drawGradeAura(ctx, t);
 
-  // 회전 본체
+  // 회전 본체 (성능: 글로우 반경 축소 — 등급 강조는 오라가 담당)
   ctx.save();
   ctx.rotate(t.angle + Math.PI / 2);
   ctx.shadowColor = t.color;
-  ctx.shadowBlur = 6 + t.tier * 2 + flash * 12;
+  ctx.shadowBlur = 4 + flash * 8;
   drawTowerBody(ctx, t);
   ctx.restore();
 
@@ -3456,6 +3509,85 @@ function drawChainBody(c, t){
   c.beginPath();
   c.arc(0, 0, 3 + t.tier * 0.4, 0, Math.PI * 2);
   c.fill();
+}
+
+// 작은 별/스파클
+function drawStar(c, cx, cy, spikes, outer, inner){
+  c.beginPath();
+  for (let i = 0; i < spikes * 2; i++){
+    const r = i % 2 === 0 ? outer : inner;
+    const a = (i / (spikes * 2)) * Math.PI * 2 - Math.PI / 2;
+    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+    if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+  }
+  c.closePath();
+  c.fill();
+}
+
+// 등급 오라: 일반(1)=장식 없음 → 합성할수록 링·궤도점·후광·왕관으로 화려해짐
+// 성능: shadowBlur·매프레임 그라데이션 미사용 (타워 수가 많아도 가볍게)
+function drawGradeAura(ctx, t){
+  const tier = t.tier;
+  if (tier < 2) return;                 // 일반: 민무늬
+  const col = gradeColor(tier);
+  const time = state ? state.time : 0;
+
+  // 1) 등급 링 (희귀+) — 등급 오를수록 두껍고 밝게
+  ctx.save();
+  ctx.strokeStyle = col;
+  ctx.globalAlpha = 0.55 + (tier - 2) * 0.1;
+  ctx.lineWidth = 1 + (tier - 1) * 0.6;
+  ctx.beginPath();
+  ctx.arc(0, 0, 15.5 + tier * 0.4, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // 2) 회전 점선 후광 (전설+)
+  if (tier >= LEGEND_GRADE){
+    ctx.save();
+    ctx.rotate(time * 1.4);
+    ctx.strokeStyle = col;
+    ctx.globalAlpha = 0.7;
+    ctx.lineWidth = tier >= MAX_GRADE ? 2 : 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 21, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // 3) 궤도 점 (영웅=3 · 전설=4 · 신=6, 천천히 회전)
+  const studs = tier >= MAX_GRADE ? 6 : tier === LEGEND_GRADE ? 4 : tier === 3 ? 3 : 0;
+  if (studs > 0){
+    ctx.save();
+    ctx.rotate(-time * 0.8);
+    ctx.fillStyle = col;
+    const orad = 18 + tier * 0.6;
+    for (let i = 0; i < studs; i++){
+      const a = (i / studs) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * orad, Math.sin(a) * orad, tier >= MAX_GRADE ? 2.2 : 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 4) 신(5): 펄스 글로우(단순 알파 원) + 별 왕관
+  if (tier >= MAX_GRADE){
+    const pulse = 0.5 + 0.5 * Math.sin(time * 4);
+    ctx.save();
+    ctx.globalAlpha = 0.10 + pulse * 0.12;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(0, 0, 24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle = '#fff';
+    drawStar(ctx, 0, -22, 4, 3.5 + pulse, 1.6);
+    ctx.restore();
+  }
 }
 
 function drawTierPips(ctx, t){
@@ -3777,6 +3909,10 @@ function loop(ts){
   rafId = requestAnimationFrame(loop);
   const dtRaw = Math.min(0.05, (ts - lastFrameTs) / 1000);
   lastFrameTs = ts;
+  // 보상 모달이 떠 있으면 자동 선택 카운트다운 (일시정지 중엔 멈춤)
+  if (state.pendingModifier && !state.paused){
+    tickModifierTimer(dtRaw);
+  }
   const blocked = state.paused || state.codexOpen || state.mergeModalGroup || state.pendingModifier
     || state.waveState === 'won' || state.waveState === 'lost';
   if (!blocked){
