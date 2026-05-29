@@ -2777,15 +2777,18 @@ function floatAt(x, y, text, color){
 /* ============================================================
  * Render
  * ============================================================ */
+let BG_GRAD = null;   // 배경 그라데이션 캐시 (매 프레임 생성 회피)
 function render(){
   ctx.clearRect(0, 0, W, H);
 
-  // 배경
-  const bg = ctx.createRadialGradient(W/2, H/2, 40, W/2, H/2, 380);
-  bg.addColorStop(0, '#1c0a3a');
-  bg.addColorStop(0.55, '#0a0420');
-  bg.addColorStop(1, '#02010a');
-  ctx.fillStyle = bg;
+  // 배경 (한 번만 생성)
+  if (!BG_GRAD){
+    BG_GRAD = ctx.createRadialGradient(W/2, H/2, 40, W/2, H/2, 380);
+    BG_GRAD.addColorStop(0, '#1c0a3a');
+    BG_GRAD.addColorStop(0.55, '#0a0420');
+    BG_GRAD.addColorStop(1, '#02010a');
+  }
+  ctx.fillStyle = BG_GRAD;
   ctx.fillRect(0, 0, W, H);
 
   // 루프 트랙 (사각 + 글로우)
@@ -2863,10 +2866,8 @@ function render(){
       for (const idx of group){
         const sc = slotCenter(idx);
         ctx.save();
-        ctx.strokeStyle = `rgba(255,217,107,${pulse * 0.85})`;
+        ctx.strokeStyle = `rgba(255,217,107,${pulse * 0.9})`;
         ctx.lineWidth = 2;
-        ctx.shadowColor = '#ffd96b';
-        ctx.shadowBlur = 8 * pulse;
         ctx.strokeRect(sc.x - CELL/2 + 2, sc.y - CELL/2 + 2, CELL - 4, CELL - 4);
         ctx.restore();
       }
@@ -2884,15 +2885,13 @@ function render(){
     drawEnemy(e);
   }
 
-  // beams
+  // beams (성능: shadowBlur 미사용 — 밝은 선 + 알파 페이드로 레이저 느낌 유지)
   for (const b of state.beams){
     const a = Math.max(0, b.life / b.maxLife);
     ctx.save();
     ctx.strokeStyle = b.color;
     ctx.globalAlpha = a;
-    ctx.lineWidth = 2 + a * 2;
-    ctx.shadowColor = b.color;
-    ctx.shadowBlur = 12;
+    ctx.lineWidth = 2.5 + a * 2;
     ctx.beginPath();
     ctx.moveTo(b.x1, b.y1);
     ctx.lineTo(b.x2, b.y2);
@@ -2900,15 +2899,13 @@ function render(){
     ctx.restore();
   }
 
-  // explosions
+  // explosions (성능: shadowBlur 미사용 — 채움+테두리로 표현)
   for (const x of state.explosions){
     const a = Math.max(0, x.life / x.maxLife);
     ctx.save();
     ctx.beginPath();
     ctx.arc(x.x, x.y, x.r, 0, Math.PI * 2);
     ctx.fillStyle = `${x.color}${Math.floor(a * 80).toString(16).padStart(2,'0')}`;
-    ctx.shadowColor = x.color;
-    ctx.shadowBlur = 20;
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = x.color;
@@ -2917,14 +2914,12 @@ function render(){
     ctx.restore();
   }
 
-  // particles
+  // particles (성능: shadowBlur 미사용)
   for (const p of state.particles){
     const a = Math.max(0, p.life / p.maxLife);
     ctx.save();
     ctx.fillStyle = p.color;
     ctx.globalAlpha = a;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 6;
     ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
     ctx.restore();
   }
@@ -3015,15 +3010,13 @@ function render(){
     ctx.strokeStyle = s.color;
     ctx.globalAlpha = a * 0.9;
     ctx.lineWidth = 2 + a;
-    ctx.shadowColor = s.color;
-    ctx.shadowBlur = 12;
     ctx.beginPath();
     ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
 
-  // float texts
+  // float texts (성능: shadowBlur 미사용)
   for (const f of state.floatTexts){
     const a = Math.max(0, f.life / f.maxLife);
     ctx.save();
@@ -3031,8 +3024,6 @@ function render(){
     ctx.textAlign = 'center';
     ctx.fillStyle = f.color;
     ctx.globalAlpha = a;
-    ctx.shadowColor = f.color;
-    ctx.shadowBlur = 6;
     ctx.fillText(f.text, f.x, f.y);
     ctx.restore();
   }
@@ -3219,23 +3210,20 @@ function drawTower(t){
   // 등급 장식 (일반=민무늬 → 합성할수록 화려해짐)
   drawGradeAura(ctx, t);
 
-  // 회전 본체 (성능: 글로우 반경 축소 — 등급 강조는 오라가 담당)
+  // 회전 본체 (성능: 평소엔 glow 없음 → 배치/합성 직후 flash 때만 잠깐 빛남)
   ctx.save();
   ctx.rotate(t.angle + Math.PI / 2);
-  ctx.shadowColor = t.color;
-  ctx.shadowBlur = 4 + flash * 8;
+  if (flash > 0){ ctx.shadowColor = t.color; ctx.shadowBlur = flash * 10; }
   drawTowerBody(ctx, t);
   ctx.restore();
 
   // 등급 점 (코너에 작은 별, 비회전)
   drawTierPips(ctx, t);
 
-  // 인접 시너지 표시 (본체 외곽 골드 점)
+  // 인접 시너지 표시 (본체 외곽 골드 점 · shadowBlur 미사용)
   if (t.synergy > 0){
     ctx.save();
     ctx.fillStyle = '#ffd96b';
-    ctx.shadowColor = '#ffd96b';
-    ctx.shadowBlur = 6;
     for (let i = 0; i < Math.min(4, t.synergy); i++){
       const ang = (i / 4) * Math.PI * 2 - Math.PI / 2;
       ctx.beginPath();
@@ -3245,13 +3233,11 @@ function drawTower(t){
     ctx.restore();
   }
 
-  // 락 표시 (점선 ring)
+  // 락 표시 (점선 ring · shadowBlur 미사용)
   if (t.locked){
     ctx.save();
     ctx.strokeStyle = 'rgba(255,217,107,.85)';
     ctx.lineWidth = 1.5;
-    ctx.shadowColor = '#ffd96b';
-    ctx.shadowBlur = 6;
     ctx.setLineDash([3, 2]);
     ctx.beginPath();
     ctx.arc(0, 0, 18, 0, Math.PI * 2);
@@ -3301,13 +3287,14 @@ function drawPulseBody(ctx, t){
   ctx.fillStyle = t.color;
   ctx.fillRect(-3, -19, 6, 9);
   ctx.fillRect(-4.5, -12, 9, 3);
-  // 빛나는 코어
-  const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, 6);
-  coreGrad.addColorStop(0, '#fff');
-  coreGrad.addColorStop(1, t.color);
-  ctx.fillStyle = coreGrad;
+  // 빛나는 코어 (평면 2겹 — 매프레임 그라데이션 생성 회피)
+  ctx.fillStyle = t.color;
   ctx.beginPath();
   ctx.arc(0, 0, 4 + t.tier * 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(0, 0, 2 + t.tier * 0.2, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -3326,13 +3313,14 @@ function drawBurstBody(ctx, t){
   ctx.fillRect(11, -4, 2, 8);
   ctx.fillRect(-13, 4, 2, 4);
   ctx.fillRect(11, 4, 2, 4);
-  // 위쪽 둥근 머리 (캐논볼)
-  const headGrad = ctx.createRadialGradient(0, -10, 1, 0, -10, 7);
-  headGrad.addColorStop(0, '#fff5cc');
-  headGrad.addColorStop(1, t.color);
-  ctx.fillStyle = headGrad;
+  // 위쪽 둥근 머리 (캐논볼) — 평면 2겹
+  ctx.fillStyle = t.color;
   ctx.beginPath();
   ctx.arc(0, -12, 5 + t.tier * 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff5cc';
+  ctx.beginPath();
+  ctx.arc(0, -12, 2.4 + t.tier * 0.25, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -3501,13 +3489,14 @@ function drawChainBody(c, t){
   c.arc(-9, 6, 1.8, 0, Math.PI * 2);
   c.arc( 9, 6, 1.8, 0, Math.PI * 2);
   c.fill();
-  // 코어
-  const grad = c.createRadialGradient(0, 0, 0, 0, 0, 6);
-  grad.addColorStop(0, '#fff');
-  grad.addColorStop(1, t.color);
-  c.fillStyle = grad;
+  // 코어 (평면 2겹)
+  c.fillStyle = t.color;
   c.beginPath();
   c.arc(0, 0, 3 + t.tier * 0.4, 0, Math.PI * 2);
+  c.fill();
+  c.fillStyle = '#fff';
+  c.beginPath();
+  c.arc(0, 0, 1.6 + t.tier * 0.2, 0, Math.PI * 2);
   c.fill();
 }
 
@@ -3669,13 +3658,11 @@ function drawEnemy(e){
     ctx.restore();
   }
 
-  // shielded — 보호막 시각
+  // shielded — 보호막 시각 (shadowBlur 미사용)
   if (e.maxShield > 0 && e.shield > 0){
     ctx.save();
     ctx.strokeStyle = '#9ab0ff';
     ctx.lineWidth = 1.5;
-    ctx.shadowColor = '#9ab0ff';
-    ctx.shadowBlur = 8;
     ctx.globalAlpha = 0.4 + 0.5 * (e.shield / e.maxShield);
     ctx.beginPath();
     ctx.arc(e.x, e.y, e.r + 3, 0, Math.PI * 2);
@@ -3744,9 +3731,8 @@ function drawEnemyEyes(c, e){
 }
 
 function drawEnemyShape(c, x, y, type, color, r, time){
+  // 성능: 적은 화면에 다수 존재 → shadowBlur 미사용 (밝은 채움색으로 충분히 보임)
   c.save();
-  c.shadowColor = color;
-  c.shadowBlur = 10;
   c.fillStyle = color;
   c.translate(x, y);
   if (type === 'grunt'){
