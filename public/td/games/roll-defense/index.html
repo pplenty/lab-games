@@ -1296,7 +1296,8 @@ function buildLayout(){
 
   canvas = document.getElementById('stage');
   ctx = canvas.getContext('2d');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // 성능: 스테이지 DPR 상한 1.5 (고해상도 화면에서 픽셀 처리량 ↓)
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   canvas.width = W * dpr;
   canvas.height = H * dpr;
   ctx.scale(dpr, dpr);
@@ -2749,14 +2750,19 @@ function step(dt){
 /* ============================================================
  * Effect helpers
  * ============================================================ */
+// 동시 렌더 부하 상한 (대량 처치 시 파티클·텍스트 폭주 방지)
+const MAX_PARTICLES = 130, MAX_FLOATS = 36, MAX_BEAMS = 90;
 function addBeam(x1, y1, x2, y2, color, duration){
+  if (state.beams.length >= MAX_BEAMS) state.beams.shift();
   state.beams.push({ x1, y1, x2, y2, color, life: duration, maxLife: duration });
 }
 function addExplosion(x, y, maxR, color){
   state.explosions.push({ x, y, r: 4, maxR, color, life: 0.35, maxLife: 0.35 });
 }
 function spawnKillParticles(e){
-  for (let i = 0; i < 10; i++){
+  if (state.particles.length >= MAX_PARTICLES) return;   // 상한 초과 시 버스트 생략
+  const n = state.particles.length > MAX_PARTICLES - 30 ? 4 : 8;
+  for (let i = 0; i < n; i++){
     const a = Math.random() * Math.PI * 2;
     const sp = 30 + Math.random() * 80;
     state.particles.push({
@@ -2771,6 +2777,7 @@ function spawnKillParticles(e){
   }
 }
 function floatAt(x, y, text, color){
+  if (state.floatTexts.length >= MAX_FLOATS) state.floatTexts.shift();
   state.floatTexts.push({ x, y, text, color, life: 1.1, maxLife: 1.1 });
 }
 
@@ -3082,12 +3089,10 @@ function render(){
 }
 
 function drawTrack(){
-  // 외곽 글로우 라인 (시계방향 화살표 같이)
+  // 외곽 라인 (성능: shadowBlur 미사용 — 선 밝기로 가독 유지)
   ctx.save();
-  ctx.shadowColor = '#c98aff';
-  ctx.shadowBlur = 12;
-  ctx.strokeStyle = 'rgba(200,170,255,.55)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(208,178,255,.7)';
+  ctx.lineWidth = 2.5;
   ctx.beginPath();
   ctx.moveTo(TX1, TY1);
   ctx.lineTo(TX2, TY1);
@@ -3099,9 +3104,7 @@ function drawTrack(){
 
   // 트랙 진행 방향 표시 (각 변 가운데에 작은 ▶)
   ctx.save();
-  ctx.fillStyle = 'rgba(255,180,220,.7)';
-  ctx.shadowColor = '#ff5b9c';
-  ctx.shadowBlur = 6;
+  ctx.fillStyle = 'rgba(255,180,220,.8)';
   const arrowSize = 4;
   // 상변 중앙 (→)
   drawArrow(ctx, (TX1 + TX2) / 2, TY1, 0, arrowSize);
