@@ -2999,27 +2999,29 @@ function render(){
     ctx.restore();
   }
 
-  // missile projectiles (연기 트레일 + 미사일 본체 + 추진 화염)
-  // 성능: 매 프레임 그라데이션 생성·shadowBlur 미사용 — 평면 채움으로 가볍게
+  // missile projectiles — 본체는 등급별 sprite blit, 화염·전설링·트레일만 동적
   for (const p of state.projectiles){
     const tier = p.tier || 1;
     const sc = 0.9 + tier * 0.16;          // 등급이 높을수록 큰 미사일
-    // 연기 트레일 (뒤로 갈수록 옅고 굵게)
-    ctx.save();
-    for (let i = 0; i < p.trail.length; i++){
-      const a = (i + 1) / p.trail.length * 0.45;
-      ctx.globalAlpha = a;
-      ctx.fillStyle = i > p.trail.length - 4 ? '#fff6d8' : p.color;
+    // 연기 트레일: 점들을 단일 스트로크로 (7 fill → 1 stroke)
+    if (p.trail.length > 1){
+      ctx.save();
+      ctx.strokeStyle = p.color;
+      ctx.globalAlpha = 0.4;
+      ctx.lineWidth = 3 * sc;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
       ctx.beginPath();
-      ctx.arc(p.trail[i].x, p.trail[i].y, (1.6 + i * 0.3) * sc, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(p.trail[0].x, p.trail[0].y);
+      for (let i = 1; i < p.trail.length; i++) ctx.lineTo(p.trail[i].x, p.trail[i].y);
+      ctx.stroke();
+      ctx.restore();
     }
-    ctx.restore();
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(Math.atan2(p.vy, p.vx) + Math.PI / 2);
     ctx.scale(sc, sc);
-    // 추진 화염 (깜빡이는 꼬리, 평면)
+    // 추진 화염 (깜빡이는 꼬리, 동적)
     const flick = 0.6 + Math.random() * 0.5;
     ctx.globalAlpha = 0.9;
     ctx.fillStyle = '#ffb347';
@@ -3037,32 +3039,12 @@ function render(){
     ctx.closePath();
     ctx.fill();
     ctx.globalAlpha = 1;
-    // 동체 (금속 캡슐)
-    ctx.fillStyle = '#dfe3f5';
-    roundRect(ctx, -2.6, -5, 5.2, 12, 2.2);
-    ctx.fill();
-    // 꼬리 날개 (핀)
-    ctx.fillStyle = p.color;
-    ctx.beginPath();
-    ctx.moveTo(-2.6, 3); ctx.lineTo(-5.5, 7); ctx.lineTo(-2.6, 6.5); ctx.closePath();
-    ctx.moveTo(2.6, 3);  ctx.lineTo(5.5, 7);  ctx.lineTo(2.6, 6.5);  ctx.closePath();
-    ctx.fill();
-    // 워헤드 (탄두) + 흰 코어
-    ctx.fillStyle = p.color;
-    ctx.beginPath();
-    ctx.moveTo(0, -10);
-    ctx.quadraticCurveTo(3, -7, 2.6, -4);
-    ctx.lineTo(-2.6, -4);
-    ctx.quadraticCurveTo(-3, -7, 0, -10);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(0, -6, 1.4, 0, Math.PI * 2);
-    ctx.fill();
-    // 전설+ : 회전 에너지 링 (그림자 없이)
+    // 본체 sprite (캡슐·핀·탄두·코어 = 5 fill → 1 drawImage)
+    const spr = getMissileSprite(tier, p.color);
+    ctx.drawImage(spr, -MISSILE_S, -MISSILE_S, MISSILE_S * 2, MISSILE_S * 2);
+    // 전설+ : 회전 에너지 링 (동적)
     if (tier >= LEGEND_GRADE){
       p.spin = (p.spin || 0) + 0.5;
-      ctx.save();
       ctx.rotate(p.spin);
       ctx.strokeStyle = gradeColor(tier);
       ctx.globalAlpha = 0.85;
@@ -3072,7 +3054,6 @@ function render(){
       ctx.arc(0, 0, 8, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.restore();
     }
     ctx.restore();
   }
@@ -3744,6 +3725,49 @@ function getEnemySprite(type){
   const rec = { canvas: cv, S };
   ENEMY_SPRITES[type] = rec;
   return rec;
+}
+
+/* ---------- Missile body sprite cache (tier → offscreen) ----------
+ * 미사일 본체(캡슐·핀·탄두·코어)는 등급별로 동일(노즈가 로컬 -y) → 1회 캐시 후 회전 blit.
+ * 동적 유지: 추진 화염(깜빡임)·전설+ 회전 에너지 링·연기 트레일(위치 가변).
+ */
+const MISSILE_S = 11;                          // 본체 로컬 반경(핀 5.5·탄두 10 포함 여유)
+const MISSILE_SPRITES = {};
+function getMissileSprite(tier, color){
+  const key = tier + ':' + color;
+  const cached = MISSILE_SPRITES[key];
+  if (cached) return cached;
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const cv = document.createElement('canvas');
+  cv.width  = Math.ceil(2 * MISSILE_S * dpr);
+  cv.height = Math.ceil(2 * MISSILE_S * dpr);
+  const c = cv.getContext('2d');
+  c.scale(dpr, dpr);
+  c.translate(MISSILE_S, MISSILE_S);
+  // 동체 (금속 캡슐)
+  c.fillStyle = '#dfe3f5';
+  roundRect(c, -2.6, -5, 5.2, 12, 2.2);
+  c.fill();
+  // 꼬리 날개 (핀)
+  c.fillStyle = color;
+  c.beginPath();
+  c.moveTo(-2.6, 3); c.lineTo(-5.5, 7); c.lineTo(-2.6, 6.5); c.closePath();
+  c.moveTo(2.6, 3);  c.lineTo(5.5, 7);  c.lineTo(2.6, 6.5);  c.closePath();
+  c.fill();
+  // 워헤드 (탄두) + 흰 코어
+  c.fillStyle = color;
+  c.beginPath();
+  c.moveTo(0, -10);
+  c.quadraticCurveTo(3, -7, 2.6, -4);
+  c.lineTo(-2.6, -4);
+  c.quadraticCurveTo(-3, -7, 0, -10);
+  c.fill();
+  c.fillStyle = '#fff';
+  c.beginPath();
+  c.arc(0, -6, 1.4, 0, Math.PI * 2);
+  c.fill();
+  MISSILE_SPRITES[key] = cv;
+  return cv;
 }
 
 function drawEnemy(e){
