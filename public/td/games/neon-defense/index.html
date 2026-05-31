@@ -530,7 +530,8 @@ function buildLayout(){
 
   canvas = document.getElementById('stage');
   ctx = canvas.getContext('2d');
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  // 성능: 스테이지 DPR 상한 1.5 (고해상도 화면 픽셀 처리량 ↓)
+  dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   canvas.width = W * dpr;
   canvas.height = H * dpr;
   ctx.scale(dpr, dpr);
@@ -1093,54 +1094,52 @@ function addFloatText(x, y, text, color){
 }
 
 /* ---------- Rendering ---------- */
-function render(){
-  ctx.clearRect(0, 0, W, H);
-
-  // 배경 (라디얼 그라데이션 + 미세 격자)
-  const bg = ctx.createRadialGradient(W/2, H/2, 40, W/2, H/2, 380);
+// 정적 배경(그라데이션 + 격자 + 경로 채움/글로우 + 입출구) 오프스크린 캐시.
+// 매 프레임 60여 개의 fillRect·18 격자선·글로우 스트로크를 그리던 것을 1회 blit로 대체.
+let BG_CANVAS = null;
+function buildBgCanvas(){
+  const d = Math.min(window.devicePixelRatio || 1, 1.5);
+  BG_CANVAS = document.createElement('canvas');
+  BG_CANVAS.width = Math.ceil(W * d);
+  BG_CANVAS.height = Math.ceil(H * d);
+  const c = BG_CANVAS.getContext('2d');
+  c.scale(d, d);
+  // 라디얼 그라데이션
+  const bg = c.createRadialGradient(W/2, H/2, 40, W/2, H/2, 380);
   bg.addColorStop(0, '#1c0a3a');
   bg.addColorStop(0.55, '#0a0420');
   bg.addColorStop(1, '#02010a');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, H);
+  c.fillStyle = bg;
+  c.fillRect(0, 0, W, H);
+  // 격자 라인 (한 번의 stroke로 묶음)
+  c.strokeStyle = 'rgba(120,90,200,.08)';
+  c.lineWidth = 1;
+  c.beginPath();
+  for (let x = 0; x <= COLS; x++){ c.moveTo(x * CELL, 0); c.lineTo(x * CELL, H); }
+  for (let y = 0; y <= ROWS; y++){ c.moveTo(0, y * CELL); c.lineTo(W, y * CELL); }
+  c.stroke();
+  // 경로 셀 채움
+  c.fillStyle = 'rgba(90,210,234,.10)';
+  for (const [cx, cy] of PATH_CELLS) c.fillRect(cx * CELL + 1, cy * CELL + 1, CELL - 2, CELL - 2);
+  // 경로 중심 글로우 라인 (shadowBlur은 1회 베이크라 비용 없음)
+  c.save();
+  c.shadowColor = '#5cd6ea';
+  c.shadowBlur = 12;
+  c.strokeStyle = 'rgba(140,230,250,.5)';
+  c.lineWidth = 2;
+  c.beginPath();
+  c.moveTo(PATH_POINTS[0].x, PATH_POINTS[0].y);
+  for (let i = 1; i < PATH_POINTS.length; i++) c.lineTo(PATH_POINTS[i].x, PATH_POINTS[i].y);
+  c.stroke();
+  c.restore();
+  // 입구/출구 마커 (정적)
+  drawSpawnExit(c);
+}
 
-  // 격자 라인
-  ctx.strokeStyle = 'rgba(120,90,200,.08)';
-  ctx.lineWidth = 1;
-  for (let x = 0; x <= COLS; x++){
-    ctx.beginPath();
-    ctx.moveTo(x * CELL, 0);
-    ctx.lineTo(x * CELL, H);
-    ctx.stroke();
-  }
-  for (let y = 0; y <= ROWS; y++){
-    ctx.beginPath();
-    ctx.moveTo(0, y * CELL);
-    ctx.lineTo(W, y * CELL);
-    ctx.stroke();
-  }
-
-  // 경로 (셀별 살짝 다른 색 + 글로우 라인)
-  for (const [cx, cy] of PATH_CELLS){
-    ctx.fillStyle = 'rgba(90,210,234,.10)';
-    ctx.fillRect(cx * CELL + 1, cy * CELL + 1, CELL - 2, CELL - 2);
-  }
-  // 경로 중심 라인 (글로우)
-  ctx.save();
-  ctx.shadowColor = '#5cd6ea';
-  ctx.shadowBlur = 12;
-  ctx.strokeStyle = 'rgba(140,230,250,.5)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(PATH_POINTS[0].x, PATH_POINTS[0].y);
-  for (let i = 1; i < PATH_POINTS.length; i++){
-    ctx.lineTo(PATH_POINTS[i].x, PATH_POINTS[i].y);
-  }
-  ctx.stroke();
-  ctx.restore();
-
-  // 입구/출구 표시
-  drawSpawnExit();
+function render(){
+  // 정적 배경 blit (한 번 빌드)
+  if (!BG_CANVAS) buildBgCanvas();
+  ctx.drawImage(BG_CANVAS, 0, 0, W, H);
 
   // 건설 포켓 힌트 (준비 단계에만 · 비어있는 고가치 자리)
   if (state.phase === 'prepare'){
@@ -1208,15 +1207,13 @@ function render(){
     drawEnemy(e);
   }
 
-  // beams
+  // beams (성능: shadowBlur 미사용 — 밝은 선 + 알파 페이드)
   for (const b of state.beams){
     const a = Math.max(0, b.life / b.maxLife);
     ctx.save();
     ctx.strokeStyle = b.color;
     ctx.globalAlpha = a;
-    ctx.lineWidth = 2 + a * 2;
-    ctx.shadowColor = b.color;
-    ctx.shadowBlur = 12;
+    ctx.lineWidth = 2.5 + a * 2;
     ctx.beginPath();
     ctx.moveTo(b.x1, b.y1);
     ctx.lineTo(b.x2, b.y2);
@@ -1224,15 +1221,13 @@ function render(){
     ctx.restore();
   }
 
-  // explosions
+  // explosions (성능: shadowBlur 미사용)
   for (const x of state.explosions){
     const a = Math.max(0, x.life / x.maxLife);
     ctx.save();
     ctx.beginPath();
     ctx.arc(x.x, x.y, x.r, 0, Math.PI * 2);
     ctx.fillStyle = `${x.color}${Math.floor(a * 80).toString(16).padStart(2,'0')}`;
-    ctx.shadowColor = x.color;
-    ctx.shadowBlur = 20;
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = x.color;
@@ -1241,19 +1236,17 @@ function render(){
     ctx.restore();
   }
 
-  // particles
+  // particles (성능: shadowBlur 미사용)
   for (const p of state.particles){
     const a = Math.max(0, p.life / p.maxLife);
     ctx.save();
     ctx.fillStyle = p.color;
     ctx.globalAlpha = a;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 6;
     ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
     ctx.restore();
   }
 
-  // float texts
+  // float texts (성능: shadowBlur 미사용)
   for (const f of state.floatTexts){
     const a = Math.max(0, f.life / f.maxLife);
     ctx.save();
@@ -1261,8 +1254,6 @@ function render(){
     ctx.textAlign = 'center';
     ctx.fillStyle = f.color;
     ctx.globalAlpha = a;
-    ctx.shadowColor = f.color;
-    ctx.shadowBlur = 6;
     ctx.fillText(f.text, f.x, f.y);
     ctx.restore();
   }
@@ -1277,76 +1268,91 @@ function render(){
   hudEls.speed.textContent = state.paused ? '||' : state.speed + '×';
 }
 
-function drawSpawnExit(){
+// 입구/출구 마커 — 배경 캐시 빌드 시 1회만 그려짐 (c = 오프스크린 컨텍스트)
+function drawSpawnExit(c){
   // Spawn
   const s = PATH_POINTS[0];
-  ctx.save();
-  ctx.fillStyle = 'rgba(255,140,90,.6)';
-  ctx.shadowColor = '#ff8a3c';
-  ctx.shadowBlur = 14;
-  ctx.beginPath();
-  ctx.arc(s.x, s.y, 10, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  c.save();
+  c.fillStyle = 'rgba(255,140,90,.6)';
+  c.shadowColor = '#ff8a3c';
+  c.shadowBlur = 14;
+  c.beginPath();
+  c.arc(s.x, s.y, 10, 0, Math.PI * 2);
+  c.fill();
+  c.restore();
   // Exit
   const e = PATH_POINTS[PATH_POINTS.length - 1];
-  ctx.save();
-  ctx.strokeStyle = '#ff5577';
-  ctx.shadowColor = '#ff5577';
-  ctx.shadowBlur = 14;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(e.x, e.y, 10, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(e.x, e.y, 5, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.restore();
+  c.save();
+  c.strokeStyle = '#ff5577';
+  c.shadowColor = '#ff5577';
+  c.shadowBlur = 14;
+  c.lineWidth = 2;
+  c.beginPath();
+  c.arc(e.x, e.y, 10, 0, Math.PI * 2);
+  c.stroke();
+  c.beginPath();
+  c.arc(e.x, e.y, 5, 0, Math.PI * 2);
+  c.stroke();
+  c.restore();
+}
+
+/* ---------- Tower sprite cache (type → offscreen, 포신 위쪽) ----------
+ * 타워 본체(베이스+포신+중심점)는 종류별로 정적이라 1회 캐시 후 t.angle 회전 blit.
+ * 레벨 점(본체 아래, 월드 정렬)은 동적으로 덧그림.
+ */
+const TOWER_S = 22;                              // 로컬 반경(포신 -20·베이스 ±11 여유)
+const TOWER_SPRITES = {};
+function getTowerSprite(type){
+  const cached = TOWER_SPRITES[type];
+  if (cached) return cached;
+  const def = TOWERS[type];
+  const d = Math.min(window.devicePixelRatio || 1, 1.5);
+  const cv = document.createElement('canvas');
+  cv.width = Math.ceil(2 * TOWER_S * d);
+  cv.height = Math.ceil(2 * TOWER_S * d);
+  const c = cv.getContext('2d');
+  c.scale(d, d);
+  c.translate(TOWER_S, TOWER_S);
+  const baseR = 11;
+  // 베이스 (둥근 사각형) — 글로우는 1회 베이크
+  c.shadowColor = def.color;
+  c.shadowBlur = 10;
+  c.fillStyle = '#1d0f3a';
+  roundRect(c, -baseR, -baseR, baseR*2, baseR*2, 4);
+  c.fill();
+  c.strokeStyle = def.color;
+  c.lineWidth = 1.5;
+  roundRect(c, -baseR, -baseR, baseR*2, baseR*2, 4);
+  c.stroke();
+  c.shadowBlur = 0;
+  // 포신 (위쪽)
+  c.fillStyle = def.color;
+  if (def.fire === 'beam')        c.fillRect(-2, -baseR - 6, 4, 8);
+  else if (def.fire === 'aoe'){   c.beginPath(); c.arc(0, -baseR - 2, 4, 0, Math.PI * 2); c.fill(); }
+  else if (def.fire === 'slow')   c.fillRect(-3, -baseR - 5, 6, 6);
+  else if (def.fire === 'pierce') c.fillRect(-1.5, -baseR - 9, 3, 12);
+  // 중심 점
+  c.fillStyle = '#fff';
+  c.beginPath();
+  c.arc(0, 0, 2.5, 0, Math.PI * 2);
+  c.fill();
+  TOWER_SPRITES[type] = cv;
+  return cv;
 }
 
 function drawTower(t){
-  const def = TOWERS[t.type];
+  // 본체: 종류별 sprite를 조준 각도로 회전 blit
   ctx.save();
-  // 본체
   ctx.translate(t.x, t.y);
   ctx.rotate(t.angle + Math.PI / 2);
-  ctx.shadowColor = def.color;
-  ctx.shadowBlur = 10;
-  // 베이스 (둥근 사각형)
-  const baseR = 11;
-  ctx.fillStyle = '#1d0f3a';
-  roundRect(ctx, -baseR, -baseR, baseR*2, baseR*2, 4);
-  ctx.fill();
-  ctx.strokeStyle = def.color;
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, -baseR, -baseR, baseR*2, baseR*2, 4);
-  ctx.stroke();
-  // 포신 (위쪽으로)
-  ctx.fillStyle = def.color;
-  if (def.fire === 'beam'){
-    ctx.fillRect(-2, -baseR - 6, 4, 8);
-  } else if (def.fire === 'aoe'){
-    ctx.beginPath();
-    ctx.arc(0, -baseR - 2, 4, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (def.fire === 'slow'){
-    ctx.fillRect(-3, -baseR - 5, 6, 6);
-  } else if (def.fire === 'pierce'){
-    ctx.fillRect(-1.5, -baseR - 9, 3, 12);
-  }
-  // 중심 점
-  ctx.fillStyle = '#fff';
-  ctx.beginPath();
-  ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
-  ctx.fill();
+  const spr = getTowerSprite(t.type);
+  ctx.drawImage(spr, -TOWER_S, -TOWER_S, TOWER_S * 2, TOWER_S * 2);
   ctx.restore();
 
-  // 레벨 표시 (본체 아래 작은 점 1~3개)
+  // 레벨 표시 (본체 아래 작은 점 1~3개 · shadowBlur 미사용)
   if (t.level > 1){
     ctx.save();
     ctx.fillStyle = '#ffd96b';
-    ctx.shadowColor = '#ffd96b';
-    ctx.shadowBlur = 4;
     const gap = 4;
     const sx = t.x - ((t.level - 1) * gap) / 2;
     for (let i = 0; i < t.level; i++){
@@ -1358,104 +1364,82 @@ function drawTower(t){
   }
 }
 
-function drawEnemy(e){
-  const def = ENEMIES[e.type];
-  const slowed = e.slowUntil > state.time;
-  // 본체
-  ctx.save();
-  ctx.shadowColor = e.color;
-  ctx.shadowBlur = 10;
-  ctx.fillStyle = e.color;
-  if (e.type === 'grunt'){
-    // 마름모
-    ctx.translate(e.x, e.y);
-    ctx.beginPath();
-    ctx.moveTo(0, -e.r);
-    ctx.lineTo(e.r, 0);
-    ctx.lineTo(0, e.r);
-    ctx.lineTo(-e.r, 0);
-    ctx.closePath();
-    ctx.fill();
-  } else if (e.type === 'runner'){
-    // 화살표
-    const target = PATH_POINTS[e.pathIdx];
-    if (target){
-      const ang = Math.atan2(target.y - e.y, target.x - e.x);
-      ctx.translate(e.x, e.y);
-      ctx.rotate(ang);
-      ctx.beginPath();
-      ctx.moveTo(e.r, 0);
-      ctx.lineTo(-e.r * 0.8, e.r * 0.7);
-      ctx.lineTo(-e.r * 0.3, 0);
-      ctx.lineTo(-e.r * 0.8, -e.r * 0.7);
-      ctx.closePath();
-      ctx.fill();
-    }
-  } else if (e.type === 'tank' || e.type === 'boss'){
-    // 두꺼운 6각형 (보스는 더 큼 + 이중 테두리)
-    ctx.translate(e.x, e.y);
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++){
-      const a = (i / 6) * Math.PI * 2;
-      const x = Math.cos(a) * e.r;
-      const y = Math.sin(a) * e.r;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.globalAlpha = 0.6;
-    ctx.lineWidth = e.boss ? 2 : 1;
-    ctx.stroke();
-    if (e.boss){
-      ctx.globalAlpha = 0.5;
-      ctx.beginPath();
-      ctx.arc(0, 0, e.r + 4, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-  } else if (e.type === 'swarm'){
-    // 작은 삼각형
-    ctx.translate(e.x, e.y);
-    ctx.beginPath();
-    ctx.moveTo(0, -e.r);
-    ctx.lineTo(e.r * 0.9, e.r * 0.7);
-    ctx.lineTo(-e.r * 0.9, e.r * 0.7);
-    ctx.closePath();
-    ctx.fill();
-  } else if (e.type === 'shield'){
-    // 둥근 사각형 (실드)
-    ctx.translate(e.x, e.y);
-    roundRect(ctx, -e.r, -e.r, e.r * 2, e.r * 2, 4);
-    ctx.fill();
-  } else if (e.type === 'flyer'){
-    // 비행: 위로 살짝 띄우고 그림자 + 원형 본체
-    ctx.translate(e.x, e.y - 6);
-    ctx.beginPath();
-    ctx.arc(0, 0, e.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,.5)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(-e.r - 3, 0); ctx.lineTo(e.r + 3, 0);   // 날개
-    ctx.stroke();
+/* ---------- Enemy sprite cache (type → offscreen) ----------
+ * neon-defense는 적 본체에 시간 애니메이션이 없어 7종 모두 정적 → 1회 캐시 후 blit.
+ * runner만 이동 방향으로 회전 → +x 기준으로 캐시하고 blit 시 회전.
+ * 동적 유지: 실드/HP 막대·슬로우 링(적 상태에 따라 가변).
+ */
+// 적 본체를 로컬 (0,0) 중심으로 그림 (caller가 translate). runner는 +x 화살표(회전은 blit 시).
+function drawEnemyBodyLocal(c, type, r, color){
+  c.save();
+  c.shadowColor = color;
+  c.shadowBlur = 10;              // 1회 베이크 → 글로우 유지
+  c.fillStyle = color;
+  if (type === 'grunt'){
+    c.beginPath(); c.moveTo(0, -r); c.lineTo(r, 0); c.lineTo(0, r); c.lineTo(-r, 0); c.closePath(); c.fill();
+  } else if (type === 'runner'){
+    c.beginPath(); c.moveTo(r, 0); c.lineTo(-r * 0.8, r * 0.7); c.lineTo(-r * 0.3, 0); c.lineTo(-r * 0.8, -r * 0.7); c.closePath(); c.fill();
+  } else if (type === 'tank' || type === 'boss'){
+    c.beginPath();
+    for (let i = 0; i < 6; i++){ const a = (i / 6) * Math.PI * 2; const x = Math.cos(a) * r, y = Math.sin(a) * r; if (i === 0) c.moveTo(x, y); else c.lineTo(x, y); }
+    c.closePath(); c.fill();
+    c.strokeStyle = '#fff'; c.globalAlpha = 0.6; c.lineWidth = type === 'boss' ? 2 : 1; c.stroke();
+    if (type === 'boss'){ c.globalAlpha = 0.5; c.beginPath(); c.arc(0, 0, r + 4, 0, Math.PI * 2); c.stroke(); }
+    c.globalAlpha = 1;
+  } else if (type === 'swarm'){
+    c.beginPath(); c.moveTo(0, -r); c.lineTo(r * 0.9, r * 0.7); c.lineTo(-r * 0.9, r * 0.7); c.closePath(); c.fill();
+  } else if (type === 'shield'){
+    roundRect(c, -r, -r, r * 2, r * 2, 4); c.fill();
+  } else if (type === 'flyer'){
+    c.save(); c.translate(0, -6);
+    c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(255,255,255,.5)'; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(-r - 3, 0); c.lineTo(r + 3, 0); c.stroke();   // 날개
+    c.restore();
+    c.shadowBlur = 0;            // 지면 그림자 (baked)
+    c.fillStyle = 'rgba(0,0,0,.35)';
+    c.beginPath(); c.ellipse(0, 4, r * 0.7, r * 0.3, 0, 0, Math.PI * 2); c.fill();
   } else {
-    ctx.translate(e.x, e.y);
-    ctx.beginPath();
-    ctx.arc(0, 0, e.r, 0, Math.PI * 2);
-    ctx.fill();
+    c.beginPath(); c.arc(0, 0, r, 0, Math.PI * 2); c.fill();
   }
-  ctx.restore();
+  c.restore();
+}
+const ENEMY_SPRITES = {};
+function getEnemySprite(type){
+  const cached = ENEMY_SPRITES[type];
+  if (cached) return cached;
+  const def = ENEMIES[type];
+  const r = def.r;
+  const S = r + 8;                          // 반경 + 여유(보스 링 r+4 · 비행 본체 -(r+6))
+  const d = Math.min(window.devicePixelRatio || 1, 1.5);
+  const cv = document.createElement('canvas');
+  cv.width = Math.ceil(2 * S * d);
+  cv.height = Math.ceil(2 * S * d);
+  const c = cv.getContext('2d');
+  c.scale(d, d);
+  c.translate(S, S);
+  drawEnemyBodyLocal(c, type, r, def.color);
+  const rec = { canvas: cv, S };
+  ENEMY_SPRITES[type] = rec;
+  return rec;
+}
 
-  // 비행체 지면 그림자
-  if (e.flying){
+function drawEnemy(e){
+  const slowed = e.slowUntil > state.time;
+  // 본체: 종류별 sprite blit (runner만 이동 방향으로 회전)
+  const spr = getEnemySprite(e.type);
+  if (e.type === 'runner'){
+    const target = PATH_POINTS[e.pathIdx];
+    const ang = target ? Math.atan2(target.y - e.y, target.x - e.x) : 0;
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,.35)';
-    ctx.beginPath();
-    ctx.ellipse(e.x, e.y + 4, e.r * 0.7, e.r * 0.3, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.translate(e.x, e.y);
+    ctx.rotate(ang);
+    ctx.drawImage(spr.canvas, -spr.S, -spr.S, spr.S * 2, spr.S * 2);
     ctx.restore();
+  } else {
+    ctx.drawImage(spr.canvas, e.x - spr.S, e.y - spr.S, spr.S * 2, spr.S * 2);
   }
+
   // 실드 막대
   if (e.maxShield > 0 && e.shield > 0){
     const bw = e.r * 2.4, bh = 3;
