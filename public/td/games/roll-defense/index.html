@@ -2797,44 +2797,49 @@ function floatAt(x, y, text, color){
 /* ============================================================
  * Render
  * ============================================================ */
-let BG_GRAD = null;   // 배경 그라데이션 캐시 (매 프레임 생성 회피)
-function render(){
-  ctx.clearRect(0, 0, W, H);
-
-  // 배경 (한 번만 생성)
-  if (!BG_GRAD){
-    BG_GRAD = ctx.createRadialGradient(W/2, H/2, 40, W/2, H/2, 380);
-    BG_GRAD.addColorStop(0, '#1c0a3a');
-    BG_GRAD.addColorStop(0.55, '#0a0420');
-    BG_GRAD.addColorStop(1, '#02010a');
-  }
-  ctx.fillStyle = BG_GRAD;
-  ctx.fillRect(0, 0, W, H);
-
-  // 루프 트랙 (사각 + 글로우)
-  drawTrack();
-
-  // 격자 (성능: 한 번의 stroke로 18개 라인 묶음 그리기)
-  ctx.save();
-  ctx.strokeStyle = 'rgba(180,140,255,.16)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let c = 0; c <= GRID_COLS; c++){
-    const x = GRID_X + c * CELL;
-    ctx.moveTo(x, GRID_Y);
-    ctx.lineTo(x, GRID_Y + GRID_H);
+// 정적 배경(그라데이션 + 트랙 + 격자) 오프스크린 캐시 — 한 번 그려서 매 프레임 blit
+let BG_CANVAS = null;
+function buildBgCanvas(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  BG_CANVAS = document.createElement('canvas');
+  BG_CANVAS.width = W * dpr;
+  BG_CANVAS.height = H * dpr;
+  const c = BG_CANVAS.getContext('2d');
+  c.scale(dpr, dpr);
+  // 1) 배경 그라데이션
+  const bg = c.createRadialGradient(W/2, H/2, 40, W/2, H/2, 380);
+  bg.addColorStop(0, '#1c0a3a');
+  bg.addColorStop(0.55, '#0a0420');
+  bg.addColorStop(1, '#02010a');
+  c.fillStyle = bg;
+  c.fillRect(0, 0, W, H);
+  // 2) 루프 트랙
+  drawTrack(c);
+  // 3) 격자
+  c.save();
+  c.strokeStyle = 'rgba(180,140,255,.16)';
+  c.lineWidth = 1;
+  c.beginPath();
+  for (let i = 0; i <= GRID_COLS; i++){
+    const x = GRID_X + i * CELL;
+    c.moveTo(x, GRID_Y);
+    c.lineTo(x, GRID_Y + GRID_H);
   }
   for (let r = 0; r <= GRID_ROWS; r++){
     const y = GRID_Y + r * CELL;
-    ctx.moveTo(GRID_X, y);
-    ctx.lineTo(GRID_X + GRID_W, y);
+    c.moveTo(GRID_X, y);
+    c.lineTo(GRID_X + GRID_W, y);
   }
-  ctx.stroke();
-  // 격자 외곽
-  ctx.strokeStyle = 'rgba(200,160,255,.4)';
-  ctx.lineWidth = 1.5;
-  ctx.strokeRect(GRID_X, GRID_Y, GRID_W, GRID_H);
-  ctx.restore();
+  c.stroke();
+  c.strokeStyle = 'rgba(200,160,255,.4)';
+  c.lineWidth = 1.5;
+  c.strokeRect(GRID_X, GRID_Y, GRID_W, GRID_H);
+  c.restore();
+}
+function render(){
+  // 정적 배경 blit (매 프레임 그라데이션·트랙·격자 재그리기 회피)
+  if (!BG_CANVAS) buildBgCanvas();
+  ctx.drawImage(BG_CANVAS, 0, 0, W, H);
 
   // 호버 / 선택 슬롯
   if (state.hoverSlot >= 0){
@@ -3099,42 +3104,39 @@ function render(){
   refreshHeroBtn();
 }
 
-function drawTrack(){
-  // 외곽 라인 (성능: shadowBlur 미사용 — 선 밝기로 가독 유지)
-  ctx.save();
-  ctx.strokeStyle = 'rgba(208,178,255,.7)';
-  ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.moveTo(TX1, TY1);
-  ctx.lineTo(TX2, TY1);
-  ctx.lineTo(TX2, TY2);
-  ctx.lineTo(TX1, TY2);
-  ctx.closePath();
-  ctx.stroke();
-  ctx.restore();
+// 정적(매 프레임 동일) → 오프스크린 캐시 빌드 시점에 1회만 호출됨
+function drawTrack(c){
+  // 외곽 라인
+  c.save();
+  c.strokeStyle = 'rgba(208,178,255,.7)';
+  c.lineWidth = 2.5;
+  c.beginPath();
+  c.moveTo(TX1, TY1);
+  c.lineTo(TX2, TY1);
+  c.lineTo(TX2, TY2);
+  c.lineTo(TX1, TY2);
+  c.closePath();
+  c.stroke();
+  c.restore();
 
   // 트랙 진행 방향 표시 (각 변 가운데에 작은 ▶)
-  ctx.save();
-  ctx.fillStyle = 'rgba(255,180,220,.8)';
+  c.save();
+  c.fillStyle = 'rgba(255,180,220,.8)';
   const arrowSize = 4;
-  // 상변 중앙 (→)
-  drawArrow(ctx, (TX1 + TX2) / 2, TY1, 0, arrowSize);
-  // 우변 중앙 (↓)
-  drawArrow(ctx, TX2, (TY1 + TY2) / 2, Math.PI / 2, arrowSize);
-  // 하변 중앙 (←)
-  drawArrow(ctx, (TX1 + TX2) / 2, TY2, Math.PI, arrowSize);
-  // 좌변 중앙 (↑)
-  drawArrow(ctx, TX1, (TY1 + TY2) / 2, -Math.PI / 2, arrowSize);
-  ctx.restore();
+  drawArrow(c, (TX1 + TX2) / 2, TY1, 0, arrowSize);                 // 상변 (→)
+  drawArrow(c, TX2, (TY1 + TY2) / 2, Math.PI / 2, arrowSize);       // 우변 (↓)
+  drawArrow(c, (TX1 + TX2) / 2, TY2, Math.PI, arrowSize);           // 하변 (←)
+  drawArrow(c, TX1, (TY1 + TY2) / 2, -Math.PI / 2, arrowSize);      // 좌변 (↑)
+  c.restore();
 
   // 트랙 영역 살짝 채움 (적이 다닐 공간)
-  ctx.save();
-  ctx.fillStyle = 'rgba(140,90,220,.05)';
-  ctx.fillRect(TX1 - 6, TY1 - 6, (TX2 - TX1) + 12, 12);
-  ctx.fillRect(TX1 - 6, TY2 - 6, (TX2 - TX1) + 12, 12);
-  ctx.fillRect(TX1 - 6, TY1 - 6, 12, (TY2 - TY1) + 12);
-  ctx.fillRect(TX2 - 6, TY1 - 6, 12, (TY2 - TY1) + 12);
-  ctx.restore();
+  c.save();
+  c.fillStyle = 'rgba(140,90,220,.05)';
+  c.fillRect(TX1 - 6, TY1 - 6, (TX2 - TX1) + 12, 12);
+  c.fillRect(TX1 - 6, TY2 - 6, (TX2 - TX1) + 12, 12);
+  c.fillRect(TX1 - 6, TY1 - 6, 12, (TY2 - TY1) + 12);
+  c.fillRect(TX2 - 6, TY1 - 6, 12, (TY2 - TY1) + 12);
+  c.restore();
 }
 
 function drawArrow(c, x, y, angle, size){
