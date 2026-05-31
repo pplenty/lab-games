@@ -945,6 +945,14 @@ let rollBtn = null;
 let speedBtn = null;
 let pauseBtn = null;
 let mergeBtn = null;
+let riftBtn = null;
+let heroBtn = null;
+let skillEls = null;   // { key: { btn, overlay } }
+// DOM 더티 체크 헬퍼 — 같은 값 반복 쓰기를 막아 매 프레임 layout/style 재계산 비용 절감
+function setText(el, v){ if (el && el._t !== v){ el._t = v; el.textContent = v; } }
+function setDisabled(el, v){ if (el && el._d !== v){ el._d = v; el.disabled = v; } }
+function setStyleProp(el, prop, v){ if (!el) return; const k = '_sp_' + prop; if (el[k] !== v){ el[k] = v; el.style[prop] = v; } }
+function setClass(el, cls, on){ if (!el) return; const k = '_cls_' + cls; if (el[k] !== on){ el[k] = on; el.classList.toggle(cls, on); } }
 
 const TUTORIAL = [
   { icon:'❤', title:'목표 · 목숨', body:'적은 격자 외곽 <b>사각 루프</b>를 돕니다. 적이 <b>한 바퀴를 완주(누수)</b>하면 <b>목숨(LIVES)</b>이 깎입니다 — 일반 -1, <b style="color:#ff5577">보스 -10</b>. 목숨이 0이 되면 게임 오버. 모든 적을 <b>한 바퀴 안에</b> 처치하는 게 핵심입니다. (랜덤 타워 디펜스 오마주)' },
@@ -1290,6 +1298,8 @@ function buildLayout(){
   overlayEl = document.getElementById('overlay');
   panelEl = document.getElementById('panel');
   rollBtn = document.getElementById('btn-roll');
+  riftBtn = document.getElementById('btn-rift');
+  heroBtn = document.getElementById('btn-hero');
   speedBtn = document.getElementById('btn-speed');
   pauseBtn = document.getElementById('btn-pause');
   mergeBtn = document.getElementById('btn-merge');
@@ -1319,25 +1329,29 @@ function buildSkillBar(){
       </button>
     `;
   }).join('');
+  // 성능: 매 프레임 querySelector 회피 — 빌드 시 DOM 캐시
+  skillEls = {};
   for (const key of SKILL_ORDER){
     const btn = bar.querySelector(`.skill[data-skill="${key}"]`);
     btn.onclick = () => useSkill(key);
+    skillEls[key] = { btn, overlay: btn.querySelector('.cd-overlay') };
   }
 }
 
 function refreshSkillBar(){
+  if (!skillEls) return;
   for (const key of SKILL_ORDER){
     const s = SKILLS[key];
     const cd = state.skillCd[key] || 0;
-    const btn = document.querySelector(`.skill[data-skill="${key}"]`);
-    if (!btn) continue;
+    const refs = skillEls[key];
+    if (!refs) continue;
     const ratio = cd > 0 ? cd / s.cooldown : 0;
-    const overlay = btn.querySelector('.cd-overlay');
-    overlay.style.height = (ratio * 100) + '%';
-    overlay.textContent = cd > 0 ? cd.toFixed(1) : '';
+    // 0.1% 단위로 양자화해 같은 값 반복 쓰기 방지
+    setStyleProp(refs.overlay, 'height', (Math.round(ratio * 1000) / 10) + '%');
+    setText(refs.overlay, cd > 0 ? cd.toFixed(1) : '');
     const ready = cd <= 0 && state.gold >= s.cost;
-    btn.disabled = !ready;
-    btn.classList.toggle('ready', ready);
+    setDisabled(refs.btn, !ready);
+    setClass(refs.btn, 'ready', ready);
   }
 }
 
@@ -1471,12 +1485,12 @@ function onRiftCleanup(e){
   refreshRiftBtn();
 }
 function refreshRiftBtn(){
-  const btn = document.getElementById('btn-rift');
-  if (!btn) return;
+  if (!riftBtn) return;
   const active = state.riftAlive >= 1;
-  btn.textContent = active ? '☄ 활성' : '☄ 균열';
-  btn.disabled = !canSummonRift();
-  btn.style.opacity = canSummonRift() ? '1' : '0.5';
+  const can = canSummonRift();
+  setText(riftBtn, active ? '☄ 활성' : '☄ 균열');
+  setDisabled(riftBtn, !can);
+  setStyleProp(riftBtn, 'opacity', can ? '1' : '0.5');
 }
 
 function useHeroToken(){
@@ -1502,11 +1516,10 @@ function useHeroToken(){
   refreshHeroBtn();
 }
 function refreshHeroBtn(){
-  const btn = document.getElementById('btn-hero');
-  if (!btn) return;
+  if (!heroBtn) return;
   const n = state.heroTokens || 0;
-  btn.style.display = n > 0 ? '' : 'none';
-  btn.textContent = '👑 영웅 ' + (n > 0 ? '×' + n : '');
+  setStyleProp(heroBtn, 'display', n > 0 ? '' : 'none');
+  setText(heroBtn, '👑 영웅 ' + (n > 0 ? '×' + n : ''));
 }
 
 function bindEvents(){
@@ -1920,8 +1933,8 @@ function tryAutoMerge(){
 }
 
 function refreshRollBtn(){
-  rollBtn.textContent = `뽑기 (${state.rollCost}g)`;
-  rollBtn.disabled = (state.gold < state.rollCost) || (emptySlots().length === 0);
+  setText(rollBtn, `뽑기 (${state.rollCost}g)`);
+  setDisabled(rollBtn, (state.gold < state.rollCost) || (emptySlots().length === 0));
 }
 function refreshPanel(){
   if (state.selectedSlot < 0 || !state.slots[state.selectedSlot]){
@@ -2801,24 +2814,22 @@ function render(){
   // 루프 트랙 (사각 + 글로우)
   drawTrack();
 
-  // 격자
+  // 격자 (성능: 한 번의 stroke로 18개 라인 묶음 그리기)
   ctx.save();
   ctx.strokeStyle = 'rgba(180,140,255,.16)';
   ctx.lineWidth = 1;
+  ctx.beginPath();
   for (let c = 0; c <= GRID_COLS; c++){
     const x = GRID_X + c * CELL;
-    ctx.beginPath();
     ctx.moveTo(x, GRID_Y);
     ctx.lineTo(x, GRID_Y + GRID_H);
-    ctx.stroke();
   }
   for (let r = 0; r <= GRID_ROWS; r++){
     const y = GRID_Y + r * CELL;
-    ctx.beginPath();
     ctx.moveTo(GRID_X, y);
     ctx.lineTo(GRID_X + GRID_W, y);
-    ctx.stroke();
   }
+  ctx.stroke();
   // 격자 외곽
   ctx.strokeStyle = 'rgba(200,160,255,.4)';
   ctx.lineWidth = 1.5;
@@ -3069,19 +3080,19 @@ function render(){
     ctx.restore();
   }
 
-  // HUD 업데이트
-  hudEls.gold.textContent = state.gold;
+  // HUD 업데이트 (더티 체크 — 같은 값 반복 쓰기 회피)
+  setText(hudEls.gold, state.gold);
   const alive = state.enemies.length;
-  hudEls.lives.textContent = '❤ ' + state.lives;
+  setText(hudEls.lives, '❤ ' + state.lives);
   const lr = state.lives / state.maxLives;
-  hudEls.lives.style.color = lr <= 0.25 ? '#ff5577' : (lr <= 0.5 ? '#ffd96b' : '#ff9bb0');
+  setStyleProp(hudEls.lives, 'color', lr <= 0.25 ? '#ff5577' : (lr <= 0.5 ? '#ffd96b' : '#ff9bb0'));
   {
     const cur = state.waveState === 'wave' ? (state.waveIdx + 1) : (state.wavesCleared + (state.waveState === 'between' ? 1 : 0));
-    hudEls.wave.textContent = state.wavesCleared >= WAVES.length
+    setText(hudEls.wave, state.wavesCleared >= WAVES.length
       ? cur + ' ∞'
-      : cur + '/' + WAVES.length;
+      : cur + '/' + WAVES.length);
   }
-  hudEls.speed.textContent = state.paused ? '||' : state.speed + '×';
+  setText(hudEls.speed, state.paused ? '||' : state.speed + '×');
   refreshRollBtn();
   refreshSkillBar();
   refreshRiftBtn();
