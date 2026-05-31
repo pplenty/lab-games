@@ -3226,11 +3226,13 @@ function drawTower(t){
   // 등급 장식 (일반=민무늬 → 합성할수록 화려해짐)
   drawGradeAura(ctx, t);
 
-  // 회전 본체 (성능: 평소엔 glow 없음 → 배치/합성 직후 flash 때만 잠깐 빛남)
+  // 회전 본체 (성능: 종류·등급별 sprite 캐시 blit · guard 칼날만 동적)
   ctx.save();
   ctx.rotate(t.angle + Math.PI / 2);
   if (flash > 0){ ctx.shadowColor = t.color; ctx.shadowBlur = flash * 10; }
-  drawTowerBody(ctx, t);
+  const sprite = getTowerSprite(t.kind, t.tier);
+  ctx.drawImage(sprite, -SPRITE_SIZE / 2, -SPRITE_SIZE / 2, SPRITE_SIZE, SPRITE_SIZE);
+  if (t.kind === 'guard') drawGuardBlades(ctx, t);   // 매 프레임 회전 칼날
   ctx.restore();
 
   // 등급 점 (코너에 작은 별, 비회전)
@@ -3286,6 +3288,61 @@ function drawTowerBody(c, t){
   else if (t.kind === 'guard')  drawGuardBody(c, t);
   else if (t.kind === 'rocket') drawRocketBody(c, t);
   else if (t.kind === 'chain')  drawChainBody(c, t);
+}
+
+/* ---------- Tower sprite cache (kind × tier → offscreen) ----------
+ * 본체는 (종류, 등급) 조합에 대해 정적이므로 1회만 그려두고 blit한다.
+ * 예외: guard 칼날은 매 프레임 회전 → drawGuardStatic만 캐시,
+ *       회전 칼날은 drawGuardBlades 로 동적 렌더.
+ */
+const SPRITE_SIZE = 48;
+const TOWER_SPRITES = {};
+function getTowerSprite(kind, tier){
+  const key = kind + ':' + tier;
+  const cached = TOWER_SPRITES[key];
+  if (cached) return cached;
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const cv = document.createElement('canvas');
+  cv.width  = SPRITE_SIZE * dpr;
+  cv.height = SPRITE_SIZE * dpr;
+  const c = cv.getContext('2d');
+  c.scale(dpr, dpr);
+  c.translate(SPRITE_SIZE / 2, SPRITE_SIZE / 2);
+  const def = TOWER_STATS[kind];
+  const t = { kind, tier, color: def.color };
+  if (kind === 'guard') drawGuardStatic(c, t);          // 정적 부분만
+  else                  drawTowerBody(c, t);             // 그 외 종류는 본체 전체 정적
+  TOWER_SPRITES[key] = cv;
+  return cv;
+}
+
+// guard 정적 부분 (어두운 원 + 외곽선 + 흰 중심점). 칼날은 drawGuardBlades 가 담당.
+function drawGuardStatic(c, t){
+  c.fillStyle = '#1a0b30';
+  c.beginPath(); c.arc(0, 0, 10, 0, Math.PI * 2); c.fill();
+  c.strokeStyle = t.color;
+  c.lineWidth = 1.5 + (t.tier - 1) * 0.3;
+  c.beginPath(); c.arc(0, 0, 10, 0, Math.PI * 2); c.stroke();
+  c.fillStyle = '#fff';
+  c.beginPath(); c.arc(0, 0, 2 + t.tier * 0.3, 0, Math.PI * 2); c.fill();
+}
+function drawGuardBlades(c, t){
+  const spin = (state ? state.time : 0) * 5;
+  c.fillStyle = TOWER_STATS[t.kind].color;
+  c.save();
+  c.rotate(spin);
+  c.beginPath();
+  c.moveTo(-15 - t.tier, 0); c.lineTo(-9, -2); c.lineTo(9, -2);
+  c.lineTo( 15 + t.tier, 0); c.lineTo( 9,  2); c.lineTo(-9,  2);
+  c.closePath(); c.fill();
+  c.restore();
+  c.save();
+  c.rotate(spin + Math.PI / 2);
+  c.beginPath();
+  c.moveTo(-15 - t.tier, 0); c.lineTo(-9, -2); c.lineTo(9, -2);
+  c.lineTo( 15 + t.tier, 0); c.lineTo( 9,  2); c.lineTo(-9,  2);
+  c.closePath(); c.fill();
+  c.restore();
 }
 
 function drawPulseBody(ctx, t){
