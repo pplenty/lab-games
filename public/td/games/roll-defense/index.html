@@ -956,7 +956,7 @@ function setClass(el, cls, on){ if (!el) return; const k = '_cls_' + cls; if (el
 
 const TUTORIAL = [
   { icon:'❤', title:'목표 · 목숨', body:'적은 격자 외곽 <b>사각 루프</b>를 돕니다. 적이 <b>한 바퀴를 완주(누수)</b>하면 <b>목숨(LIVES)</b>이 깎입니다 — 일반 -1, <b style="color:#ff5577">보스 -10</b>. 목숨이 0이 되면 게임 오버. 모든 적을 <b>한 바퀴 안에</b> 처치하는 게 핵심입니다. (랜덤 타워 디펜스 오마주)' },
-  { icon:'🎲', title:'뽑기 & 배치', body:'<b>뽑기</b> 버튼(골드 소모)으로 무작위 <b>일반</b> 타워를 빈 슬롯에 받습니다. 슬롯을 클릭해 선택하고, 다른 빈 슬롯을 클릭하면 이동/스왑됩니다.' },
+  { icon:'🎲', title:'뽑기 & 배치', body:'<b>뽑기</b> 버튼(골드 소모)으로 무작위 <b>일반</b> 타워를 빈 슬롯에 받습니다. 자동 배치는 <b>사거리를 인식</b>해 트랙을 잘 커버하는 자리를 고릅니다 — 장거리 타워는 안쪽 링으로 빠져 <b>외곽을 단거리 타워용으로</b> 비워둡니다(외곽이 다 차면 가장 가까운 자리). 슬롯을 클릭해 선택하고, 다른 빈 슬롯을 클릭하면 이동/스왑됩니다.' },
   { icon:'⭐', title:'5등급 합성', body:'<b>같은 종류 · 같은 등급 2개</b>가 모이면 금색 테두리가 깜빡입니다. 클릭 → <b>합성 ▶</b>: 한 등급 오를 때마다 <b>공격력 ×2</b>.<br><b style="color:#cfd6e4">일반</b>→<b style="color:#5aa9ff">희귀</b>→<b style="color:#c98aff">영웅</b>→<b style="color:#ffb13c">전설</b>→<b style="color:#7cffc4">신</b><br>· EVOLVE 같은 종류 / CONVERT 무작위 종류 / REFUND 환급' },
   { icon:'🔗', title:'시너지 & 상성', body:'같은 종류 타워가 <b>상하좌우 인접</b>하면 데미지 보너스(종류별 차등). 각 타워는 적 종류에 <b>💪강함 / 🔻약함</b> — FROST→쉴드, RAIL·ROCKET→비행 등. <b>도감(C)</b>에서 전부 확인.' },
   { icon:'☄', title:'균열 & 영웅', body:'<b style="color:#ff5577">☄ 균열</b>(V): 강력한 균열 보스를 <b>자발적으로</b> 소환 — 랜덤 광역버프로 위험하지만 처치 시 <b>대량 골드 + 영웅 건설권</b>. <b style="color:#ffd96b">👑 영웅</b>(H): 전설을 만들거나 30웨이브 돌파 시 받는 토큰으로 <b>확정 전설</b>을 즉시 건설.' },
@@ -1422,11 +1422,14 @@ function fireReroll(){
     const t = state.slots[i];
     if (t && t.tier === 1) candidates.push(i);
   }
-  let idx, oldKind = null;
+  let idx, kind;
   if (candidates.length > 0){
+    // 기존 ★1 타워를 제자리에서 다른 종류로 교체 (위치 유지)
     idx = candidates[Math.floor(Math.random() * candidates.length)];
-    oldKind = state.slots[idx].kind;
+    const oldKind = state.slots[idx].kind;
     state.slots[idx] = null;
+    const pool = KIND_ORDER.filter(k => k !== oldKind);
+    kind = pool[Math.floor(Math.random() * pool.length)];
   } else {
     const empties = emptySlots();
     if (empties.length === 0){
@@ -1436,10 +1439,10 @@ function fireReroll(){
       floatAt(W/2, GRID_Y + GRID_H/2, '대상 없음 · 환불', '#9a8cd6');
       return;
     }
-    idx = empties[Math.floor(Math.random() * empties.length)];
+    // 종류를 먼저 정하고 그 사거리로 닿는 자리에 배치 (뽑기와 동일한 정책)
+    kind = KIND_ORDER[Math.floor(Math.random() * KIND_ORDER.length)];
+    idx = pickPlacementSlot(empties, TOWER_STATS[kind].tiers[1].range);
   }
-  const pool = oldKind ? KIND_ORDER.filter(k => k !== oldKind) : KIND_ORDER;
-  const kind = pool[Math.floor(Math.random() * pool.length)];
   placeTowerIntoSlot(idx, kind, 1);
   state.slots[idx].flash = 0.9;
   addExplosion(state.slots[idx].x, state.slots[idx].y, 24, state.slots[idx].color);
@@ -1505,9 +1508,10 @@ function useHeroToken(){
     return;
   }
   state.heroTokens -= 1;
-  // 확정 전설(4등급) 무작위 종류 — 좌상단 모서리부터
+  // 확정 전설(4등급) 무작위 종류 — 사거리 내 트랙이 닿는 자리에 자동 배치
   const kind = weightedPick(KIND_WEIGHT);
-  const idx = empties[0];
+  const range = TOWER_STATS[kind].tiers[LEGEND_GRADE].range;
+  const idx = pickPlacementSlot(empties, range);
   placeTowerIntoSlot(idx, kind, LEGEND_GRADE);
   state.slots[idx].flash = 1.0;
   addExplosion(state.slots[idx].x, state.slots[idx].y, 40, gradeColor(LEGEND_GRADE));
@@ -1647,6 +1651,53 @@ function updateTowerPositions(){
     t.slotIdx = i;
   }
 }
+
+/* ---------- 스마트 자동 배치 ----------
+ * CELL_TRACK_DIST[i] = 슬롯 i 중심에서 루프 트랙까지의 최소 거리.
+ * 매 슬롯에 대해 4개 트랙 세그먼트와의 거리 중 최솟값을 1회만 계산.
+ * 사거리 R 안에 트랙이 닿는 칸인지(d ≤ R) 판단하는 데 사용.
+ */
+const CELL_TRACK_DIST = (() => {
+  const arr = new Array(GRID_COLS * GRID_ROWS);
+  for (let i = 0; i < arr.length; i++){
+    const c = slotCenter(i);
+    let m = Infinity;
+    for (const s of TRACK_SEGS){
+      const d = pointSegDist(c.x, c.y, s.x1, s.y1, s.x2, s.y2);
+      if (d < m) m = d;
+    }
+    arr[i] = m;
+  }
+  return arr;
+})();
+
+/* 자동 배치 자리 선택 — 커버리지와 패킹을 동시에 고려.
+ * 직선 트랙에서 거리 d, 사거리 R 타워의 커버 길이는 2·√(R²−d²) → 커버리지는 R²−d² 에 비례.
+ * 닿는 가장 가까운 칸에서의 최대 커버리지를 기준으로 그 50% 이상을 확보하는 칸들 중
+ * "가장 안쪽(최대 d)" 을 고른다.
+ *   • 장거리 타워: 커버리지가 충분한 안쪽 링으로 → 외곽 칸을 단거리 타워용으로 보존.
+ *   • 단거리 타워(GUARD 등): 안쪽 링은 커버리지 하한에 걸려 배제 → 외곽 "최강" 자리로 복귀.
+ * 모든 후보가 하한 미달이면 커버리지 최대(=최소 d), 닿는 칸이 없으면 트랙 최근접 칸으로 폴백. */
+function pickPlacementSlot(empties, range){
+  if (empties.length === 0) return -1;
+  const r2 = range * range;
+  // 닿는 가장 가까운 빈 칸 (최대 커버리지 기준점)
+  let minD = Infinity, closest = empties[0];
+  for (const i of empties){
+    const d = CELL_TRACK_DIST[i];
+    if (d < minD){ minD = d; closest = i; }
+  }
+  if (minD > range) return closest;             // 닿는 칸이 전혀 없음 → 최근접 (차선)
+  const covFloor = 0.5 * Math.max(1, r2 - minD * minD);
+  let best = -1, bestD = -1;
+  for (const i of empties){
+    const d = CELL_TRACK_DIST[i];
+    if (d > range) continue;                    // 사거리 밖 제외
+    if (r2 - d * d < covFloor) continue;        // 커버리지 부실(하한 미달) 제외
+    if (d > bestD){ bestD = d; best = i; }       // 통과 자리 중 가장 안쪽 (외곽 보존)
+  }
+  return best >= 0 ? best : closest;            // 하한 통과 없음 → 최대 커버리지 칸
+}
 function emptySlots(){
   const arr = [];
   for (let i = 0; i < state.slots.length; i++) if (!state.slots[i]) arr.push(i);
@@ -1739,8 +1790,9 @@ function doRoll(){
   let tier = pickTierByProb();
   // 등급 상한 보장
   if (tier > MAX_GRADE) tier = MAX_GRADE;
-  // 좌상단 모서리부터 순서대로 채움 (정렬된 배치)
-  const idx = empties[0];
+  // 사거리 인식 배치: 트랙이 닿는(d ≤ 사거리) 빈 자리 중 가장 안쪽 → 단/장거리 모두 유효 사거리 확보
+  const range = TOWER_STATS[kind].tiers[tier].range;
+  const idx = pickPlacementSlot(empties, range);
   placeTowerIntoSlot(idx, kind, tier);
   state.slots[idx].flash = 0.4;
   SFX.roll();
