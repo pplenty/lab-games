@@ -3721,6 +3721,31 @@ function drawTierPips(ctx, t){
   ctx.restore();
 }
 
+/* ---------- Enemy sprite cache (type → offscreen) ----------
+ * 잡몹 본체+눈은 종류별로 정적(색·크기 고정, 시간 의존 없음)이라 1회만 그려두고 blit.
+ * 예외: regen(회전 십자·박동 링)·boss(회전 별·움직이는 눈)는 애니메이션 → 매 프레임 동적.
+ */
+const ANIMATED_ENEMY = { regen: true, boss: true };
+const ENEMY_SPRITES = {};
+function getEnemySprite(type){
+  const cached = ENEMY_SPRITES[type];
+  if (cached) return cached;
+  const def = ENEMY_STATS[type];
+  const r = def.r;
+  const S = r + 9;                          // 반경 + 여유(비행 그림자/날개 오버행)
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const cv = document.createElement('canvas');
+  cv.width  = Math.ceil(2 * S * dpr);
+  cv.height = Math.ceil(2 * S * dpr);
+  const c = cv.getContext('2d');
+  c.scale(dpr, dpr);
+  drawEnemyShape(c, S, S, type, def.color, r, 0);
+  drawEnemyEyes(c, { type, x: S, y: S, r });
+  const rec = { canvas: cv, S };
+  ENEMY_SPRITES[type] = rec;
+  return rec;
+}
+
 function drawEnemy(e){
   // 보스 능력 오라 ring + 이름
   if (e.bossAbility){
@@ -3747,14 +3772,18 @@ function drawEnemy(e){
     ctx.restore();
   }
 
-  // 에셋 PNG가 있으면 그것으로 대체 (없으면 절차 드로잉)
+  // 본체: PNG 에셋 > 애니메이션 타입은 절차 드로잉 > 그 외는 sprite 캐시 blit
   if (ENEMY_IMG[e.type]){
     const img = ENEMY_IMG[e.type];
     const s = e.r * 2.6;
     ctx.drawImage(img, e.x - s/2, e.y - s/2, s, s);
-  } else {
+  } else if (ANIMATED_ENEMY[e.type]){
+    // regen(회전 십자)·boss(회전 별·움직이는 눈) — 매 프레임 동적
     drawEnemyShape(ctx, e.x, e.y, e.type, e.color, e.r, state.time);
     drawEnemyEyes(ctx, e);
+  } else {
+    const spr = getEnemySprite(e.type);
+    ctx.drawImage(spr.canvas, e.x - spr.S, e.y - spr.S, spr.S * 2, spr.S * 2);
   }
 
   // rush 가속 인디케이터
