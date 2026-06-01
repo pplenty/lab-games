@@ -1,0 +1,51 @@
+/* td-core.js — shared low-level helpers for the TD games (games.jdgrid.com/td).
+ *
+ * Loaded as a classic <script> *before* each game's inline <script>, so these
+ * top-level function declarations are plain globals the game code calls
+ * directly (setText(...), tdOffscreen(...), …). No bundler, no modules.
+ *
+ * These are the exact patterns that were being hand-copied between
+ * roll-defense and neon-defense; centralising them here means the next game
+ * just adds the <script> tag instead of re-porting them.
+ */
+
+/* ---- DOM dirty-check: skip element writes whose value didn't change, to cut
+ * per-frame layout/style recalculation. Each helper caches the last value on
+ * the element under a private key. ---- */
+function setText(el, v){ if (el && el._t !== v){ el._t = v; el.textContent = v; } }
+function setDisabled(el, v){ if (el && el._d !== v){ el._d = v; el.disabled = v; } }
+function setStyleProp(el, prop, v){ if (!el) return; const k = '_sp_' + prop; if (el[k] !== v){ el[k] = v; el.style[prop] = v; } }
+function setClass(el, cls, on){ if (!el) return; const k = '_cls_' + cls; if (el[k] !== on){ el[k] = on; el.classList.toggle(cls, on); } }
+
+/* ---- DPR-aware canvas helpers ---- */
+// Device-pixel ratio capped (default 1.5) so high-DPR screens don't blow up
+// per-frame pixel throughput.
+function tdDpr(cap){ return Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, cap || 1.5); }
+
+// Create an offscreen canvas backed at DPR resolution but pre-scaled so all
+// drawing uses CSS-pixel coordinates. Returns { canvas, ctx, dpr }.
+function tdOffscreen(cssW, cssH, cap){
+  const dpr = tdDpr(cap);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(cssW * dpr);
+  canvas.height = Math.ceil(cssH * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { canvas, ctx, dpr };
+}
+
+// Bake a sprite once into an offscreen canvas and return it for repeated blits.
+// drawFn(ctx, cssW, cssH) draws in CSS-pixel coordinates.
+function tdMakeSprite(cssW, cssH, drawFn, cap){
+  const off = tdOffscreen(cssW, cssH, cap);
+  drawFn(off.ctx, cssW, cssH);
+  return off.canvas;
+}
+
+// Defensive: also hang them off window (classic-script fn decls are already
+// global, but this keeps them reachable if the file is ever wrapped/imported).
+if (typeof window !== 'undefined'){
+  window.setText = setText; window.setDisabled = setDisabled;
+  window.setStyleProp = setStyleProp; window.setClass = setClass;
+  window.tdDpr = tdDpr; window.tdOffscreen = tdOffscreen; window.tdMakeSprite = tdMakeSprite;
+}

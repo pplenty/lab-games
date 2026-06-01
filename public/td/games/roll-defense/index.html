@@ -475,6 +475,7 @@
   <div class="guide-panel" id="guide-panel"></div>
 </div>
 
+<script src="../../lib/td-core.js"></script>
 <script>
 'use strict';
 
@@ -948,11 +949,8 @@ let mergeBtn = null;
 let riftBtn = null;
 let heroBtn = null;
 let skillEls = null;   // { key: { btn, overlay } }
-// DOM 더티 체크 헬퍼 — 같은 값 반복 쓰기를 막아 매 프레임 layout/style 재계산 비용 절감
-function setText(el, v){ if (el && el._t !== v){ el._t = v; el.textContent = v; } }
-function setDisabled(el, v){ if (el && el._d !== v){ el._d = v; el.disabled = v; } }
-function setStyleProp(el, prop, v){ if (!el) return; const k = '_sp_' + prop; if (el[k] !== v){ el[k] = v; el.style[prop] = v; } }
-function setClass(el, cls, on){ if (!el) return; const k = '_cls_' + cls; if (el[k] !== on){ el[k] = on; el.classList.toggle(cls, on); } }
+// DOM 더티 체크 헬퍼(setText/setDisabled/setStyleProp/setClass) + DPR/오프스크린
+// 헬퍼(tdDpr/tdOffscreen/tdMakeSprite)는 ../../lib/td-core.js 에서 전역 제공.
 
 const TUTORIAL = [
   { icon:'❤', title:'목표 · 목숨', body:'적은 격자 외곽 <b>사각 루프</b>를 돕니다. 적이 <b>한 바퀴를 완주(누수)</b>하면 <b>목숨(LIVES)</b>이 깎입니다 — 일반 -1, <b style="color:#ff5577">보스 -10</b>. 목숨이 0이 되면 게임 오버. 모든 적을 <b>한 바퀴 안에</b> 처치하는 게 핵심입니다. (랜덤 타워 디펜스 오마주)' },
@@ -1306,8 +1304,8 @@ function buildLayout(){
 
   canvas = document.getElementById('stage');
   ctx = canvas.getContext('2d');
-  // 성능: 스테이지 DPR 상한 1.5 (고해상도 화면에서 픽셀 처리량 ↓)
-  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  // 성능: 스테이지 DPR 상한 1.5 (고해상도 화면에서 픽셀 처리량 ↓) — tdDpr: td-core.js
+  const dpr = tdDpr(1.5);
   canvas.width = W * dpr;
   canvas.height = H * dpr;
   ctx.scale(dpr, dpr);
@@ -2852,12 +2850,9 @@ function floatAt(x, y, text, color){
 // 정적 배경(그라데이션 + 트랙 + 격자) 오프스크린 캐시 — 한 번 그려서 매 프레임 blit
 let BG_CANVAS = null;
 function buildBgCanvas(){
-  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-  BG_CANVAS = document.createElement('canvas');
-  BG_CANVAS.width = W * dpr;
-  BG_CANVAS.height = H * dpr;
-  const c = BG_CANVAS.getContext('2d');
-  c.scale(dpr, dpr);
+  const off = tdOffscreen(W, H, 1.5);   // td-core.js: DPR 캡 + 스케일 동일
+  BG_CANVAS = off.canvas;
+  const c = off.ctx;
   // 1) 배경 그라데이션
   const bg = c.createRadialGradient(W/2, H/2, 40, W/2, H/2, 380);
   bg.addColorStop(0, '#1c0a3a');

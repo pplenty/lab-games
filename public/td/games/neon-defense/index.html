@@ -208,6 +208,7 @@
   <div id="root"></div>
 </main>
 
+<script src="../../lib/td-core.js"></script>
 <script>
 'use strict';
 
@@ -391,9 +392,8 @@ let paletteEls = null;
 let detailEl = null;
 let overlayEl = null;
 let waveBtn = null;
-// DOM 더티 체크 — 같은 값 반복 쓰기를 막아 매 프레임 layout/style 재계산 비용 절감
-function setText(el, v){ if (el && el._t !== v){ el._t = v; el.textContent = v; } }
-function setClass(el, cls, on){ if (!el) return; const k = '_cls_' + cls; if (el[k] !== on){ el[k] = on; el.classList.toggle(cls, on); } }
+// DOM 더티 체크(setText/setClass) + DPR/오프스크린 헬퍼(tdDpr/tdOffscreen/tdMakeSprite)는
+// ../../lib/td-core.js 에서 전역 제공.
 
 function init(){
   root = document.getElementById('root');
@@ -535,8 +535,8 @@ function buildLayout(){
 
   canvas = document.getElementById('stage');
   ctx = canvas.getContext('2d');
-  // 성능: 스테이지 DPR 상한 1.5 (고해상도 화면 픽셀 처리량 ↓)
-  dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  // 성능: 스테이지 DPR 상한 1.5 (고해상도 화면 픽셀 처리량 ↓) — tdDpr: td-core.js
+  dpr = tdDpr(1.5);
   canvas.width = W * dpr;
   canvas.height = H * dpr;
   ctx.scale(dpr, dpr);
@@ -1104,12 +1104,9 @@ function addFloatText(x, y, text, color){
 // 매 프레임 60여 개의 fillRect·18 격자선·글로우 스트로크를 그리던 것을 1회 blit로 대체.
 let BG_CANVAS = null;
 function buildBgCanvas(){
-  const d = Math.min(window.devicePixelRatio || 1, 1.5);
-  BG_CANVAS = document.createElement('canvas');
-  BG_CANVAS.width = Math.ceil(W * d);
-  BG_CANVAS.height = Math.ceil(H * d);
-  const c = BG_CANVAS.getContext('2d');
-  c.scale(d, d);
+  const off = tdOffscreen(W, H, 1.5);   // td-core.js: DPR 캡 + ceil + 스케일 동일
+  BG_CANVAS = off.canvas;
+  const c = off.ctx;
   // 라디얼 그라데이션
   const bg = c.createRadialGradient(W/2, H/2, 40, W/2, H/2, 380);
   bg.addColorStop(0, '#1c0a3a');
