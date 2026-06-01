@@ -389,6 +389,9 @@ let paletteEls = null;
 let detailEl = null;
 let overlayEl = null;
 let waveBtn = null;
+// DOM 더티 체크 — 같은 값 반복 쓰기를 막아 매 프레임 layout/style 재계산 비용 절감
+function setText(el, v){ if (el && el._t !== v){ el._t = v; el.textContent = v; } }
+function setClass(el, cls, on){ if (!el) return; const k = '_cls_' + cls; if (el[k] !== on){ el[k] = on; el.classList.toggle(cls, on); } }
 
 function init(){
   root = document.getElementById('root');
@@ -655,10 +658,11 @@ function selectPlaceTower(typeId){
 }
 
 function refreshPalette(){
+  // 매 프레임 호출 — 더티 체크로 변경 시에만 classList 쓰기
   for (const id of TOWER_ORDER){
     const el = paletteEls[id];
-    el.classList.toggle('active', state.placeMode === id);
-    el.classList.toggle('disabled', state.gold < TOWERS[id].cost);
+    setClass(el, 'active', state.placeMode === id);
+    setClass(el, 'disabled', state.gold < TOWERS[id].cost);
   }
 }
 
@@ -757,7 +761,7 @@ function togglePause(){
 function toggleSpeed(){
   state.speed = state.speed === 1 ? 2 : 1;
   document.getElementById('btn-speed').textContent = state.speed + '×';
-  hudEls.speed.textContent = state.speed + '×';
+  setText(hudEls.speed, state.speed + '×');
 }
 
 function getWave(idx){
@@ -1258,14 +1262,14 @@ function render(){
     ctx.restore();
   }
 
-  // HUD 업데이트
-  hudEls.gold.textContent = state.gold;
-  hudEls.lives.textContent = state.lives;
+  // HUD 업데이트 (더티 체크 — 같은 값 반복 쓰기 회피)
+  setText(hudEls.gold, state.gold);
+  setText(hudEls.lives, state.lives);
   {
     const cur = state.phase === 'wave' ? (state.waveIdx + 1) : state.wavesCleared;
-    hudEls.wave.textContent = state.wavesCleared >= WAVES.length ? (cur + ' ∞') : (cur + '/15');
+    setText(hudEls.wave, state.wavesCleared >= WAVES.length ? (cur + ' ∞') : (cur + '/15'));
   }
-  hudEls.speed.textContent = state.paused ? '||' : state.speed + '×';
+  setText(hudEls.speed, state.paused ? '||' : state.speed + '×');
 }
 
 // 입구/출구 마커 — 배경 캐시 빌드 시 1회만 그려짐 (c = 오프스크린 컨텍스트)
