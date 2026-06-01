@@ -275,10 +275,12 @@ const TOWERS = {
     id: 'pulse', name: 'PULSE', cost: 30, color: '#5cd6ea', fire: 'beam',
     antiAir: true, strongVs: ['runner', 'swarm'], weakVs: ['tank'],
     desc: '단일 속사 · 대공 가능 · 만능형',
+    // 만능형이라 DPS/gold 효율 1위였음(전략성 저해) → Lv2/3 dmg 하향(18→16, 42→34)으로
+    // 전문 타워(burst AoE) 아래 효율로 재조정. Lv1은 초반 의존도 높아 유지.
     lv: [null,
       { damage:  8, range:  96, interval: 0.50 },
-      { damage: 18, range: 108, interval: 0.45, upCost: 35 },
-      { damage: 42, range: 122, interval: 0.40, upCost: 75 }
+      { damage: 16, range: 108, interval: 0.45, upCost: 35 },
+      { damage: 34, range: 122, interval: 0.40, upCost: 75 }
     ]
   },
   burst: {

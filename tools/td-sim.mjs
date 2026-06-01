@@ -9,6 +9,15 @@
  *   PRIMARY game-over = lives reach 0 via leaks (enemy completes one lap:
  *   normal -1, boss -10). maxAlive overflow is a secondary safety.
  *   Rift boss / hero token are player-driven → omitted (conservative).
+ *
+ * FINDING (2026-06, exp synced to 1.11): the conservative auto-play reaches
+ * wave ~80 with VERY tight variance (p10 80 / p90 82). lives 12/20/30 and
+ * bossLeak 6/10/15 all yield ~80 — i.e. the leak-lives system is inert: DPS
+ * (capped by the 64-cell grid) dwarfs HP until ×1.11^cycle crosses it, then
+ * it's an instant wall regardless of life buffer. The genre-defining leak
+ * mechanic only bites at the cliff. A future design lever (not a number tweak)
+ * would make lives erode gradually — e.g. a fast-enemy bleed during the strong
+ * phase, or DPS that keeps scaling so it's a race rather than a cliff.
  */
 
 // ---- layout (matches game) ----
@@ -62,7 +71,7 @@ const CFG = {
   startGold:70, maxAlive:45, rollBase:16, rollInc:0.6, rollMax:48,
   waveBonus:14, betweenSec:4, mergeBonus:4,
   startLives:20, bossLeak:10,
-  hpExp:1.09,                 // 무한 HP 지수 스케일 (게임과 일치)
+  hpExp:1.11,                 // 무한 HP 지수 스케일 (게임 index.html line ~2182 Math.pow(1.11) 와 일치)
   goldPerCycle:0.08, regenPerCycle:0.10,
   counterStrong:1.45, counterWeak:0.65, synergyFactor:1.08
 };
@@ -217,13 +226,13 @@ function runBatch(label, opts){
 
 console.log(`=== Roll-defense battle sim · 랜타디 오마주 (${N} games each, cap 200) ===`);
 console.log('(reached wave when LIVES<=0 via leaks; 2-merge, 5 grades; rift/hero omitted = conservative)\n');
-runBatch('current (lives 20, exp 1.09)', {});
+runBatch('current (lives 20, exp 1.11)', {});
 console.log('\n-- HP exponent sweep --');
 runBatch('hpExp 1.07', {hpExp:1.07});
 runBatch('hpExp 1.09', {hpExp:1.09});
 runBatch('hpExp 1.11', {hpExp:1.11});
 runBatch('hpExp 1.13', {hpExp:1.13});
-console.log('\n-- lives sweep (hpExp 1.09) --');
+console.log('\n-- lives sweep (hpExp 1.11) --');
 runBatch('lives 12', {startLives:12});
 runBatch('lives 20', {startLives:20});
 runBatch('lives 30', {startLives:30});
