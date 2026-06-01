@@ -42,10 +42,43 @@ function tdMakeSprite(cssW, cssH, drawFn, cap){
   return off.canvas;
 }
 
+/* ---- Touch input: drag-to-aim, lift-to-commit ----
+ * Desktop hovers to preview (range ring / valid slot) then clicks; touch had
+ * no aim phase (tap committed instantly, blind under the finger). This binds
+ * touchstart/move/end so the preview tracks the finger and commits on lift —
+ * a plain tap still commits at one spot. mapFn(clientX, clientY) → local point
+ * (the game's existing clientToLocal/clientToCell). cbs: { aim(pt), commit(pt),
+ * end() }. Suppresses scroll + the synthetic 300ms click. */
+function tdBindTouch(canvas, mapFn, cbs){
+  let active = false, last = null;
+  const at = (touch) => mapFn(touch.clientX, touch.clientY);
+  canvas.addEventListener('touchstart', (e) => {
+    if (!e.touches[0]) return;
+    e.preventDefault();
+    active = true; last = at(e.touches[0]);
+    if (cbs.aim) cbs.aim(last);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => {
+    if (!active || !e.touches[0]) return;
+    e.preventDefault();
+    last = at(e.touches[0]);
+    if (cbs.aim) cbs.aim(last);
+  }, { passive: false });
+  canvas.addEventListener('touchend', (e) => {
+    if (!active) return;
+    e.preventDefault();
+    active = false;
+    if (last && cbs.commit) cbs.commit(last);
+    if (cbs.end) cbs.end();
+  }, { passive: false });
+  canvas.addEventListener('touchcancel', () => { active = false; if (cbs.end) cbs.end(); });
+}
+
 // Defensive: also hang them off window (classic-script fn decls are already
 // global, but this keeps them reachable if the file is ever wrapped/imported).
 if (typeof window !== 'undefined'){
   window.setText = setText; window.setDisabled = setDisabled;
   window.setStyleProp = setStyleProp; window.setClass = setClass;
   window.tdDpr = tdDpr; window.tdOffscreen = tdOffscreen; window.tdMakeSprite = tdMakeSprite;
+  window.tdBindTouch = tdBindTouch;
 }

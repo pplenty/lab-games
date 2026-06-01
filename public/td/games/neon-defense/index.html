@@ -22,6 +22,7 @@
     font-size: 14px;
     -webkit-font-smoothing: antialiased;
     overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;   /* 모바일 탭 시 파란 플래시 제거 */
     min-height: 100vh;
   }
   a{ color: inherit; }
@@ -558,7 +559,12 @@ function bindEvents(){
   canvas.addEventListener('mousemove', onMouseMove);
   canvas.addEventListener('mouseleave', () => { state.hoverCell = null; });
   canvas.addEventListener('click', onClick);
-  canvas.addEventListener('touchstart', onTouch, { passive: false });
+  // 터치: 드래그로 조준(사거리 미리보기) → 손 떼면 배치/선택 (td-core.js)
+  tdBindTouch(canvas, clientToCell, {
+    aim: (c) => { state.hoverCell = c; },
+    commit: (c) => handleCellClick(c),
+    end: () => { state.hoverCell = null; }
+  });
 }
 
 function unbindEvents(){
@@ -590,14 +596,6 @@ function onMouseMove(e){
 
 function onClick(e){
   const c = clientToCell(e.clientX, e.clientY);
-  handleCellClick(c);
-}
-function onTouch(e){
-  if (!e.touches[0]) return;
-  e.preventDefault();
-  const t = e.touches[0];
-  const c = clientToCell(t.clientX, t.clientY);
-  state.hoverCell = c;
   handleCellClick(c);
 }
 

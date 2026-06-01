@@ -71,7 +71,9 @@ function makeEl(tag){
         case 'querySelectorAll': case 'getElementsByClassName': case 'getElementsByTagName': return () => [];
         case 'appendChild': case 'append': case 'insertBefore': case 'prepend': return (c) => c;
         case 'removeChild': case 'remove': case 'replaceChild': case 'replaceChildren': return () => {};
-        case 'addEventListener': case 'removeEventListener': case 'dispatchEvent': return () => {};
+        case 'addEventListener': return (type, fn) => { (store.__l = store.__l || {})[type] = (store.__l[type] || []).concat(fn); };
+        case '__emit': return (type, evt) => { for (const fn of (store.__l && store.__l[type]) || []) fn(evt); };
+        case 'removeEventListener': case 'dispatchEvent': return () => {};
         case 'setAttribute': case 'removeAttribute': case 'setAttributeNS': return () => {};
         case 'getAttribute': case 'getAttributeNS': return () => null;
         case 'hasAttribute': return () => false;
@@ -158,7 +160,7 @@ function buildSandbox(){
   };
   sandbox.globalThis = sandbox;
   sandbox.self = sandbox;
-  return { sandbox, rafQ, tick: () => { clock += 1000 / 60; return clock; } };
+  return { sandbox, rafQ, els, tick: () => { clock += 1000 / 60; return clock; } };
 }
 
 function largestScript(html){
@@ -184,7 +186,7 @@ async function runGame(game){
   const html = await readFile(game.file, 'utf8');
   const code = largestScript(html);
   if (!code) throw new Error('no inline script');
-  const { sandbox, rafQ, tick } = buildSandbox();
+  const { sandbox, rafQ, els, tick } = buildSandbox();
   vm.createContext(sandbox);
 
   // load shared module first (games reference its globals: setText/tdDpr/…),
@@ -228,6 +230,22 @@ async function runGame(game){
   // kick off a scripted wave too, if the game exposes one (idx 0)
   ['startNextWave','startWave','beginWave','nextWave','sendWave'].some(fn => call(fn, 0));
 
+  // exercise the touch drag-to-aim path (td-core.js tdBindTouch): select a tower
+  // if possible, then fire touchstart → move → move → end on the canvas element.
+  let touch = 'n/a';
+  const stage = els['stage'];
+  if (stage){
+    if (typeof sandbox.selectPlaceTower === 'function' && TOWERS){ try { sandbox.selectPlaceTower(Object.keys(TOWERS)[0]); } catch {} }
+    const ev = (x, y) => ({ preventDefault(){}, touches: [{ clientX: x, clientY: y }], changedTouches: [{ clientX: x, clientY: y }] });
+    try {
+      stage.__emit('touchstart', ev(120, 200));
+      stage.__emit('touchmove',  ev(170, 250));
+      stage.__emit('touchmove',  ev(210, 300));
+      stage.__emit('touchend',   { preventDefault(){}, touches: [], changedTouches: [{ clientX: 210, clientY: 300 }] });
+      touch = 'ok';
+    } catch (e){ throw new Error('touch path threw: ' + e.message); }
+  }
+
   // pump the real RAF loop; loop() re-queues itself each frame
   let frames = 0;
   if (rafQ.length === 0 && typeof sandbox.loop === 'function') sandbox.loop(tick());
@@ -246,14 +264,14 @@ async function runGame(game){
 
   const st = typeof exp.getState === 'function' ? exp.getState() : null;
   const enemies = (st && Array.isArray(st.enemies)) ? st.enemies.length : '?';
-  return { frames, placed, spawned, enemies };
+  return { frames, placed, spawned, enemies, touch };
 }
 
 let failed = false;
 for (const game of GAMES){
   try {
     const r = await runGame(game);
-    console.log(`✓ ${game.name.padEnd(14)} ${r.frames} RAF frames + 60 steps · placed ${r.placed} towers · spawned ${r.spawned} enemy types · alive ${r.enemies}`);
+    console.log(`✓ ${game.name.padEnd(14)} ${r.frames} frames · placed ${r.placed} · spawned ${r.spawned} types · touch ${r.touch} · alive ${r.enemies}`);
   } catch (e){
     failed = true;
     console.error(`✗ ${game.name}: ${e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n   ') : e}`);

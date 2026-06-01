@@ -22,6 +22,7 @@
     font-size: 14px;
     -webkit-font-smoothing: antialiased;
     overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;   /* 모바일 탭 시 파란 플래시 제거 */
     min-height: 100vh;
   }
   a{ color: inherit; }
@@ -1552,7 +1553,12 @@ function bindEvents(){
   canvas.addEventListener('mousemove', onMove);
   canvas.addEventListener('mouseleave', () => { state.hoverSlot = -1; });
   canvas.addEventListener('click', onClick);
-  canvas.addEventListener('touchstart', onTouch, { passive: false });
+  // 터치: 드래그로 슬롯 조준 → 손 떼면 선택/이동 (드래그-합성에 유리, td-core.js)
+  tdBindTouch(canvas, clientToLocal, {
+    aim: (p) => { state.hoverSlot = localToSlot(p.x, p.y); },
+    commit: (p) => handleSlotClick(localToSlot(p.x, p.y)),
+    end: () => { state.hoverSlot = -1; }
+  });
 }
 
 function onKey(e){
@@ -1594,14 +1600,6 @@ function onMove(e){
 function onClick(e){
   const p = clientToLocal(e.clientX, e.clientY);
   handleSlotClick(localToSlot(p.x, p.y));
-}
-function onTouch(e){
-  if (!e.touches[0]) return;
-  e.preventDefault();
-  const t = e.touches[0];
-  const p = clientToLocal(t.clientX, t.clientY);
-  state.hoverSlot = localToSlot(p.x, p.y);
-  handleSlotClick(state.hoverSlot);
 }
 function handleSlotClick(idx){
   if (idx < 0) return;
