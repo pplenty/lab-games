@@ -797,42 +797,12 @@ const WAVES = [
 /* ============================================================
  * Audio (Web Audio synth — no asset files)
  * ============================================================ */
-let audioCtx = null;
-let MUTED = (function(){ try { return localStorage.getItem('roll_defense_muted') === '1'; } catch(e){ return false; } })();
+// 오디오 엔진(ctx + 음소거 + tone)은 td-core.js의 tdAudio로 공유. SFX 셋만 게임별.
+const AUDIO = tdAudio('roll_defense_muted');
 let lastKillSfx = 0;
-
-function ac(){
-  if (!audioCtx){
-    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ audioCtx = null; }
-  }
-  return audioCtx;
-}
-function resumeAudio(){
-  const c = ac();
-  if (c && c.state === 'suspended') c.resume();
-}
-function toggleMute(){
-  MUTED = !MUTED;
-  try { localStorage.setItem('roll_defense_muted', MUTED ? '1' : '0'); } catch(e){}
-  return MUTED;
-}
-// 단발 톤. slideTo 주면 주파수 슬라이드.
-function tone(freq, dur, type, vol, slideTo){
-  if (MUTED) return;
-  const c = ac();
-  if (!c) return;
-  const t0 = c.currentTime;
-  const o = c.createOscillator();
-  const g = c.createGain();
-  o.type = type || 'square';
-  o.frequency.setValueAtTime(freq, t0);
-  if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1, slideTo), t0 + dur);
-  g.gain.setValueAtTime(Math.max(0.0001, vol || 0.08), t0);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  o.connect(g); g.connect(c.destination);
-  o.start(t0);
-  o.stop(t0 + dur + 0.02);
-}
+function resumeAudio(){ AUDIO.resume(); }
+function toggleMute(){ return AUDIO.toggleMute(); }
+function tone(freq, dur, type, vol, slideTo){ AUDIO.tone(freq, dur, type, vol, slideTo); }
 const SFX = {
   kill(){
     const now = performance.now();
@@ -1272,7 +1242,7 @@ function buildLayout(){
       <button class="btn" id="btn-codex">도감</button>
       <button class="btn" id="btn-pause">일시정지</button>
       <button class="btn" id="btn-speed">2×</button>
-      <button class="btn" id="btn-mute">${MUTED ? '🔇' : '🔊'}</button>
+      <button class="btn" id="btn-mute">${AUDIO.muted ? '🔇' : '🔊'}</button>
       <button class="btn" id="btn-quit">그만</button>
     </div>
     <div class="info">

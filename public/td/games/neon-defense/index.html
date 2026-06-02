@@ -379,6 +379,21 @@ function applyDamage(e, dmg){
 }
 function canHit(def, e){ return !e.flying || def.antiAir; }   // 비행은 대공만
 
+/* ---------- Audio — td-core.js tdAudio 컨트롤러 + neon SFX 셋 ---------- */
+const AUDIO = tdAudio('neon_defense_muted');
+let _lastKillSfx = 0;
+function resumeAudio(){ AUDIO.resume(); }
+const SFX = {
+  place(){ AUDIO.tone(600, 0.08, 'square', 0.07, 880); },
+  upgrade(){ AUDIO.tone(520, 0.14, 'triangle', 0.09, 980); },
+  sell(){ AUDIO.tone(440, 0.12, 'sine', 0.07, 200); },
+  kill(){ const n = performance.now(); if (n - _lastKillSfx < 45) return; _lastKillSfx = n; AUDIO.tone(300, 0.06, 'sine', 0.045, 160); },
+  wave(){ AUDIO.tone(660, 0.10, 'square', 0.08); setTimeout(() => AUDIO.tone(990, 0.13, 'square', 0.08), 95); },
+  leak(){ AUDIO.tone(170, 0.22, 'sawtooth', 0.10, 60); },
+  win(){ AUDIO.tone(740, 0.16, 'triangle', 0.10, 1200); setTimeout(() => AUDIO.tone(1100, 0.22, 'triangle', 0.10, 1600), 120); },
+  gameover(){ AUDIO.tone(440, 0.5, 'sawtooth', 0.13, 70); }
+};
+
 /* ============================================================
  * State + Rendering
  * ============================================================ */
@@ -452,6 +467,7 @@ function saveStats(s){
 }
 
 function startGame(){
+  resumeAudio();   // 사용자 제스처(출발 클릭)에서 오디오 컨텍스트 해제
   state = {
     gold: START_GOLD,
     lives: START_LIVES,
@@ -501,6 +517,7 @@ function buildLayout(){
       <button class="btn primary" id="btn-wave">다음 웨이브</button>
       <button class="btn" id="btn-pause">일시정지</button>
       <button class="btn" id="btn-speed">2×</button>
+      <button class="btn" id="btn-mute" title="음소거">${AUDIO.muted ? '🔇' : '🔊'}</button>
       <button class="btn" id="btn-quit">그만</button>
     </div>
     <div class="info">1·2·3·4 타워 선택 · 빈 칸 배치 · 타워 클릭=업그레이드/판매/타깃 · P 일시 · F 배속 · Space 웨이브</div>
@@ -553,6 +570,8 @@ function bindEvents(){
   document.getElementById('btn-pause').onclick = togglePause;
   document.getElementById('btn-speed').onclick = toggleSpeed;
   document.getElementById('btn-quit').onclick = () => { stopLoop(); showTitle(); };
+  const muteBtn = document.getElementById('btn-mute');
+  muteBtn.onclick = () => { resumeAudio(); muteBtn.textContent = AUDIO.toggleMute() ? '🔇' : '🔊'; };
   // 키보드
   document.addEventListener('keydown', onKey);
   // 캔버스
@@ -648,6 +667,7 @@ function placeTower(typeId, cx, cy){
     spent: def.cost,           // 누적 투자 (판매 환불 기준)
     priority: 'first'          // first | strong | weak | close
   });
+  SFX.place();
 }
 
 function selectPlaceTower(typeId){
@@ -716,6 +736,7 @@ function upgradeSelected(){
   state.gold -= cost;
   t.level += 1;
   t.spent += cost;
+  SFX.upgrade();
   addExplosion(t.x, t.y, 22, TOWERS[t.type].color);
   addFloatText(t.x, t.y - 8, 'Lv.' + t.level, TOWERS[t.type].color);
   refreshDetail();
@@ -735,6 +756,7 @@ function sellSelected(){
   if (!t) return;
   const refund = Math.floor(t.spent * 0.6);
   state.gold += refund;
+  SFX.sell();
   addFloatText(t.x, t.y, '+' + refund + 'g', '#ffd96b');
   state.towers = state.towers.filter(x => x !== t);
   state.selectedTower = null;
@@ -819,6 +841,7 @@ function startNextWave(){
   }));
   state.entryIdx = 0;
   state.phase = 'wave';
+  SFX.wave();
   waveBtn.disabled = true;
   clearOverlay();
 }
@@ -875,6 +898,7 @@ function step(dt){
     if (!target){
       e.escaped = true;
       state.lives -= e.boss ? BOSS_LEAK : 1;
+      SFX.leak();
       addFloatText(e.x, e.y, '-' + (e.boss ? BOSS_LEAK : 1) + '♥', '#ff5577');
       if (state.lives <= 0){ state.lives = 0; return loseGame(); }
       continue;
@@ -898,6 +922,7 @@ function step(dt){
       e.dead = true;
       state.gold += e.reward;
       state.score += e.reward;
+      SFX.kill();
       addFloatText(e.x, e.y, '+' + e.reward + 'g', '#ffd96b');
       spawnKillParticles(e);
     }
@@ -1037,10 +1062,12 @@ function endWave(){
 function winGame(){
   state.phase = 'won';
   state.score += state.lives * 30 + state.gold;
+  SFX.win();
   finishUI(true);
 }
 function loseGame(){
   state.phase = 'lost';
+  SFX.gameover();
   finishUI(false);
 }
 

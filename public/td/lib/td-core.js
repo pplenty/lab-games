@@ -74,11 +74,45 @@ function tdBindTouch(canvas, mapFn, cbs){
   canvas.addEventListener('touchcancel', () => { active = false; if (cbs.end) cbs.end(); });
 }
 
+/* ---- Web Audio SFX synth (no asset files) ----
+ * Returns a small controller: lazy AudioContext, persisted mute (per game via
+ * storageKey), and tone(freq, dur, type, vol, slideTo) — a single decaying
+ * oscillator with an optional exponential frequency slide. Games build their
+ * named SFX set on top of controller.tone(). */
+function tdAudio(storageKey){
+  let ctx = null;
+  let muted = (function(){ try { return localStorage.getItem(storageKey) === '1'; } catch(e){ return false; } })();
+  function ac(){
+    if (!ctx){ try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ ctx = null; } }
+    return ctx;
+  }
+  return {
+    get muted(){ return muted; },
+    resume(){ const c = ac(); if (c && c.state === 'suspended') c.resume(); },
+    toggleMute(){ muted = !muted; try { localStorage.setItem(storageKey, muted ? '1' : '0'); } catch(e){} return muted; },
+    tone(freq, dur, type, vol, slideTo){
+      if (muted) return;
+      const c = ac(); if (!c) return;
+      const t0 = c.currentTime;
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.type = type || 'square';
+      o.frequency.setValueAtTime(freq, t0);
+      if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1, slideTo), t0 + dur);
+      g.gain.setValueAtTime(Math.max(0.0001, vol || 0.08), t0);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(g); g.connect(c.destination);
+      o.start(t0);
+      o.stop(t0 + dur + 0.02);
+    }
+  };
+}
+
 // Defensive: also hang them off window (classic-script fn decls are already
 // global, but this keeps them reachable if the file is ever wrapped/imported).
 if (typeof window !== 'undefined'){
   window.setText = setText; window.setDisabled = setDisabled;
   window.setStyleProp = setStyleProp; window.setClass = setClass;
   window.tdDpr = tdDpr; window.tdOffscreen = tdOffscreen; window.tdMakeSprite = tdMakeSprite;
-  window.tdBindTouch = tdBindTouch;
+  window.tdBindTouch = tdBindTouch; window.tdAudio = tdAudio;
 }
