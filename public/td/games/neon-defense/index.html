@@ -424,7 +424,8 @@ function showTitle(){
       <span class="badge">전략 디펜스</span>
       <h1>네온 디펜스</h1>
       <p>굽이치는 길목에 타워를 세우고 <b>업그레이드</b>하라.<br>적 상성을 읽는 본격 배치 전략 TD.</p>
-      ${best.bestScore > 0 ? `<div class="ribbon">B E S T &nbsp; ${best.bestScore}</div>` : ''}
+      ${best.bestScore > 0 ? `<div class="ribbon">B E S T &nbsp; ${best.bestScore}</div>
+      <p style="font-size:11px; color:#9a8cd6; margin-top:6px;">최고 웨이브 ${best.bestWave} · ${best.played}회 플레이</p>` : ''}
       <div class="rules">
         <h3>T O W E R S &nbsp;·&nbsp; 3단계 업그레이드</h3>
         <div class="row"><span class="sw" style="background:#5cd6ea"></span>
@@ -465,6 +466,7 @@ function loadStats(){
 function saveStats(s){
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch(e) {}
 }
+let seenTutorial = (function(){ try { return localStorage.getItem('neon_defense_seen_tutorial') === '1'; } catch(e){ return false; } })();
 
 function startGame(){
   resumeAudio();   // 사용자 제스처(출발 클릭)에서 오디오 컨텍스트 해제
@@ -492,11 +494,36 @@ function startGame(){
   };
   buildLayout();
   bindEvents();
+  if (seenTutorial) showPrepareOverlay();
+  else showTutorial();
+  startLoop();
+}
+
+function showPrepareOverlay(){
   setOverlay(`
     <h2>준비 단계</h2>
     <p>아래 팔레트에서 타워를 골라 빈 칸에 배치하세요.<br>준비되면 <b>다음 웨이브</b> 버튼을 누르세요.</p>
   `, false);
-  startLoop();
+}
+
+// 최초 1회 온보딩 (neon_defense_seen_tutorial). [시작!] 누르면 준비 단계로.
+function showTutorial(){
+  setOverlay(`
+    <h2>플레이 방법</h2>
+    <div style="text-align:left; font-size:13px; line-height:1.9; max-width:300px; margin:0 auto;">
+      <div>🎯 <b>배치</b> — 팔레트에서 타워 선택 후 길 옆 빈 칸을 탭</div>
+      <div>⬆️ <b>업그레이드</b> — 배치한 타워를 탭해 Lv.3까지</div>
+      <div>🔄 <b>상성</b> — <span style="color:#86d6a8">💪강함</span> / <span style="color:#ff7799">🔻약함</span>. 비행은 대공(PULSE·RAIL)만 명중</div>
+      <div>❤️ <b>라이프</b> — 적이 끝까지 새면 차감, 0이면 게임 오버</div>
+    </div>
+    <button class="btn primary" id="tut-ok" style="margin-top:16px;">시작!</button>
+  `, false);
+  const ok = document.getElementById('tut-ok');
+  if (ok) ok.onclick = () => {
+    seenTutorial = true;
+    try { localStorage.setItem('neon_defense_seen_tutorial', '1'); } catch(e){}
+    showPrepareOverlay();
+  };
 }
 
 function buildLayout(){
