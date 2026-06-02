@@ -174,3 +174,7 @@ for (let i = 0; i < WAVES.length; i++){
   const bar = ratio > 2.5 ? '쉬움 ◀◀' : ratio > 1.4 ? '여유' : ratio > 0.9 ? '적정 ★' : '빡빡 ▶▶';
   console.log(`  W${(i+1).toString().padStart(2)}  필요 ${needDPS.toFixed(0).padStart(5)}  가능 ${haveDPS.toFixed(0).padStart(5)}  (${ratio.toFixed(2)}x) ${bar}`);
 }
+
+// balance-check.mjs imports these to assert invariants (running this file prints
+// the report; importers suppress stdout). Single source of truth for the model.
+export { TOWERS, ENEMIES, TOWER_ORDER, COUNTER_STRONG, towerDPS, cumCost };

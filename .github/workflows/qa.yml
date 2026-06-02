@@ -31,6 +31,11 @@ jobs:
       - name: Runtime smoke test
         run: node tools/runtime-check.mjs
 
+      # Balance invariants as a hard gate: neon counter coverage + pulse-spam
+      # dominance guard + roll combat-tower DPS spread. Fails CI if re-broken.
+      - name: Balance invariants
+        run: node tools/balance-check.mjs
+
       # Balance models must keep running (catches sim drift / data-shape breakage).
       # Informational output; non-zero exit only on a crash.
       - name: Balance sims
