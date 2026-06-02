@@ -18,6 +18,11 @@
  * mechanic only bites at the cliff. A future design lever (not a number tweak)
  * would make lives erode gradually — e.g. a fast-enemy bleed during the strong
  * phase, or DPS that keeps scaling so it's a race rather than a cliff.
+ *
+ * UPDATE (2026-06): tested the fast-enemy-bleed idea via speedPerCycle (see the
+ * experiment at the bottom). NEGATIVE — lives 12 vs 30 still land within ~1
+ * wave at any speed; faster enemies just move the wall earlier, they don't make
+ * a life buffer matter. The cliff is structural, so roll-defense is left as-is.
  */
 
 // ---- layout (matches game) ----
@@ -73,6 +78,8 @@ const CFG = {
   startLives:20, bossLeak:10,
   hpExp:1.11,                 // 무한 HP 지수 스케일 (게임 index.html line ~2182 Math.pow(1.11) 와 일치)
   goldPerCycle:0.08, regenPerCycle:0.10,
+  speedPerCycle:0,            // 무한 모드 적 속도 +x/cycle (0=현행). 누수-목숨을 점진화하는 설계 레버 실험용
+  speedCap:2.2,               // 속도 배수 상한 (너무 빨라지지 않게)
   counterStrong:1.45, counterWeak:0.65, synergyFactor:1.08
 };
 
@@ -145,7 +152,8 @@ function simulate(opts){
   function spawnEnemy(type){
     const def=ENEMIES[type]; const cycle=Math.max(0,waveIdx-WAVES.length);
     const hpM=hpMultFor(cycle);
-    enemies.push({type, hp:def.hp*hpM, maxHp:def.hp*hpM, shield:(def.shield||0)*hpM, sp:def.sp,
+    const spM=Math.min(cfg.speedCap, 1 + cfg.speedPerCycle*cycle);
+    enemies.push({type, hp:def.hp*hpM, maxHp:def.hp*hpM, shield:(def.shield||0)*hpM, sp:def.sp*spM,
       g:Math.floor(def.g*(1+cfg.goldPerCycle*cycle)*mods.gold), seg:0, prog:0, slowUntil:0, slowF:1,
       flying:!!def.flying, boss:!!def.boss, regen:(def.regen||0)*(1+cfg.regenPerCycle*cycle), split:def.split||0, leaked:false, ...trackPos(0,0)});
   }
@@ -240,3 +248,14 @@ console.log('\n-- boss leak severity --');
 runBatch('bossLeak 6', {bossLeak:6});
 runBatch('bossLeak 10', {bossLeak:10});
 runBatch('bossLeak 15', {bossLeak:15});
+
+// 설계 레버 실험 (NEGATIVE RESULT — 2026-06): 무한 모드 적 속도 점진 증가가
+// 누수-목숨을 점진화하는지. lives 12 vs 30 이 갈라지면 목숨이 유의미해진 것.
+console.log('\n-- speedPerCycle 설계 레버 실험 (lives 12 vs 30 이 갈라지는지) --');
+for (const sp of [0, 0.03]){
+  const a = runBatch(`sp ${sp} · lives 12`, {speedPerCycle:sp, startLives:12});
+  const b = runBatch(`sp ${sp} · lives 30`, {speedPerCycle:sp, startLives:30});
+  console.log(`   → 12↔30 차이 ${Math.abs(a-b).toFixed(1)} 웨이브 ${Math.abs(a-b) < 3 ? '(목숨 여전히 무의미)' : '(목숨 유의미!)'}`);
+}
+// 결론: 차이 ~1웨이브로 lives 무관 유지 → 속도 레버는 벽을 앞당길 뿐 점진화 못 함.
+// 이진 벽은 구조적(격자-상한 DPS vs 지수 HP). 값싼 숫자 레버로 해결 불가 → 게임 미변경.

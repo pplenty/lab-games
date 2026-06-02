@@ -852,7 +852,9 @@ function spawnEnemy(type){
   // 무한 모드 스케일링: 15웨이브 이후 HP·골드 증가
   const cycle = Math.max(0, state.waveIdx - WAVES.length);
   const hpMult = Math.pow(HP_EXP, cycle);
-  const goldMult = 1 + 0.04 * cycle;
+  // 무한 골드 증가율 0.04→0.02 (neon-balance "골드가 배치 추월" 후속: 엔드리스
+  // 골드 잉여 완화. 설계 15웨이브는 cycle=0이라 무영향).
+  const goldMult = 1 + 0.02 * cycle;
   const hp = Math.round(def.hp * hpMult);
   state.enemies.push({
     type, x: start.x, y: start.y,

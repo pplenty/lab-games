@@ -12,9 +12,13 @@
  *    so burst (AoE 일꾼) reclaims the efficiency lead and roles separate cleanly.
  *  - GOLD OUTPACES PLACEMENT: ~180 buildable cells but coverage saturates at
  *    ~20-30 well-placed towers; by ~W8-10 income (kills+bonus+interest) exceeds
- *    useful spend, so the econ/interest layer goes slack mid-game. Lever for
- *    later: taper kill-gold or add gold sinks (retarget/relocate cost), NOT a
- *    blanket income nerf (early game is already only ~2.6x easy).
+ *    useful spend, so the econ/interest layer goes slack mid-game.
+ *    RESOLUTION (2026-06): this is mostly a MODEL ARTIFACT — the "가능 DPS"
+ *    line assumes all gold converts to DPS, but it can't see coverage
+ *    saturation, after which spare gold is a legit rebuild buffer (not a flaw).
+ *    Early game is intentionally tight (개막 빡빡). So no blanket income nerf;
+ *    only the compounding infinite-mode gold growth was tapered (0.04→0.02/
+ *    cycle) so the endless tail's economy doesn't go fully slack.
  *  - Campaign W1-15 reads "쉬움" by the gold model; that's the onboarding ramp.
  *    Real challenge is the exponential infinite wall (×1.13^cycle), same shape
  *    as roll-defense. See tools/td-sim.mjs FINDING on the binary wall.
@@ -63,7 +67,7 @@ const WAVES = [
 ];
 const ECON = { startGold:90, startLives:15, bossLeak:10, waveBonus:16, interest:0.06, interestCap:25 };
 const HP_EXP = 1.13;          // 무한 HP 지수 (게임 line ~361 과 일치)
-const GOLD_PER_CYCLE = 0.04;  // 무한 골드 보너스
+const GOLD_PER_CYCLE = 0.02;  // 무한 골드 보너스 (0.04→0.02, 엔드리스 잉여 완화)
 
 // multi-target assumptions (beam/slow = 단일, aoe/pierce = 멀티)
 const MT = { beam:1, slow:1, aoe:2.5, pierce:2.2 };
