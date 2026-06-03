@@ -767,12 +767,14 @@ function loadEnemySprites(){
   }
 }
 
-const BOSS_ABILITIES = ['summon', 'heal', 'warden', 'rush'];
+const BOSS_ABILITIES = ['summon', 'heal', 'warden', 'rush', 'bulwark', 'frenzy'];
 const BOSS_ABILITY_INFO = {
-  summon: { name:'소환', color:'#86d6a8', desc:'주변에 그런트 소환' },
-  heal:   { name:'치유', color:'#56e6a2', desc:'주변 적 HP 회복' },
-  warden: { name:'수호', color:'#bcc6ff', desc:'주변 적에 쉴드 부여' },
-  rush:   { name:'질주', color:'#ffd96b', desc:'주변 적 슬로우 해제 + 가속' }
+  summon:  { name:'소환', color:'#86d6a8', desc:'주변에 그런트 소환' },
+  heal:    { name:'치유', color:'#56e6a2', desc:'주변 적 HP 회복' },
+  warden:  { name:'수호', color:'#bcc6ff', desc:'주변 적에 쉴드 부여' },
+  rush:    { name:'질주', color:'#ffd96b', desc:'주변 적 슬로우 해제 + 가속' },
+  bulwark: { name:'방벽', color:'#7cc4ff', desc:'자신에게 큰 보호막' },
+  frenzy:  { name:'광폭', color:'#ff7799', desc:'자신 회복 + 가속' }
 };
 
 /* ---------- Waves ---------- */
@@ -2242,6 +2244,18 @@ function triggerBossAbility(boss){
       }
     }
     addExplosion(boss.x, boss.y, R, info.color);
+  } else if (boss.bossAbility === 'bulwark'){
+    // 자기 보호막 (기존 shield 메커니즘 재사용 — 데미지가 본체 전에 흡수됨)
+    const amt = Math.floor(boss.maxHp * (0.45 + tier * 0.05));
+    boss.shield = (boss.shield || 0) + amt;
+    boss.maxShield = Math.max(boss.maxShield || 0, boss.shield);
+    addExplosion(boss.x, boss.y, boss.r + 30, info.color);
+  } else if (boss.bossAbility === 'frenzy'){
+    // 자가 회복 + 자가 가속 (rushUntil 재사용)
+    boss.hp = Math.min(boss.maxHp, boss.hp + boss.maxHp * 0.12);
+    boss.slowUntil = 0;
+    boss.rushUntil = state.time + 4;
+    addExplosion(boss.x, boss.y, boss.r + 26, info.color);
   }
   floatAt(boss.x, boss.y - boss.r - 8, info.name + '!', info.color);
 }
