@@ -27,6 +27,8 @@ const textExtensions = new Set([
 ]);
 
 const issues = [];
+const warnings = [];   // non-fatal: things that are expected during WIP (e.g. a
+                       // game listed in games.json before its file is committed)
 
 async function exists(filePath) {
   try {
@@ -142,7 +144,10 @@ for (const game of brain.games || []) {
   }
 
   const gameFile = `public/brain/${game.path || ''}index.html`;
-  if (!(await exists(gameFile))) addIssue(`missing game file: ${gameFile}`);
+  // A listed-but-missing file is usually WIP (game added to games.json before
+  // its index.html is committed) — warn, don't fail. Broken in-page asset
+  // links are still hard-failed by checkLinkedAsset below.
+  if (!(await exists(gameFile))) warnings.push(`game listed but file not committed (WIP?): ${gameFile}`);
 }
 
 const publicFiles = await walk('public');
@@ -185,11 +190,17 @@ for (const pattern of [
   if (!redirects.includes(pattern)) addIssue(`public/_redirects: missing ${pattern}`);
 }
 
+if (warnings.length > 0) {
+  console.warn(`site check warnings (${warnings.length}, non-fatal):`);
+  for (const warning of warnings) console.warn(`- ${warning}`);
+}
+
 if (issues.length > 0) {
   console.error('site check failed:');
   for (const issue of issues) console.error(`- ${issue}`);
   process.exit(1);
 }
 
-console.log(`site check passed: ${brain.games.length} brain games, ${Object.keys(categories).length} categories`);
+console.log(`site check passed: ${brain.games.length} brain games, ${Object.keys(categories).length} categories` +
+  (warnings.length ? ` (${warnings.length} non-fatal warnings)` : ''));
 

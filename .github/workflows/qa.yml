@@ -1,11 +1,11 @@
-# Automated QA for the Tower-Defense subsystem — runs on every push/PR so a
-# broken inline script or a runtime crash in the TD games is caught before
-# deploy. Local equivalents: the same `node tools/*.mjs` commands.
+# Automated QA — runs on every push/PR so a broken inline script, a runtime
+# crash in the TD games, or a balance regression is caught before deploy.
+# Local equivalents: the same `node tools/*.mjs` commands.
 #
-# Scope note: deliberately does NOT run tools/check-site.mjs. That validates
-# the whole site (brain games.json ↔ files) and currently fails on main because
-# some brain games are referenced in games.json but their files aren't committed
-# yet (WIP). This workflow gates only the TD games this tooling owns.
+# check-site validates the whole site (games.json ↔ files, links, .html-URL
+# exposure). It is now WIP-tolerant — a game listed in games.json whose file
+# isn't committed yet is a non-fatal warning, not a failure — so it can gate
+# the real problems without breaking on in-progress brain games.
 name: QA
 
 on:
@@ -21,6 +21,11 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '20'
+
+      # Whole-site structure: required files, games.json schema, broken links,
+      # .html-URL exposure (WIP-tolerant: missing game files only warn).
+      - name: Site check
+        run: node tools/check-site.mjs
 
       # Every inline <script> (+ td-core.js) must parse
       - name: Parse-check game scripts
