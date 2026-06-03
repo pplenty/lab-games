@@ -829,9 +829,35 @@ const SFX = {
 /* ============================================================
  * Helpers
  * ============================================================ */
+
+/* 시드 RNG — 데일리 챌린지 결정론용. 기본은 Math.random; 데일리 모드에서만 시드.
+ * 이산적 게임플레이 난수(뽑기 등급/종류·웨이브 구성·보스 능력·리프트·모디파이어)만
+ * rng()로 라우팅. 연속 시간(dt) 의존 연출/파티클은 Math.random 유지(시드 스트림 비오염). */
+let rng = Math.random;
+function mulberry32(seed){
+  let a = seed >>> 0;
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function seedRng(seed){ rng = mulberry32(seed); }
+function clearRng(){ rng = Math.random; }
+function dailySeed(){ const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); }
+function todayKey(){ const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+let DAILY_MODE = false;
+function startDaily(){ DAILY_MODE = true; startGame(); }
+function loadDailyBest(){ try { return JSON.parse(localStorage.getItem('roll_defense_daily') || '{}'); } catch(e){ return {}; } }
+function saveDailyBest(wave){
+  const all = loadDailyBest(); const k = todayKey();
+  if (wave > (all[k] || 0)){ all[k] = wave; try { localStorage.setItem('roll_defense_daily', JSON.stringify(all)); } catch(e){} }
+}
+
 function weightedPick(weights){
   const total = Object.values(weights).reduce((a, b) => a + b, 0);
-  let r = Math.random() * total;
+  let r = rng() * total;
   for (const k in weights){
     if (r < weights[k]) return k;
     r -= weights[k];
@@ -843,7 +869,7 @@ function pickTierByProb(){
   const luck = (state && state.meta) ? upLevel(state.meta, 'luck') * 0.02 : 0;
   const p1 = Math.max(0, TIER_ROLL_PROB[0] - luck);
   const p2 = (TIER_ROLL_PROB[1] || 0) + luck;
-  let r = Math.random();
+  let r = rng();
   if (r < p1) return 1;
   r -= p1;
   if (r < p2) return 2;
@@ -1086,6 +1112,13 @@ function showTitle(){
           ◆ 강화
         </button>
       </div>
+      <button id="btn-daily" style="
+        margin-top: 8px; width: 100%;
+        background: rgba(90,60,25,.5); color: #ffd96b;
+        border: 1px solid rgba(255,217,107,.3); border-radius: 10px;
+        padding: 10px; font-weight: 800; cursor: pointer; font-size: 12px;">
+        ☀ 오늘의 도전
+      </button>
       <button id="btn-guide" style="
         margin-top: 8px; width: 100%;
         background: rgba(40,18,90,.5); color: #9a8cd6;
@@ -1095,9 +1128,13 @@ function showTitle(){
       </button>
     </section>
   `;
-  document.getElementById('btn-start').onclick = startGame;
+  document.getElementById('btn-start').onclick = () => { DAILY_MODE = false; startGame(); };
   document.getElementById('btn-upgrades').onclick = showUpgrades;
   document.getElementById('btn-guide').onclick = showGuide;
+  const dBest = loadDailyBest()[todayKey()] || 0;
+  const dBtn = document.getElementById('btn-daily');
+  dBtn.textContent = '☀ 오늘의 도전 (시드 고정)' + (dBest > 0 ? ' · 오늘 W' + dBest : '');
+  dBtn.onclick = startDaily;
 }
 
 function showUpgrades(){
@@ -1162,9 +1199,11 @@ function buyUpgrade(key){
 
 function startGame(){
   resumeAudio();
+  if (DAILY_MODE) seedRng(dailySeed()); else clearRng();   // 데일리=결정론 시드 / 일반=Math.random
   const meta = loadMeta();
   state = {
     meta,
+    daily: DAILY_MODE,
     gold: ECONOMY.startGold + upLevel(meta, 'gold') * 15,
     maxAlive: ECONOMY.maxAlive,
     lives: maxLivesFor(meta),
@@ -1397,11 +1436,11 @@ function fireReroll(){
   let idx, kind;
   if (candidates.length > 0){
     // 기존 ★1 타워를 제자리에서 다른 종류로 교체 (위치 유지)
-    idx = candidates[Math.floor(Math.random() * candidates.length)];
+    idx = candidates[Math.floor(rng() * candidates.length)];
     const oldKind = state.slots[idx].kind;
     state.slots[idx] = null;
     const pool = KIND_ORDER.filter(k => k !== oldKind);
-    kind = pool[Math.floor(Math.random() * pool.length)];
+    kind = pool[Math.floor(rng() * pool.length)];
   } else {
     const empties = emptySlots();
     if (empties.length === 0){
@@ -1412,7 +1451,7 @@ function fireReroll(){
       return;
     }
     // 종류를 먼저 정하고 그 사거리로 닿는 자리에 배치 (뽑기와 동일한 정책)
-    kind = KIND_ORDER[Math.floor(Math.random() * KIND_ORDER.length)];
+    kind = KIND_ORDER[Math.floor(rng() * KIND_ORDER.length)];
     idx = pickPlacementSlot(empties, TOWER_STATS[kind].tiers[1].range);
   }
   placeTowerIntoSlot(idx, kind, 1);
@@ -1440,13 +1479,13 @@ function summonRift(){
     return;
   }
   // 랜덤 광역 버프 선택
-  const buff = RIFT_BUFFS[Math.floor(Math.random() * RIFT_BUFFS.length)];
+  const buff = RIFT_BUFFS[Math.floor(rng() * RIFT_BUFFS.length)];
   state.riftBuff = buff.id;
   state.riftSpeedMult = buff.id === 'frenzy' ? 1.3 : 1;
   state.riftAlive += 1;
   // 매우 두꺼운 보스 — 웨이브가 깊을수록 강하되 상한을 둬 후반에도 도전 가능
   const riftMult = Math.min(12, 3.2 + state.waveIdx * 0.2);
-  const seg = Math.floor(Math.random() * TRACK_SEGS.length);
+  const seg = Math.floor(rng() * TRACK_SEGS.length);
   spawnEnemy('boss', seg, TRACK_SEG_LEN[seg] * 0.5, { rift: true, hpMult: riftMult, rewardMult: 0 });
   SFX.bossSkill && SFX.bossSkill();
   floatAt(W/2, GRID_Y + GRID_H/2 - 14, '☄ 균열 보스 — ' + buff.name, '#ff5577');
@@ -1882,7 +1921,7 @@ function performMergeAction(action){
   } else if (action === 'convert'){
     state.slots[b] = null;
     const others = KIND_ORDER.filter(k => k !== kind);
-    const newKind = others[Math.floor(Math.random() * others.length)];
+    const newKind = others[Math.floor(rng() * others.length)];
     placeTowerIntoSlot(a, newKind, tier + 1);
     state.slots[a].flash = 0.9;
     addExplosion(state.slots[a].x, state.slots[a].y, 32, state.slots[a].color);
@@ -2102,7 +2141,7 @@ function generateInfiniteWave(idx){
     mender:    3 + tier * 2
   };
 
-  const numTypes = 2 + Math.floor(Math.random() * 3); // 2..4
+  const numTypes = 2 + Math.floor(rng() * 3); // 2..4
   const picked = new Set();
   let safety = 0;
   while (picked.size < numTypes && safety++ < 20){
@@ -2115,9 +2154,9 @@ function generateInfiniteWave(idx){
     const tough = ENEMY_STATS[type].hp >= 110;
     const baseCount = tough ? (4 + tier * 2) : (10 + tier * 3);
     const intervalBase = 0.55 - tier * 0.025;
-    const interval = Math.max(0.18, intervalBase + Math.random() * 0.15);
+    const interval = Math.max(0.18, intervalBase + rng() * 0.15);
     entries.push([type, baseCount, interval, delay]);
-    delay += 0.8 + Math.random() * 2.2;
+    delay += 0.8 + rng() * 2.2;
   }
   return entries;
 }
@@ -2186,7 +2225,7 @@ function spawnEnemy(type, atSeg, atProgress, opts){
     leaked: false,
     dead: false,
     pulse: Math.random() * Math.PI * 2,
-    bossAbility: def.boss ? BOSS_ABILITIES[Math.floor(Math.random() * BOSS_ABILITIES.length)] : null,
+    bossAbility: def.boss ? BOSS_ABILITIES[Math.floor(rng() * BOSS_ABILITIES.length)] : null,
     abilityTimer: 4,
     abilityFlash: 0
   };
@@ -2304,7 +2343,7 @@ function openModifierChoice(){
   const pool = MODIFIERS.slice();
   const picks = [];
   for (let i = 0; i < 3 && pool.length; i++){
-    picks.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    picks.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
   }
   state.pendingModifier = true;
   state.modifierPicks = picks;
@@ -2335,7 +2374,7 @@ function tickModifierTimer(dt){
   const el = document.getElementById('mod-countdown');
   if (state.modifierTimer <= 0){
     const picks = state.modifierPicks || MODIFIERS;
-    const pick = picks[Math.floor(Math.random() * picks.length)];
+    const pick = picks[Math.floor(rng() * picks.length)];
     if (el) el.textContent = '⏱ 자동 선택: ' + pick.icon + ' ' + pick.name;
     applyModifier(pick.id, true);
     return;
@@ -2381,6 +2420,7 @@ function finishUI(won){
   meta.bestScore = Math.max(meta.bestScore || 0, state.score);
   meta.bestWave = Math.max(meta.bestWave || 0, state.wavesCleared);
   saveMeta(meta);
+  if (state.daily) saveDailyBest(state.wavesCleared);   // 데일리: 일자별 최고 웨이브 기록
   const reached = state.wavesCleared >= WAVES.length
     ? `Wave <b>${state.wavesCleared}</b> 도달 <span style="color:#c98aff">∞</span>`
     : `Wave <b>${state.wavesCleared}/${WAVES.length}</b>`;
@@ -2406,6 +2446,7 @@ function finishUI(won){
       <h1 style="font-size: 30px;">${won ? '🏆 클리어' : '💥 격침'}</h1>
       <div style="font-size: 44px; font-weight: 900; color:${won ? '#c98aff' : '#ff7799'}; line-height: 1; margin: 6px 0;">${state.score}</div>
       <div style="color:#9a8cd6; margin-bottom: 4px;">${reached} · ❤ ${state.lives}/${state.maxLives}</div>
+      ${state.daily ? `<div style="color:#ffd96b; font-weight:800; margin-bottom:6px;">☀ 오늘의 도전 ${todayKey()} · 오늘 최고 W${loadDailyBest()[todayKey()] || state.wavesCleared}</div>` : ''}
       <div style="color:#ffd96b; font-weight: 800; margin-bottom: 10px;">◆ CORE +${earned} <span style="color:#9a8cd6; font-weight: 600;">(보유 ${meta.cores})</span></div>
       ${isBest ? '<div class="ribbon" style="margin-bottom: 10px;">NEW BEST</div>' : ''}
       <div class="result-grid">

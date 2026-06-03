@@ -269,16 +269,32 @@ async function runGame(game){
   // also drive step/render directly in case the loop early-returns on phase
   for (let i = 0; i < 60; i++){ sandbox.step(1 / 60); sandbox.render(); }
 
+  // daily-seed determinism (roll-defense): same seed → identical roll sequence.
+  // startDaily() seeds from today's date; two runs the same day must match.
+  let deterministic = 'n/a';
+  if (typeof sandbox.startDaily === 'function' && typeof sandbox.doRoll === 'function' && typeof exp.getState === 'function'){
+    const seq = () => {
+      try { sandbox.startDaily(); } catch { return 'err'; }
+      for (let i = 0; i < 14; i++){ try { sandbox.doRoll(); } catch {} }
+      const s = exp.getState(); const ks = [];
+      if (s && Array.isArray(s.slots)) for (const slot of s.slots) if (slot) ks.push(slot.kind + slot.tier);
+      return ks.join(',');
+    };
+    const a = seq(), b = seq();
+    if (a !== b) throw new Error('daily-seed NOT deterministic:\n  run1: ' + a + '\n  run2: ' + b);
+    deterministic = a.length ? 'ok' : 'empty';
+  }
+
   const st = typeof exp.getState === 'function' ? exp.getState() : null;
   const enemies = (st && Array.isArray(st.enemies)) ? st.enemies.length : '?';
-  return { frames, placed, spawned, enemies, touch };
+  return { frames, placed, spawned, enemies, touch, deterministic };
 }
 
 let failed = false;
 for (const game of GAMES){
   try {
     const r = await runGame(game);
-    console.log(`✓ ${game.name.padEnd(14)} ${r.frames} frames · placed ${r.placed} · spawned ${r.spawned} types · touch ${r.touch} · alive ${r.enemies}`);
+    console.log(`✓ ${game.name.padEnd(14)} ${r.frames} frames · placed ${r.placed} · spawned ${r.spawned} types · touch ${r.touch} · seed ${r.deterministic} · alive ${r.enemies}`);
   } catch (e){
     failed = true;
     console.error(`✗ ${game.name}: ${e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n   ') : e}`);
