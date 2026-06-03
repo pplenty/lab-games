@@ -47,7 +47,7 @@ const TOWERS = {
     t:[null,{d:14,cd:1.30,r:152},{d:28,cd:1.18,r:170},{d:56,cd:1.07,r:188},{d:112,cd:.97,r:206},{d:224,cd:.88,r:226}] },
   guard:  { fire:'sweep',  anti:false, strong:['splitter','grunt'], weak:['tank'],
     t:[null,{d:5,cd:.32,r:56},{d:10,cd:.28,r:68},{d:20,cd:.25,r:80},{d:40,cd:.22,r:92},{d:80,cd:.19,r:106}] },
-  rocket: { fire:'missile',anti:true,  strong:['boss','tank'], weak:['runner'],
+  rocket: { fire:'missile',anti:true,  strong:['boss','tank','mender'], weak:['runner'],
     t:[null,{d:26,cd:1.6,r:150,aoe:38},{d:52,cd:1.46,r:168,aoe:46},{d:104,cd:1.33,r:186,aoe:54},{d:208,cd:1.21,r:204,aoe:62},{d:416,cd:1.10,r:224,aoe:72}] },
   chain:  { fire:'chain',  anti:false, strong:['grunt','runner'], weak:['shielded'],
     t:[null,{d:12,cd:.9,r:110,ch:2,cr:70,f:.62},{d:24,cd:.84,r:124,ch:3,cr:80,f:.66},{d:48,cd:.79,r:138,ch:4,cr:90,f:.70},{d:96,cd:.74,r:152,ch:5,cr:100,f:.73},{d:192,cd:.70,r:168,ch:7,cr:110,f:.76}] }
@@ -59,7 +59,9 @@ const MAX_GRADE = 5;
 const ENEMIES = {
   grunt:{hp:42,sp:46,g:5}, runner:{hp:28,sp:92,g:8}, tank:{hp:220,sp:30,g:24},
   swift:{hp:110,sp:72,g:15}, splitter:{hp:120,sp:42,g:17,split:2}, shielded:{hp:80,sp:36,g:20,shield:80},
-  flying:{hp:90,sp:78,g:22,flying:true}, regen:{hp:140,sp:38,g:22,regen:6}, boss:{hp:1100,sp:28,g:120,boss:true}
+  flying:{hp:90,sp:78,g:22,flying:true}, regen:{hp:140,sp:38,g:22,regen:6},
+  mender:{hp:150,sp:36,g:26},   // 주변 적 치유. 치유 메커닉은 미모델(탱키 적으로만 반영, 보수적)
+  boss:{hp:1100,sp:28,g:120,boss:true}
 };
 const WAVES = [
   [['grunt',10,.6]], [['grunt',14,.55]], [['runner',12,.5]],
@@ -99,7 +101,7 @@ function getWave(idx){
   if (idx < WAVES.length) return WAVES[idx];
   const cycle=idx-WAVES.length, tier=Math.floor(cycle/5), sub=cycle%5;
   if (sub===4){ const bc=1+Math.floor(tier/2); return [['boss',bc,4.5,1],['flying',8+tier*3,.5,2],['regen',4+tier,1.4,5]]; }
-  const wts={grunt:30,runner:25+tier*2,swift:18+tier*3,tank:12+tier*3,splitter:8+tier*3,shielded:6+tier*3,flying:4+tier*4,regen:3+tier*3};
+  const wts={grunt:30,runner:25+tier*2,swift:18+tier*3,tank:12+tier*3,splitter:8+tier*3,shielded:6+tier*3,flying:4+tier*4,regen:3+tier*3,mender:3+tier*2};
   const num=2+Math.floor(Math.random()*3), picked=new Set();
   let g=0; while(picked.size<num && g++<20){ const tot=Object.values(wts).reduce((a,b)=>a+b,0); let r=Math.random()*tot,ch='grunt'; for(const k in wts){ if(r<wts[k]){ch=k;break;} r-=wts[k]; } picked.add(ch); }
   const ent=[]; let delay=0;

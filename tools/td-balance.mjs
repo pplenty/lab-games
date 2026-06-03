@@ -23,7 +23,8 @@ const KIND_WEIGHT = { pulse:20, burst:16, frost:16, rail:12, guard:14, rocket:11
 const ENEMIES = {
   grunt:{hp:42,sp:46,g:5}, runner:{hp:28,sp:92,g:8}, tank:{hp:220,sp:30,g:24},
   swift:{hp:110,sp:72,g:15}, splitter:{hp:120,sp:42,g:17,split:2}, shielded:{hp:80,sp:36,g:20,shield:80},
-  flying:{hp:90,sp:78,g:22,flying:true}, regen:{hp:140,sp:38,g:22,regen:6}, boss:{hp:1100,sp:28,g:120}
+  flying:{hp:90,sp:78,g:22,flying:true}, regen:{hp:140,sp:38,g:22,regen:6},
+  mender:{hp:150,sp:36,g:26}, boss:{hp:1100,sp:28,g:120}
 };
 const WAVES = [
   [['grunt',10,.6]], [['grunt',14,.55]], [['runner',12,.5]],

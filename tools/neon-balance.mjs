@@ -32,7 +32,7 @@ const TOWERS = {
     lv:[null,{d:12,cd:1.20},{d:26,cd:1.05,up:60},{d:58,cd:.92,up:120}] },
   frost: { cost:50, fire:'slow',   antiAir:false, strongVs:['shield'],          weakVs:[],
     lv:[null,{d:3,cd:.60},{d:8,cd:.55,up:45},{d:18,cd:.50,up:95}] },
-  rail:  { cost:80, fire:'pierce', antiAir:true,  strongVs:['flyer','tank'],    weakVs:['swarm'],
+  rail:  { cost:80, fire:'pierce', antiAir:true,  strongVs:['flyer','tank','medic'], weakVs:['swarm'],
     lv:[null,{d:14,cd:1.50},{d:32,cd:1.35,up:85},{d:74,cd:1.20,up:170}] }
 };
 const TOWER_ORDER = ['pulse','burst','frost','rail'];
@@ -46,6 +46,7 @@ const ENEMIES = {
   tank:  {hp:130,sp:36,  g:25, armored:true},
   shield:{hp:70, sp:48,  g:20, shield:60},
   flyer: {hp:72, sp:70,  g:22, flying:true},
+  medic: {hp:72, sp:46,  g:20, heal:6},
   boss:  {hp:900,sp:30,  g:120,boss:true}
 };
 const WAVES = [

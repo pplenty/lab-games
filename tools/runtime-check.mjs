@@ -175,7 +175,8 @@ function largestScript(html){
 // (ENEMIES/TOWERS) and a live getter for the reassignable `state` binding.
 const EPILOGUE = `
 ;globalThis.__td = {
-  ENEMIES: (typeof ENEMIES !== 'undefined') ? ENEMIES : null,
+  ENEMIES: (typeof ENEMIES !== 'undefined') ? ENEMIES
+         : (typeof ENEMY_STATS !== 'undefined') ? ENEMY_STATS : null,
   TOWERS:  (typeof TOWERS  !== 'undefined') ? TOWERS  : null,
   getState: () => (typeof state !== 'undefined' ? state : null)
 };`;
@@ -217,6 +218,12 @@ async function runGame(game){
     TOWER_CELLS.forEach(([cx, cy], i) => { try { sandbox.placeTower(types[i % types.length], cx, cy); placed++; } catch {} });
   } else if (typeof sandbox.doRoll === 'function'){
     for (let i = 0; i < 8; i++){ try { sandbox.doRoll(); placed++; } catch {} }
+  }
+
+  // bake every enemy sprite — exercises the per-type draw code (drawEnemyShape /
+  // drawEnemyBodyLocal) for ALL enemies, even ones not on-field this run
+  if (typeof sandbox.getEnemySprite === 'function' && ENEMIES){
+    for (const type of Object.keys(ENEMIES)){ try { sandbox.getEnemySprite(type); } catch {} }
   }
 
   // exercise every enemy type through the spawn path (try both signatures)

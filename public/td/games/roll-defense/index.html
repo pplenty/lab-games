@@ -691,7 +691,7 @@ const TOWER_STATS = {
   },
   rocket: {
     name: 'ROCKET', color: '#ffd96b', fire: 'missile', antiAir: true,
-    strongVs: ['boss', 'tank'], weakVs: ['runner'],
+    strongVs: ['boss', 'tank', 'mender'], weakVs: ['runner'],
     tiers: [
       null,
       { dmg:  26, range: 150, cd: 1.60, missileSpeed: 280, aoeRadius: 38 },
@@ -733,6 +733,7 @@ const ENEMY_STATS = {
   shielded: { hp:  80, speed: 36, gold: 20, r: 12, color:'#bcc6ff', name:'SHIELD', desc:'쉴드 80 먼저, 본체 데미지', shield:80 },
   flying:   { hp:  90, speed: 78, gold: 22, r: 10, color:'#7cc4ff', name:'FLYING', desc:'RAIL · ROCKET만 명중 (안티에어)', flying:true },
   regen:    { hp: 140, speed: 38, gold: 22, r: 12, color:'#56e6a2', name:'REGEN',  desc:'초당 6 HP 회복 (한 방에 부숴야)', regen:6 },
+  mender:   { hp: 150, speed: 36, gold: 26, r: 12, color:'#7be0c0', name:'MENDER', desc:'주변 적을 치유 · 먼저 끊어야', heal:6, healRadius:58 },
   boss:     { hp:1100, speed: 28, gold:120, r: 17, color:'#ff5577', name:'BOSS',   desc:'매우 두꺼움 · 무작위 능력 (소환/치유/수호/질주)', boss:true }
 };
 
@@ -787,10 +788,10 @@ const WAVES = [
   [['shielded', 5, 1.2], ['grunt', 12, 0.4, 2.0]],
   [['boss', 1, 0]],
   [['regen', 6, 1.1], ['runner', 14, 0.4, 2.0]],
-  [['tank', 7, 1.0], ['flying', 8, 0.65, 2.0]],
+  [['tank', 7, 1.0], ['flying', 8, 0.65, 2.0], ['mender', 2, 1.6, 4.0]],
   [['swift', 16, 0.45], ['regen', 5, 1.4, 4.0]],
   [['boss', 2, 6.0], ['splitter', 6, 0.7, 4.0]],
-  [['shielded', 8, 0.9], ['flying', 10, 0.55, 2.0], ['regen', 4, 1.6, 6.0]],
+  [['shielded', 8, 0.9], ['flying', 10, 0.55, 2.0], ['regen', 4, 1.6, 6.0], ['mender', 3, 1.5, 8.0]],
   [['grunt', 28, 0.3], ['flying', 14, 0.5, 4.0], ['regen', 6, 1.4, 8.0], ['tank', 6, 0.9, 10.0], ['boss', 2, 5.0, 16.0]]
 ];
 
@@ -2095,7 +2096,8 @@ function generateInfiniteWave(idx){
     splitter:  8 + tier * 3,
     shielded:  6 + tier * 3,
     flying:    4 + tier * 4,
-    regen:     3 + tier * 3
+    regen:     3 + tier * 3,
+    mender:    3 + tier * 2
   };
 
   const numTypes = 2 + Math.floor(Math.random() * 3); // 2..4
@@ -2175,6 +2177,7 @@ function spawnEnemy(type, atSeg, atProgress, opts){
     boss: !!def.boss,
     rift: !!opts.rift,
     regen: (def.regen || 0) * regenMult + riftRegen,
+    heal: (def.heal || 0) * regenMult,           // MENDER: 주변 적 치유량 (무한 스케일)
     rushUntil: 0,
     segIdx, segProgress,
     laps: 0,
@@ -2618,6 +2621,23 @@ function step(dt){
       e.hp = Math.min(e.maxHp, e.hp + e.regen * dt);
     }
     e.pulse = (e.pulse || 0) + dt * 4;
+  }
+
+  // MENDER: 주변 부상 적을 치유 (0.4s 간격, 가벼운 시각)
+  for (const e of state.enemies){
+    if (e.dead || !e.heal) continue;
+    e.healTimer = (e.healTimer || 0) - dt;
+    if (e.healTimer > 0) continue;
+    e.healTimer = 0.4;
+    const hr = ENEMY_STATS[e.type].healRadius || 56;
+    const r2 = hr * hr;
+    let healed = false;
+    for (const o of state.enemies){
+      if (o === e || o.dead || o.hp >= o.maxHp) continue;
+      const dx = o.x - e.x, dy = o.y - e.y;
+      if (dx * dx + dy * dy <= r2){ o.hp = Math.min(o.maxHp, o.hp + e.heal); healed = true; }
+    }
+    if (healed) floatAt(e.x, e.y - 8, '＋', '#7be0c0');
   }
 
   // 보스 능력 (역순회 — triggerBossAbility가 spawn으로 배열 push 가능)
@@ -3998,6 +4018,21 @@ function drawEnemyShape(c, x, y, type, color, r, time){
     c.lineWidth = 1;
     c.beginPath();
     c.arc(0, 0, r + 2, 0, Math.PI * 2);
+    c.stroke();
+    c.globalAlpha = 1;
+  } else if (type === 'mender'){
+    // 멘더(타 적 치유): 큰 원 + 굵은 정십자 + 외곽 ring (정적)
+    c.beginPath();
+    c.arc(0, 0, r, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#fff';
+    c.fillRect(-r * 0.62, -2.2, r * 1.24, 4.4);
+    c.fillRect(-2.2, -r * 0.62, 4.4, r * 1.24);
+    c.strokeStyle = '#fff';
+    c.globalAlpha = 0.5;
+    c.lineWidth = 1.2;
+    c.beginPath();
+    c.arc(0, 0, r + 3, 0, Math.PI * 2);
     c.stroke();
     c.globalAlpha = 1;
   } else if (type === 'boss'){
