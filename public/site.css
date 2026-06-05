@@ -172,6 +172,20 @@ a {
   color: #5b3aaf;
 }
 
+.collection-card-rogue::before {
+  background: #c0721a;
+}
+
+.collection-card-rogue .collection-icon {
+  background: #f7ecd9;
+  color: #a85a10;
+}
+
+.collection-card-rogue .status {
+  background: #f7ecd9;
+  color: #a85a10;
+}
+
 .collection-card h2,
 .game-row h2 {
   max-width: 440px;

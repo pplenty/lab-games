@@ -11,7 +11,8 @@ import vm from 'node:vm';
 
 const GAMES = [
   { name: 'roll-defense', file: 'public/td/games/roll-defense/index.html' },
-  { name: 'neon-defense', file: 'public/td/games/neon-defense/index.html' }
+  { name: 'neon-defense', file: 'public/td/games/neon-defense/index.html' },
+  { name: 'rogue-dungeon', file: 'public/rogue/index.html', kind: 'rogue' }
 ];
 const FRAMES = 360;          // ~6s at 60fps
 const TOWER_CELLS = [[0,0],[2,0],[0,2],[14,0],[0,19],[3,3],[5,5],[8,8]];
@@ -183,6 +184,42 @@ const EPILOGUE = `
 
 const TD_CORE = 'public/td/lib/td-core.js';
 
+// Turn-based roguelike: startGame() then drive act() with a BFS-to-stairs
+// auto-pilot that loots, quaffs when low, and descends — fail on any throw.
+function runRogue(sandbox){
+  const need = ['startGame', 'render', 'act'];
+  const missing = need.filter(fn => typeof sandbox[fn] !== 'function');
+  if (missing.length) throw new Error(`rogue missing globals: ${missing.join(', ')}`);
+  const getState = sandbox.__td && sandbox.__td.getState;
+  const st = () => (getState ? getState() : null);
+  const COLS = 24, ROWS = 22;
+  sandbox.startGame();
+  const bfsToStairs = () => {
+    const s = st(); if (!s || !s.grid) return null;
+    let sx = -1, sy = -1;
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (s.grid[y][x] === 2){ sx = x; sy = y; }
+    if (sx < 0) return null; const p = s.player; if (p.x === sx && p.y === sy) return null;
+    const seen = new Set([p.x + ',' + p.y]); const q = [[p.x, p.y, null]]; const D = [[0,-1],[0,1],[-1,0],[1,0]];
+    while (q.length){ const [cx, cy, first] = q.shift();
+      for (const [dx, dy] of D){ const nx = cx + dx, ny = cy + dy, k = nx + ',' + ny;
+        if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS || seen.has(k) || s.grid[ny][nx] === 0) continue;
+        const f = first || [dx, dy]; if (nx === sx && ny === sy) return f; seen.add(k); q.push([nx, ny, f]); } }
+    return null;
+  };
+  let moves = 0;
+  for (; moves < 600; moves++){
+    const s = st(); if (!s || s.over || s.depth >= 4) break;
+    const p = s.player;
+    if (p.hp < p.maxhp * 0.5 && p.potions > 0){ try { sandbox.quaff(); } catch (e){ throw new Error('quaff threw: ' + e.message); } continue; }
+    const mv = bfsToStairs(); if (!mv) break;
+    try { sandbox.act(mv[0], mv[1]); } catch (e){ throw new Error('act threw: ' + e.message); }
+  }
+  for (let i = 0; i < 5; i++) sandbox.render();
+  const s = st();
+  const alive = s ? (s.enemies || []).length : '?';
+  return { summary: `${moves} moves · depth ${s ? s.depth : '?'} · kills ${s ? s.kills : '?'} · ${s && s.over ? 'died' : 'alive'} · ${alive} foes` };
+}
+
 async function runGame(game){
   const html = await readFile(game.file, 'utf8');
   const code = largestScript(html);
@@ -199,6 +236,9 @@ async function runGame(game){
 
   // load: runs the script body incl. init() at the bottom, then the epilogue
   vm.runInContext(code + EPILOGUE, sandbox, { filename: game.file, timeout: 8000 });
+
+  // turn-based games (rogue) drive via act() instead of the RAF loop
+  if (game.kind === 'rogue') return runRogue(sandbox);
 
   const need = ['startGame', 'step', 'render', 'loop'];
   const missing = need.filter(fn => typeof sandbox[fn] !== 'function');
@@ -294,7 +334,8 @@ let failed = false;
 for (const game of GAMES){
   try {
     const r = await runGame(game);
-    console.log(`✓ ${game.name.padEnd(14)} ${r.frames} frames · placed ${r.placed} · spawned ${r.spawned} types · touch ${r.touch} · seed ${r.deterministic} · alive ${r.enemies}`);
+    const detail = r.summary || `${r.frames} frames · placed ${r.placed} · spawned ${r.spawned} types · touch ${r.touch} · seed ${r.deterministic} · alive ${r.enemies}`;
+    console.log(`✓ ${game.name.padEnd(14)} ${detail}`);
   } catch (e){
     failed = true;
     console.error(`✗ ${game.name}: ${e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n   ') : e}`);

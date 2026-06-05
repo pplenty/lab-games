@@ -9,6 +9,7 @@ import vm from 'node:vm';
 import path from 'node:path';
 
 const GAME_DIR = 'public/td/games';
+const EXTRA_PAGES = ['public/rogue/index.html'];     // single-file games outside td/games
 const EXTRA_FILES = ['public/td/lib/td-core.js'];   // shared module (if present)
 
 async function gamePages(){
@@ -35,8 +36,8 @@ async function exists(p){ try { await readFile(p); return true; } catch { return
 const failures = [];
 let checked = 0;
 
-// 1) inline game scripts
-for (const page of await gamePages()){
+// 1) inline game scripts (td games + standalone pages)
+for (const page of [...await gamePages(), ...EXTRA_PAGES]){
   let html;
   try { html = await readFile(page, 'utf8'); }
   catch { continue; }

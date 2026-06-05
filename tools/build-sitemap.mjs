@@ -46,7 +46,8 @@ const rootUrls = [
     loc: `${baseUrl}/td/${game.path}`,
     changefreq: 'weekly',
     priority: '0.6'
-  }))
+  })),
+  { loc: `${baseUrl}/rogue/`, changefreq: 'weekly', priority: '0.7' }
 ];
 
 const brainUrls = [
