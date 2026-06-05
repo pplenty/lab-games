@@ -35,6 +35,18 @@
       "duration": "15-25분",
       "slug": "roll-defense",
       "path": "games/roll-defense/"
+    },
+    {
+      "id": "rune-defense",
+      "title": "룬 디펜스",
+      "short": "자가교차 미로 · 원소 4종×5등급 · 합성 · 별 업글 · 보스 소환",
+      "icon": "U",
+      "tags": ["strategy", "arcade", "focus"],
+      "tagLabels": ["전략", "아케이드", "집중"],
+      "accent": "#ff7be0",
+      "duration": "15-25분",
+      "slug": "rune-defense",
+      "path": "games/rune-defense/"
     }
   ]
 }

@@ -12,6 +12,7 @@ import vm from 'node:vm';
 const GAMES = [
   { name: 'roll-defense', file: 'public/td/games/roll-defense/index.html' },
   { name: 'neon-defense', file: 'public/td/games/neon-defense/index.html' },
+  { name: 'rune-defense', file: 'public/td/games/rune-defense/index.html' },
   { name: 'rogue-dungeon', file: 'public/rogue/index.html', kind: 'rogue' }
 ];
 const FRAMES = 360;          // ~6s at 60fps
@@ -179,6 +180,8 @@ const EPILOGUE = `
   ENEMIES: (typeof ENEMIES !== 'undefined') ? ENEMIES
          : (typeof ENEMY_STATS !== 'undefined') ? ENEMY_STATS : null,
   TOWERS:  (typeof TOWERS  !== 'undefined') ? TOWERS  : null,
+  BUILD_CELLS: (typeof BUILD_CELLS !== 'undefined') ? BUILD_CELLS : null,
+  TILE: (typeof TILE !== 'undefined') ? TILE : null,
   getState: () => (typeof state !== 'undefined' ? state : null)
 };`;
 
@@ -258,6 +261,11 @@ async function runGame(game){
     TOWER_CELLS.forEach(([cx, cy], i) => { try { sandbox.placeTower(types[i % types.length], cx, cy); placed++; } catch {} });
   } else if (typeof sandbox.doRoll === 'function'){
     for (let i = 0; i < 8; i++){ try { sandbox.doRoll(); placed++; } catch {} }
+  } else if (typeof sandbox.handleTap === 'function' && exp.BUILD_CELLS){
+    // tap-to-build games (rune-defense): cheat gold, tap build-cell centers
+    const st0 = typeof exp.getState === 'function' ? exp.getState() : null; if (st0) st0.gold = 999999;
+    const T = exp.TILE || 40;
+    for (const [c, r] of exp.BUILD_CELLS.slice(0, 16)){ try { sandbox.handleTap((c - 0.5) * T, (r - 0.5) * T); placed++; } catch {} }
   }
 
   // bake every enemy sprite — exercises the per-type draw code (drawEnemyShape /
