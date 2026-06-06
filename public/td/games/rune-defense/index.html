@@ -326,7 +326,7 @@ function startGame(){
     selected: null,             // cellKey
     upg: { fire: 0, frost: 0, tesla: 0 },
     quests: questDefs(),
-    bossKills: 0, kills: 0, waveLeaked: 0,
+    bossKills: 0, kills: 0, waveLeaked: 0, shake: 0,
     bossCooldown: 0,
     over: false, won: false,
   };
@@ -509,7 +509,7 @@ function step(dt){
   // leak
   for (const e of state.enemies){
     if (e.leaked && !e.dead){
-      e.dead = true; state.waveLeaked++; state.life -= e.boss ? BOSS_LEAK : 1; SFX.leak();
+      e.dead = true; state.waveLeaked++; state.life -= e.boss ? BOSS_LEAK : 1; state.shake = e.boss ? 0.5 : 0.3; SFX.leak();
       addFloat(px(END_CELL[0]), py(END_CELL[1]), '-' + (e.boss ? BOSS_LEAK : 1) + '♥', '#ff5577');
       if (state.life <= 0){ state.life = 0; return gameOver(false); }
     }
@@ -570,7 +570,16 @@ function endWave(){
   checkQuests();
   if (state.waveIdx >= WAVES.length && !state.won){ state.won = true; return gameOver(true, true); }
   refreshAll();
-  setOverlay('<h2>웨이브 ' + state.waveIdx + ' 클리어</h2><p>+' + (10 + state.waveIdx * 3) + 'G' + (state.waveLeaked === 0 ? ' · 무피해 +20G' : '') + '<br>건설/합성/강화 후 다음 웨이브</p>', false);
+  // 다음 웨이브 미리보기
+  const nw = getWave(state.waveIdx);
+  const tally = {};
+  for (const e of nw){ tally[e[0]] = (tally[e[0]] || 0) + e[1]; }
+  const preview = Object.keys(tally).map((k) => '<span style="color:' + ENEMIES[k].color + '">' + ENEMIES[k].name + '×' + tally[k] + '</span>').join(' · ');
+  setOverlay('<h2>웨이브 ' + state.waveIdx + ' 클리어</h2>' +
+    '<p>+' + (10 + state.waveIdx * 3) + 'G' + (state.waveLeaked === 0 ? ' · 무피해 +20G' : '') + (state.waveIdx % 3 === 0 ? ' · +1⭐' : '') + '</p>' +
+    '<p style="font-size:11px;margin:0 0 10px;">다음 웨이브: ' + preview + '</p>' +
+    '<div><button class="btn primary" id="ov-next" style="padding:10px 24px;">다음 웨이브 ▶</button></div>', false);
+  const nb = document.getElementById('ov-next'); if (nb) nb.onclick = startWave;
 }
 
 function fireTower(t){
@@ -599,13 +608,21 @@ function fireTower(t){
     for (let i = 0; i <= g.chains; i++){ if (!cur) break; applyDmg(cur, dmg * counterMult(def, cur)); hit.add(cur);
       let nx = null, bd = g.chainRange * g.chainRange;
       for (const e of state.enemies){ if (e.dead || hit.has(e)) continue; if (e.flying && !def.antiAir) continue; const dx = e.x - cur.x, dy = e.y - cur.y, d2 = dx*dx + dy*dy; if (d2 <= bd){ bd = d2; nx = e; } }
-      if (cur !== best || nx) addBeam(cur.x, cur.y, (nx || cur).x, (nx || cur).y, def.color, 0.08);
+      if (cur !== best || nx) addBeam(cur.x, cur.y, (nx || cur).x, (nx || cur).y, def.color, 0.08, true);
       cur = nx; dmg *= g.falloff; } SFX.hit(); }
   return true;
 }
 
 /* ---------- effects ---------- */
-function addBeam(x1, y1, x2, y2, color, life){ if (state.beams.length > 70) return; state.beams.push({ x1, y1, x2, y2, color, life, maxLife: life }); }
+function addBeam(x1, y1, x2, y2, color, life, jagged){
+  if (state.beams.length > 70) return;
+  const b = { x1, y1, x2, y2, color, life, maxLife: life };
+  if (jagged){ const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1, nx = -dy / len, ny = dx / len;
+    const pts = [{ x: x1, y: y1 }], seg = 3;
+    for (let i = 1; i < seg; i++){ const f = i / seg, off = (Math.random() - 0.5) * Math.min(16, len * 0.4); pts.push({ x: x1 + dx * f + nx * off, y: y1 + dy * f + ny * off }); }
+    pts.push({ x: x2, y: y2 }); b.pts = pts; }
+  state.beams.push(b);
+}
 function addExplosion(x, y, r, color){ if (state.parts.length > 120) return; state.parts.push({ x, y, r, maxR: r, life: 0.3, maxLife: 0.3, color, ring: true });
   const n = Math.min(6, 2 + (r / 16) | 0); for (let i = 0; i < n; i++){ const a = Math.random() * Math.PI * 2, sp = 30 + Math.random() * 70; state.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 0.3 + Math.random() * 0.2, maxLife: 0.5, color, sz: 1.5 + Math.random() * 2 }); } }
 function addFloat(x, y, text, color){ if (state.floats.length > 30) return; state.floats.push({ x, y, text, color, life: 0.9 }); }
@@ -617,6 +634,10 @@ function render(){
   if (!ctx) return;
   if (!BG) buildBg();
   ctx.clearRect(0, 0, W, H);
+  // 화면 흔들림 (누수 시)
+  let shx = 0, shy = 0;
+  if (state.shake > 0){ const m = state.shake / 0.3 * 4.5; shx = (Math.random() - 0.5) * m; shy = (Math.random() - 0.5) * m; }
+  ctx.save(); ctx.translate(shx, shy);
   ctx.drawImage(BG, 0, 0, W, H);
 
   // 애니메이션 경로 흐름 (진행 방향)
@@ -637,6 +658,10 @@ function render(){
     ctx.beginPath(); ctx.arc(t.x, t.y, g.range, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = 'rgba(140,90,255,0.12)'; ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect((t.c - 1) * TILE + 2, (t.r - 1) * TILE + 2, TILE - 4, TILE - 4);
+    // 합성 가능 대상 하이라이트 (같은 등급)
+    if (t.grade < MAX_GRADE){ const mp = (0.4 + 0.35 * Math.sin(state.time * 5)).toFixed(2);
+      ctx.strokeStyle = 'rgba(130,255,150,' + mp + ')'; ctx.lineWidth = 2.5;
+      for (const k in state.towers){ const o = state.towers[k]; if (o !== t && o.grade === t.grade) ctx.strokeRect((o.c - 1) * TILE + 3, (o.r - 1) * TILE + 3, TILE - 6, TILE - 6); } }
   }
 
   // towers
@@ -648,8 +673,9 @@ function render(){
   // beams (글로우: 넓은 흐림 + 좁은 선명)
   ctx.lineCap = 'round';
   for (const b of state.beams){ const a = Math.max(0, b.life / b.maxLife); ctx.strokeStyle = b.color;
-    ctx.globalAlpha = a * 0.3; ctx.lineWidth = 5.5; ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke();
-    ctx.globalAlpha = a; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); ctx.stroke();
+    const trace = () => { ctx.beginPath(); if (b.pts){ ctx.moveTo(b.pts[0].x, b.pts[0].y); for (let i = 1; i < b.pts.length; i++) ctx.lineTo(b.pts[i].x, b.pts[i].y); } else { ctx.moveTo(b.x1, b.y1); ctx.lineTo(b.x2, b.y2); } ctx.stroke(); };
+    ctx.globalAlpha = a * 0.3; ctx.lineWidth = 5.5; trace();
+    ctx.globalAlpha = a; ctx.lineWidth = 2; trace();
     ctx.globalAlpha = 1; }
   // particles
   for (const p of state.parts){ const a = Math.max(0, p.life / p.maxLife);
@@ -660,6 +686,7 @@ function render(){
   ctx.font = '700 12px ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const f of state.floats){ ctx.globalAlpha = Math.max(0, f.life / 0.9); ctx.fillStyle = f.color; ctx.fillText(f.text, f.x, f.y); }
   ctx.globalAlpha = 1;
+  ctx.restore();
 }
 const TAU = Math.PI * 2;
 function hexPath(x, y, r){
@@ -715,13 +742,51 @@ function drawTower(t){
   for (let i = 0; i < g; i++) ctx.fillRect(x - (g * 3 - 1) / 2 + i * 3, y + 11, 2, 2);
 }
 function drawEnemy(e){
-  if (e.flash > 0){ ctx.globalAlpha = 0.5; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 2, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; e.flash = 0; }
-  ctx.fillStyle = e.color;
-  if (e.boss){ ctx.beginPath(); for (let i = 0; i < 10; i++){ const ang = i / 10 * Math.PI * 2 - Math.PI/2; const rr = i % 2 ? e.r * 0.55 : e.r; const x = e.x + Math.cos(ang) * rr, y = e.y + Math.sin(ang) * rr; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); }
-  else if (e.flying){ ctx.beginPath(); ctx.arc(e.x, e.y - 3, e.r, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(e.x - e.r - 2, e.y - 3); ctx.lineTo(e.x + e.r + 2, e.y - 3); ctx.stroke(); }
-  else { ctx.beginPath(); ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2); ctx.fill(); }
-  if (e.slowUntil > state.time){ ctx.strokeStyle = '#5cd6ea'; ctx.globalAlpha = 0.7; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(e.x, e.y, e.r + 2, 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1; }
-  if (e.hp < e.maxhp){ const w = e.r * 2; ctx.fillStyle = '#3a0e1e'; ctx.fillRect(e.x - e.r, e.y - e.r - 5, w, 2.5); ctx.fillStyle = e.boss ? '#ff5577' : '#7bff9c'; ctx.fillRect(e.x - e.r, e.y - e.r - 5, w * Math.max(0, e.hp / e.maxhp), 2.5); }
+  const x = e.x, y = e.y, r = e.r, col = e.color, tt = state.time;
+  let ang = 0; { const a = PATH[e.seg], b = PATH[e.seg + 1]; if (a && b) ang = Math.atan2(b.y - a.y, b.x - a.x); }
+  if (e.flash > 0){ ctx.globalAlpha = 0.55; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, r + 2, 0, TAU); ctx.fill(); ctx.globalAlpha = 1; e.flash = 0; }
+  ctx.fillStyle = col;
+  if (e.boss){
+    const pl = 1 + 0.05 * Math.sin(tt * 5);
+    ctx.save(); ctx.translate(x, y); ctx.rotate(tt * 0.4); ctx.scale(pl, pl);
+    ctx.beginPath(); for (let i = 0; i < 10; i++){ const a = i / 10 * TAU - Math.PI / 2; const rr = i % 2 ? r * 0.5 : r; const xx = Math.cos(a) * rr, yy = Math.sin(a) * rr; if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy); } ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, r * 0.28, 0, TAU); ctx.fill();
+  } else if (e.type === 'runner'){
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+    ctx.beginPath(); ctx.moveTo(r, 0); ctx.lineTo(-r * 0.8, r * 0.7); ctx.lineTo(-r * 0.3, 0); ctx.lineTo(-r * 0.8, -r * 0.7); ctx.closePath(); ctx.fill(); ctx.restore();
+  } else if (e.type === 'swarm'){
+    ctx.beginPath(); ctx.arc(x, y, r * 0.7, 0, TAU); ctx.fill();
+    for (let i = 0; i < 3; i++){ const a = tt * 2 + i / 3 * TAU; ctx.beginPath(); ctx.arc(x + Math.cos(a) * (r + 1.5), y + Math.sin(a) * (r + 1.5), 1.6, 0, TAU); ctx.fill(); }
+  } else if (e.type === 'splitter'){
+    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.arc(x - r * 0.32, y, r * 0.32, 0, TAU); ctx.arc(x + r * 0.32, y, r * 0.32, 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(8,3,28,0.85)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r); ctx.stroke();
+  } else if (e.type === 'armored'){
+    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#e7ebff'; ctx.lineWidth = 2; ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.arc(x, y, r - 2, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, r - 5, Math.PI * 1.2, Math.PI * 1.8); ctx.stroke(); ctx.globalAlpha = 1;
+  } else if (e.type === 'mender'){
+    const hp = 0.5 + 0.5 * Math.sin(tt * 3); ctx.globalAlpha = 0.16 + 0.12 * hp; ctx.beginPath(); ctx.arc(x, y, (e.healRadius || 60) * 0.34, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillRect(x - r * 0.55, y - 2, r * 1.1, 4); ctx.fillRect(x - 2, y - r * 0.55, 4, r * 1.1);
+  } else if (e.flying){
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(x, y + 5, r * 0.7, r * 0.28, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y - 3, r, 0, TAU); ctx.fill();
+    const wf = Math.sin(tt * 14) * 2.5; ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(x - r - 3, y - 3 + wf); ctx.lineTo(x + r + 3, y - 3 - wf); ctx.stroke();
+  } else {                            // grunt
+    ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.34, 0, TAU); ctx.fill();
+  }
+  // 슬로우 시각 (서리 결정 + 링)
+  if (e.slowUntil > state.time){
+    ctx.strokeStyle = '#9fe8ff'; ctx.globalAlpha = 0.85; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, r + 2.5, 0, TAU); ctx.stroke();
+    ctx.fillStyle = '#d4f4ff'; for (let i = 0; i < 3; i++){ const a = i / 3 * TAU + tt; ctx.fillRect(x + Math.cos(a) * (r + 2) - 1, y + Math.sin(a) * (r + 2) - 1, 2, 2); } ctx.globalAlpha = 1;
+  }
+  // hp bar
+  if (e.hp < e.maxhp){ const w = r * 2; ctx.fillStyle = '#3a0e1e'; ctx.fillRect(x - r, y - r - 5, w, 2.5); ctx.fillStyle = e.boss ? '#ff5577' : '#7bff9c'; ctx.fillRect(x - r, y - r - 5, w * Math.max(0, e.hp / e.maxhp), 2.5); }
 }
 
 /* ============================================================
@@ -817,6 +882,7 @@ function loop(ts){
   // 각 프레임을 안정적 고정 스텝(<=0.05s)으로 진행, 배속만큼 서브스텝 반복
   const frameDt = Math.min(0.05, lastTs ? (ts - lastTs) / 1000 : 0); lastTs = ts;
   if (!state.over){ for (let i = 0; i < state.speed; i++) step(frameDt); }
+  if (state.shake > 0) state.shake = Math.max(0, state.shake - frameDt);   // 흔들림 감쇠 (페이즈 무관)
   if (state.phase === 'wave'){ refreshHud(); if (state.bossCooldown > 0 || H_.boss.disabled !== !(state.phase === 'wave' && state.bossCooldown <= 0)) refreshControls(); }
   render();
 }
