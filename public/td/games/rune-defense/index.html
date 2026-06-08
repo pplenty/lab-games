@@ -61,6 +61,18 @@
     background:rgba(18,9,40,.4); border-radius:8px; padding:4px 8px; }
   .log .new{ color:#e3d9f8; }
   .hint{ text-align:center; color:#6f63a8; font-size:10.5px; margin-top:9px; }
+  .wave-banner{ display:none; margin-top:8px; background:linear-gradient(180deg,rgba(34,18,72,.7),rgba(22,11,48,.7));
+    border:1px solid rgba(160,120,255,.26); border-radius:10px; padding:8px 11px; font-size:12px; line-height:1.6; text-align:center;
+    animation:bannerIn .25s ease; }
+  .wave-banner.on{ display:block; } .wave-banner b{ color:#86d6a8; font-weight:800; }
+  @keyframes bannerIn{ from{ opacity:0; transform:translateY(-4px); } to{ opacity:1; transform:none; } }
+  .b-wave-next{ box-shadow:0 0 0 0 rgba(140,92,255,.5); animation:nextPulse 1.4s ease-in-out infinite; }
+  @keyframes nextPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(140,92,255,.45); } 50%{ box-shadow:0 0 0 5px rgba(140,92,255,0); } }
+  .debug{ border-color:rgba(255,140,80,.4); background:rgba(40,20,14,.5); }
+  .debug h3{ color:#ffae7a; }
+  .dbg-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:5px; }
+  .dbg-grid .btn{ padding:7px 2px; font-size:11px; font-weight:700; }
+  .dbg-grid .btn.act{ background:rgba(120,30,30,.55); border-color:rgba(255,120,90,.5); color:#ffd0c0; }
   @media(max-width:440px){ .wrap{ padding-top:46px; } .stat .v{ font-size:13.5px; } }
 </style>
 </head>
@@ -78,6 +90,7 @@
     <canvas id="stage" width="480" height="480"></canvas>
     <div class="overlay on" id="overlay"></div>
   </div>
+  <div class="wave-banner" id="wave-banner"></div>
 
   <div class="panel">
     <h3>⭐ 속성 별 업그레이드 (무속성=전체 수혜)</h3>
@@ -89,7 +102,7 @@
   </div>
 
   <div class="panel">
-    <div class="sel" id="sel-info">빈 칸을 눌러 <b>랜덤 룬</b> 건설 · 룬을 눌러 선택 · 같은 등급끼리 합성</div>
+    <div class="sel" id="sel-info">빈 칸을 눌러 <b>랜덤 룬</b> 건설 · 룬을 눌러 선택 · 같은 <b>종류·등급</b>끼리 합성</div>
     <div class="row">
       <button class="btn" id="b-sell" disabled>판매</button>
       <button class="btn" id="b-target" disabled>타깃: 선두</button>
@@ -100,13 +113,27 @@
   <div class="panel quests" id="quests"><h3>퀘스트</h3></div>
   <div class="log" id="log"></div>
 
+  <div class="panel debug" id="debug-panel" hidden>
+    <h3>🐞 디버그 모드 (` 키로 토글)</h3>
+    <div class="dbg-grid">
+      <button class="btn" id="d-gold">+999 G</button>
+      <button class="btn" id="d-star">+9 ⭐</button>
+      <button class="btn" id="d-kill">전멸(보상)</button>
+      <button class="btn" id="d-god">무적: OFF</button>
+      <button class="btn" id="d-boss">보스(무료)</button>
+      <button class="btn" id="d-wave">웨이브 +1</button>
+      <button class="btn" id="d-up">선택룬 +등급</button>
+      <button class="btn" id="d-lvl">속성 Lv +1</button>
+    </div>
+  </div>
+
   <div class="row">
     <button class="btn primary" id="b-wave">웨이브 시작</button>
     <button class="btn" id="b-speed">2×</button>
     <button class="btn" id="b-pause">일시정지</button>
     <button class="btn" id="b-mute">🔊</button>
   </div>
-  <p class="hint">빈 칸=랜덤 건설 · 룬 클릭→선택→같은 등급 클릭=합성(랜덤 +1등급) · 교차 구역(금빛)은 적이 두 번 지난다</p>
+  <p class="hint">빈 칸=랜덤 건설 · 룬 클릭→선택→같은 <b>종류·등급</b> 클릭=합성(+1등급) · 교차 구역(금빛)은 적이 두 번 지난다</p>
 </div>
 
 <script src="../../lib/td-core.js"></script>
@@ -250,10 +277,18 @@ function questDefs(){
 /* ---------- helpers ---------- */
 function towerList(){ const a = []; for (const k in state.towers) a.push(state.towers[k]); return a; }
 function cellKey(c, r){ return c + ',' + r; }
+// 빌드 시 랜덤 종류 — 같은 종류 합성을 쉽게: 이미 보유한 '미짝(홀수)' 1등급 종류를 강하게 가중해 짝이 빨리 맞도록
 function weightedKind(){
-  let tot = 0; for (const k of KINDS) tot += KIND_WEIGHT[k];
+  const w = {};
+  for (const k of KINDS) w[k] = KIND_WEIGHT[k];
+  if (state){
+    const g1 = { fire: 0, frost: 0, tesla: 0, void: 0 };
+    for (const t of towerList()) if (t.grade === 1) g1[t.kind]++;
+    for (const k of KINDS){ if (g1[k] % 2 === 1) w[k] *= 4; }   // 짝이 안 맞는 종류로 유도 → 합성 용이
+  }
+  let tot = 0; for (const k of KINDS) tot += w[k];
   let x = Math.random() * tot;
-  for (const k of KINDS){ if (x < KIND_WEIGHT[k]) return k; x -= KIND_WEIGHT[k]; }
+  for (const k of KINDS){ if (x < w[k]) return k; x -= w[k]; }
   return 'fire';
 }
 function elemMult(el){
@@ -327,11 +362,11 @@ function startGame(){
     upg: { fire: 0, frost: 0, tesla: 0 },
     quests: questDefs(),
     bossKills: 0, kills: 0, waveLeaked: 0, shake: 0,
-    bossCooldown: 0,
+    bossCooldown: 0, god: false,
     over: false, won: false,
   };
   logLines = [];
-  clearOverlay(); refreshAll(); render();
+  clearOverlay(); clearBanner(); refreshAll(); render();
   log('빈 칸을 눌러 랜덤 룬을 건설하세요. 준비되면 [웨이브 시작].');
 }
 
@@ -360,7 +395,7 @@ function startWave(){
   const wave = getWave(state.waveIdx);
   state.spawnQ = wave.map(e => ({ type: e[0], rem: e[1], intv: e[2], timer: e[3] || 0 }));
   state.spawnI = 0; state.phase = 'wave'; state.waveLeaked = 0;
-  SFX.wave(); clearOverlay(); refreshControls();
+  SFX.wave(); clearOverlay(); clearBanner(); refreshControls();
   log('웨이브 ' + (state.waveIdx + 1) + ' 시작');
 }
 function hpMultFor(){ const cyc = Math.max(0, state.waveIdx - WAVES.length + 1); return Math.pow(HP_EXP, Math.max(0, state.waveIdx) ); }
@@ -402,10 +437,11 @@ function handleTap(mx, my){
   const [c, r] = cell; const key = cellKey(c, r);
   const tower = state.towers[key];
   if (tower){
-    // selecting a tower (or merging)
+    // selecting a tower (or merging — 같은 종류·같은 등급만)
     if (state.selected && state.selected !== key){
       const src = state.towers[state.selected];
-      if (src && src.grade === tower.grade && src.grade < MAX_GRADE){ mergeTowers(state.selected, key); return; }
+      if (src && src.kind === tower.kind && src.grade === tower.grade && src.grade < MAX_GRADE){ mergeTowers(state.selected, key); return; }
+      if (src && src.grade === tower.grade && src.kind !== tower.kind){ log('합성은 같은 종류끼리만 (' + TOWERS[src.kind].name + '≠' + TOWERS[tower.kind].name + ')'); }
     }
     state.selected = (state.selected === key) ? null : key;
     refreshSelected(); render();
@@ -424,12 +460,12 @@ function handleTap(mx, my){
 }
 function mergeTowers(keyA, keyB){
   const a = state.towers[keyA], b = state.towers[keyB];
-  if (!a || !b || a.grade !== b.grade || a.grade >= MAX_GRADE) return;
-  const ng = a.grade + 1, kind = weightedKind();
+  if (!a || !b || a.kind !== b.kind || a.grade !== b.grade || a.grade >= MAX_GRADE) return;
+  const ng = a.grade + 1, kind = a.kind;     // 같은 종류 유지 (랜덤 X) — 예측 가능 = 합성이 쉬움
   const spent = a.spent + b.spent;
   delete state.towers[keyA]; delete state.towers[keyB];
-  state.towers[keyB] = { kind, grade: ng, c: b.c, r: b.r, x: b.x, y: b.y, cd: 0, priority: 'first', spent, angle: -Math.PI / 2, fireFlash: 0 };
-  state.gold += MERGE_BONUS; state.selected = null;
+  state.towers[keyB] = { kind, grade: ng, c: b.c, r: b.r, x: b.x, y: b.y, cd: 0, priority: b.priority || 'first', spent, angle: -Math.PI / 2, fireFlash: 0 };
+  state.gold += MERGE_BONUS; state.selected = keyB;
   SFX.merge(); addFloat(b.x, b.y, GRADE_NAMES[ng] + ' ' + TOWERS[kind].icon, GRADE_COLORS[ng]);
   checkQuests(); refreshAll(); render();
 }
@@ -509,9 +545,11 @@ function step(dt){
   // leak
   for (const e of state.enemies){
     if (e.leaked && !e.dead){
-      e.dead = true; state.waveLeaked++; state.life -= e.boss ? BOSS_LEAK : 1; state.shake = e.boss ? 0.5 : 0.3; SFX.leak();
-      addFloat(px(END_CELL[0]), py(END_CELL[1]), '-' + (e.boss ? BOSS_LEAK : 1) + '♥', '#ff5577');
-      if (state.life <= 0){ state.life = 0; return gameOver(false); }
+      e.dead = true; state.waveLeaked++; const dmg = e.boss ? BOSS_LEAK : 1;
+      if (!state.god) state.life -= dmg;
+      state.shake = e.boss ? 0.5 : 0.3; SFX.leak();
+      addFloat(px(END_CELL[0]), py(END_CELL[1]), (state.god ? '∞' : '-' + dmg) + '♥', '#ff5577');
+      if (!state.god && state.life <= 0){ state.life = 0; return gameOver(false); }
     }
   }
   // menders heal
@@ -563,23 +601,24 @@ function step(dt){
 }
 function endWave(){
   state.waveIdx++;
-  state.gold += 10 + state.waveIdx * 3;
-  if (state.waveLeaked === 0) { state.gold += 20; }
-  if (state.waveIdx % 3 === 0) state.star += 1;
+  const reward = 10 + state.waveIdx * 3;
+  state.gold += reward;
+  const noLeak = state.waveLeaked === 0; if (noLeak) state.gold += 20;
+  const starBonus = state.waveIdx % 3 === 0; if (starBonus) state.star += 1;
   state.phase = 'prepare';
   checkQuests();
   if (state.waveIdx >= WAVES.length && !state.won){ state.won = true; return gameOver(true, true); }
   refreshAll();
-  // 다음 웨이브 미리보기
+  // 비차단 배너: 오버레이로 막지 않고 다음 웨이브 보상·미리보기만 표시 → 합성·건설·강화 자유롭게
   const nw = getWave(state.waveIdx);
   const tally = {};
   for (const e of nw){ tally[e[0]] = (tally[e[0]] || 0) + e[1]; }
   const preview = Object.keys(tally).map((k) => '<span style="color:' + ENEMIES[k].color + '">' + ENEMIES[k].name + '×' + tally[k] + '</span>').join(' · ');
-  setOverlay('<h2>웨이브 ' + state.waveIdx + ' 클리어</h2>' +
-    '<p>+' + (10 + state.waveIdx * 3) + 'G' + (state.waveLeaked === 0 ? ' · 무피해 +20G' : '') + (state.waveIdx % 3 === 0 ? ' · +1⭐' : '') + '</p>' +
-    '<p style="font-size:11px;margin:0 0 10px;">다음 웨이브: ' + preview + '</p>' +
-    '<div><button class="btn primary" id="ov-next" style="padding:10px 24px;">다음 웨이브 ▶</button></div>', false);
-  const nb = document.getElementById('ov-next'); if (nb) nb.onclick = startWave;
+  const wl = (state.waveIdx + 1) + (state.waveIdx >= WAVES.length ? '∞' : '/' + WAVES.length);
+  setBanner('<b>✓ 웨이브 ' + state.waveIdx + ' 클리어</b> &nbsp;+' + reward + 'G' + (noLeak ? ' · 무피해 +20G' : '') + (starBonus ? ' · +1⭐' : '') +
+    '<br><span style="color:#9a8cd6">다음 ' + wl + ':</span> ' + preview +
+    '<br><span style="color:#7be0a0;font-size:11px;">지금 합성·건설·강화 후 [다음 웨이브 ▶]</span>');
+  log('웨이브 ' + state.waveIdx + ' 클리어! 합성·건설 후 다음 웨이브를 시작하세요.');
 }
 
 function fireTower(t){
@@ -658,10 +697,10 @@ function render(){
     ctx.beginPath(); ctx.arc(t.x, t.y, g.range, 0, Math.PI * 2); ctx.stroke();
     ctx.fillStyle = 'rgba(140,90,255,0.12)'; ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.strokeRect((t.c - 1) * TILE + 2, (t.r - 1) * TILE + 2, TILE - 4, TILE - 4);
-    // 합성 가능 대상 하이라이트 (같은 등급)
+    // 합성 가능 대상 하이라이트 (같은 종류·같은 등급)
     if (t.grade < MAX_GRADE){ const mp = (0.4 + 0.35 * Math.sin(state.time * 5)).toFixed(2);
       ctx.strokeStyle = 'rgba(130,255,150,' + mp + ')'; ctx.lineWidth = 2.5;
-      for (const k in state.towers){ const o = state.towers[k]; if (o !== t && o.grade === t.grade) ctx.strokeRect((o.c - 1) * TILE + 3, (o.r - 1) * TILE + 3, TILE - 6, TILE - 6); } }
+      for (const k in state.towers){ const o = state.towers[k]; if (o !== t && o.kind === t.kind && o.grade === t.grade) ctx.strokeRect((o.c - 1) * TILE + 3, (o.r - 1) * TILE + 3, TILE - 6, TILE - 6); } }
   }
 
   // towers
@@ -818,11 +857,15 @@ function refreshSelected(){
     const dmg = Math.round(towerDmg(sel));
     const PL = { first: '선두', strong: '강한적', close: '근접' };
     const coversCross = CROSS.some(([c, r]) => { const dx = px(c) - sel.x, dy = py(r) - sel.y; return dx*dx + dy*dy <= g.range * g.range; });
+    let mergeable = 0; for (const k in state.towers){ const o = state.towers[k]; if (o !== sel && o.kind === sel.kind && o.grade === sel.grade) mergeable++; }
+    const mergeHint = sel.grade >= MAX_GRADE ? ' · <span style="color:#ff7be0;font-weight:800;">최고 등급</span>'
+      : mergeable > 0 ? ' · <span style="color:#86d6a8;font-weight:800;">🔗 합성 가능 ' + mergeable + '</span>'
+      : ' · <span style="color:#8f81c4;">같은 종류·등급 1개 더</span>';
     H_.sel.innerHTML = '<b style="color:' + GRADE_COLORS[sel.grade] + '">' + GRADE_NAMES[sel.grade] + ' ' + def.icon + ' ' + def.name + '</b> · 피해 ' + dmg + ' · 사거리 ' + g.range + ' · 판매 +' + Math.floor(sel.spent * SELL_REFUND) + 'G' +
-      (coversCross ? ' · <span style="color:#ffd96b;font-weight:800;">✦ 교차 2× 커버</span>' : '');
+      mergeHint + (coversCross ? ' · <span style="color:#ffd96b;font-weight:800;">✦ 교차 2× 커버</span>' : '');
     H_.target.textContent = '타깃: ' + PL[sel.priority];
   } else {
-    H_.sel.innerHTML = '빈 칸을 눌러 <b>랜덤 룬</b> 건설 (' + buildCost() + 'G) · 룬을 눌러 선택 · 같은 등급끼리 합성';
+    H_.sel.innerHTML = '빈 칸을 눌러 <b>랜덤 룬</b> 건설 (' + buildCost() + 'G) · 룬을 눌러 선택 · 같은 <b>종류·등급</b>끼리 합성';
     H_.target.textContent = '타깃: 선두';
   }
 }
@@ -835,9 +878,11 @@ function refreshQuests(){
   H_.quests.innerHTML = html.join('');
 }
 function refreshControls(){
-  setText(H_.wave_, state.phase === 'wave' ? '진행 중…' : '웨이브 시작');
-  setDisabled(H_.wave_, state.phase === 'wave');
-  H_.boss.disabled = !(state.phase === 'wave' && state.bossCooldown <= 0);
+  const inWave = state.phase === 'wave';
+  setText(H_.wave_, inWave ? '진행 중…' : (state.waveIdx > 0 ? '다음 웨이브 ▶' : '웨이브 시작'));
+  setDisabled(H_.wave_, inWave);
+  H_.wave_.classList.toggle('b-wave-next', !inWave && state.waveIdx > 0 && !state.over);
+  H_.boss.disabled = !(inWave && state.bossCooldown <= 0);
   H_.boss.textContent = state.bossCooldown > 0 ? '소환 대기 ' + Math.ceil(state.bossCooldown) + 's' : '👹 보스 소환';
 }
 function refreshAll(){ refreshHud(); refreshUpg(); refreshSelected(); refreshQuests(); refreshControls(); }
@@ -845,6 +890,20 @@ function log(msg){ logLines.push(msg); if (logLines.length > 3) logLines.shift()
   H_.log.innerHTML = logLines.map((m, i) => '<div class="' + (i === logLines.length - 1 ? 'new' : '') + '">' + m + '</div>').join(''); }
 function setOverlay(html, modal){ H_.overlay.className = 'overlay on'; H_.overlay.innerHTML = html; }
 function clearOverlay(){ H_.overlay.className = 'overlay'; H_.overlay.innerHTML = ''; }
+function setBanner(html){ if (!H_.banner) return; H_.banner.className = 'wave-banner on'; H_.banner.innerHTML = html; }
+function clearBanner(){ if (!H_.banner) return; H_.banner.className = 'wave-banner'; H_.banner.innerHTML = ''; }
+
+/* ---------- 디버그 모드 (원활한 테스트용) ---------- */
+let debugOn = false;
+function toggleDebug(){ debugOn = !debugOn; if (H_.dbg) H_.dbg.hidden = !debugOn; if (debugOn) log('🐞 디버그 모드 ON'); }
+function dbgKillAll(){ if (!state || state.over) return; let n = 0; for (const e of state.enemies){ if (!e.dead){ e.split = 0; e.hp = 0; e.flash = 1; n++; } } log('🐞 전멸 ' + n + '체'); }
+function dbgGod(){ if (!state) return; state.god = !state.god; setText(H_.dgod, '무적: ' + (state.god ? 'ON' : 'OFF')); H_.dgod.classList.toggle('act', state.god); refreshHud(); }
+function dbgBoss(){ if (!state || state.over) return; state.bossCooldown = 0; spawnEnemy('boss', { summoned: true, hpMult: 0.8 }); SFX.boss(); log('🐞 보스 소환' + (state.phase === 'wave' ? '' : ' (웨이브 시작 시 이동)')); refreshControls(); }
+function dbgWave(){ if (!state || state.over) return;
+  if (state.phase === 'wave'){ for (const e of state.enemies){ e.split = 0; e.hp = 0; } state.spawnQ = []; state.spawnI = 0; log('🐞 웨이브 강제 종료'); }
+  else { state.waveIdx++; clearBanner(); refreshAll(); render(); log('🐞 웨이브 건너뛰기 → ' + (state.waveIdx + 1)); } }
+function dbgUpgradeSel(){ if (!state || !state.selected) return; const t = state.towers[state.selected]; if (t && t.grade < MAX_GRADE){ t.grade++; SFX.merge(); checkQuests(); refreshAll(); render(); } }
+function dbgLevelAll(){ if (!state) return; state.upg.fire++; state.upg.frost++; state.upg.tesla++; SFX.upg(); refreshAll(); render(); }
 
 function showTitle(){
   const best = loadBest();
@@ -895,6 +954,7 @@ function onKey(e){
   else if (k === 'b'){ summonBoss(); }
   else if (k === 'f'){ toggleSpeed(); }
   else if (k === 'p'){ togglePause(); }
+  else if (k === '`' || k === '~'){ toggleDebug(); e.preventDefault(); }
 }
 function toggleSpeed(){ if (!state) return; state.speed = state.speed === 1 ? 2 : 1; H_.speed.textContent = state.speed + '×'; }
 function togglePause(){ if (!state) return; state.paused = !state.paused; H_.pause.textContent = state.paused ? '재개' : '일시정지'; }
@@ -911,12 +971,13 @@ function init(){
   canvas.width = W * dpr; canvas.height = H * dpr; ctx.scale(dpr, dpr);
   H_ = {
     wave: id('h-wave'), life: id('h-life'), gold: id('h-gold'), star: id('h-star'), alive: id('h-alive'),
-    overlay: id('overlay'), sel: id('sel-info'), quests: id('quests'), log: id('log'),
+    overlay: id('overlay'), banner: id('wave-banner'), sel: id('sel-info'), quests: id('quests'), log: id('log'),
     sell: id('b-sell'), target: id('b-target'), boss: id('b-boss'),
     wave_: id('b-wave'), speed: id('b-speed'), pause: id('b-pause'), mute: id('b-mute'),
     ufire: id('u-fire'), ufrost: id('u-frost'), utesla: id('u-tesla'),
     ufiret: id('u-fire-t'), ufrostt: id('u-frost-t'), uteslat: id('u-tesla-t'),
     ufirelv: id('u-fire-lv'), ufrostlv: id('u-frost-lv'), uteslalv: id('u-tesla-lv'),
+    dbg: id('debug-panel'), dgod: id('d-god'),
   };
   buildBg();
   // pointerdown: 마우스·터치 통합 단일 이벤트 (synthetic click 중복 방지)
@@ -933,6 +994,16 @@ function init(){
   H_.pause.onclick = togglePause;
   H_.mute.onclick = () => { AUDIO.resume(); H_.mute.textContent = AUDIO.toggleMute() ? '🔇' : '🔊'; };
   H_.mute.textContent = AUDIO.muted ? '🔇' : '🔊';
+  // 디버그 패널 배선
+  id('d-gold').onclick = () => { if (state){ state.gold += 999; refreshAll(); render(); } };
+  id('d-star').onclick = () => { if (state){ state.star += 9; refreshAll(); render(); } };
+  id('d-kill').onclick = dbgKillAll;
+  id('d-god').onclick = dbgGod;
+  id('d-boss').onclick = dbgBoss;
+  id('d-wave').onclick = dbgWave;
+  id('d-up').onclick = dbgUpgradeSel;
+  id('d-lvl').onclick = dbgLevelAll;
+  try { if (typeof location !== 'undefined' && location.hash && location.hash.indexOf('debug') >= 0) toggleDebug(); } catch (e){}
   showTitle();
   rafId = requestAnimationFrame(loop);
 }
