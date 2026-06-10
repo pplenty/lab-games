@@ -102,10 +102,13 @@
   </div>
 
   <div class="panel">
-    <div class="sel" id="sel-info">빈 칸을 눌러 <b>랜덤 룬</b> 건설 · 룬을 눌러 선택 · 같은 <b>종류·등급</b>끼리 합성</div>
+    <div class="sel" id="sel-info">빈 칸을 눌러 <b>랜덤 룬</b> 건설 · 룬을 눌러 선택 후 <b>🔗 합성</b></div>
     <div class="row">
+      <button class="btn" id="b-merge" disabled>🔗 합성</button>
       <button class="btn" id="b-sell" disabled>판매</button>
       <button class="btn" id="b-target" disabled>타깃: 선두</button>
+    </div>
+    <div class="row">
       <button class="btn danger" id="b-boss">👹 보스 소환</button>
     </div>
   </div>
@@ -133,7 +136,7 @@
     <button class="btn" id="b-pause">일시정지</button>
     <button class="btn" id="b-mute">🔊</button>
   </div>
-  <p class="hint">빈 칸=랜덤 건설 · 룬 클릭→선택→같은 <b>종류·등급</b> 클릭=합성(+1등급) · 교차 구역(금빛)은 적이 두 번 지난다</p>
+  <p class="hint">빈 칸=랜덤 건설 · 룬 선택 후 <b>🔗 합성</b>(같은 종류·등급 2개→+1등급) · 교차 구역(금빛)은 적이 두 번 지난다 · <b>다음 웨이브 ▶</b>로 적 소환</p>
 </div>
 
 <script src="../../lib/td-core.js"></script>
@@ -245,6 +248,7 @@ let state = null;
 let canvas = null, ctx = null, dpr = 1;
 let BG = null;
 let rafId = null, lastTs = 0;
+let bossCdShown = -1;            // 보스 쿨다운 라벨 갱신용 (정수 변할 때만 refreshControls)
 const AUDIO = tdAudio('rune_defense_muted');
 const SFX = {
   build(){ AUDIO.tone(560, 0.07, 'square', 0.06, 820); },
@@ -365,7 +369,7 @@ function startGame(){
     bossCooldown: 0, god: false,
     over: false, won: false,
   };
-  logLines = [];
+  logLines = []; bossCdShown = -1;
   clearOverlay(); clearBanner(); refreshAll(); render();
   log('빈 칸을 눌러 랜덤 룬을 건설하세요. 준비되면 [웨이브 시작].');
 }
@@ -437,12 +441,7 @@ function handleTap(mx, my){
   const [c, r] = cell; const key = cellKey(c, r);
   const tower = state.towers[key];
   if (tower){
-    // selecting a tower (or merging — 같은 종류·같은 등급만)
-    if (state.selected && state.selected !== key){
-      const src = state.towers[state.selected];
-      if (src && src.kind === tower.kind && src.grade === tower.grade && src.grade < MAX_GRADE){ mergeTowers(state.selected, key); return; }
-      if (src && src.grade === tower.grade && src.kind !== tower.kind){ log('합성은 같은 종류끼리만 (' + TOWERS[src.kind].name + '≠' + TOWERS[tower.kind].name + ')'); }
-    }
+    // 룬 선택/해제 — 합성은 선택 후 [🔗 합성] 버튼으로
     state.selected = (state.selected === key) ? null : key;
     refreshSelected(); render();
     return;
@@ -468,6 +467,21 @@ function mergeTowers(keyA, keyB){
   state.gold += MERGE_BONUS; state.selected = keyB;
   SFX.merge(); addFloat(b.x, b.y, GRADE_NAMES[ng] + ' ' + TOWERS[kind].icon, GRADE_COLORS[ng]);
   checkQuests(); refreshAll(); render();
+}
+function mergeablePartners(key){          // 선택 룬과 같은 종류·등급인 다른 룬 키 목록
+  const sel = key && state.towers[key]; if (!sel) return [];
+  const out = [];
+  for (const k in state.towers){ if (k === key) continue; const o = state.towers[k]; if (o.kind === sel.kind && o.grade === sel.grade) out.push(k); }
+  return out;
+}
+function mergeSelected(){                  // [🔗 합성] 버튼: 가장 가까운 짝을 선택 룬에 합성 (결과는 선택 칸에)
+  if (!state || !state.selected) return;
+  const sel = state.towers[state.selected]; if (!sel || sel.grade >= MAX_GRADE) return;
+  const partners = mergeablePartners(state.selected);
+  if (!partners.length){ log('합성할 같은 종류·등급 룬이 없다'); return; }
+  let best = partners[0], bestD = Infinity;
+  for (const k of partners){ const o = state.towers[k]; const dx = o.x - sel.x, dy = o.y - sel.y, d = dx*dx + dy*dy; if (d < bestD){ bestD = d; best = k; } }
+  mergeTowers(best, state.selected);       // keyA(짝) 제거, 결과는 keyB(선택 칸)
 }
 function sellSelected(){
   if (!state || !state.selected) return;
@@ -513,7 +527,7 @@ function applyDmg(e, dmg){
   e.hp -= dmg; e.flash = 1;
 }
 function step(dt){
-  if (state.paused || state.phase !== 'wave') return;
+  if (state.paused) return;                 // 페이즈 무관하게 항상 진행 — 웨이브 사이에도 화면이 살아있음
   state.time += dt;
   if (state.bossCooldown > 0) state.bossCooldown = Math.max(0, state.bossCooldown - dt);
 
@@ -594,8 +608,8 @@ function step(dt){
   for (const f of state.floats){ f.life -= dt; f.y -= 16 * dt; }
   state.floats = state.floats.filter(f => f.life > 0);
 
-  // wave end
-  if (state.spawnI >= state.spawnQ.length && state.enemies.length === 0){
+  // wave end — 활성 웨이브가 전부 정리됐을 때 한 번만 (prepare 중엔 무조건 거짓이라 반복 안 됨)
+  if (state.phase === 'wave' && state.spawnI >= state.spawnQ.length && state.enemies.length === 0){
     endWave();
   }
 }
@@ -852,12 +866,17 @@ function refreshSelected(){
   const sel = state.selected && state.towers[state.selected];
   setDisabled(H_.sell, !sel);
   setDisabled(H_.target, !sel);
+  // 합성 버튼: 선택 룬이 있고, 최고등급 아니며, 같은 종류·등급 짝이 존재할 때 활성
+  const mergeable = sel ? mergeablePartners(state.selected).length : 0;
+  const canMerge = !!sel && sel.grade < MAX_GRADE && mergeable > 0;
+  setDisabled(H_.merge, !canMerge);
+  H_.merge.classList.toggle('primary', canMerge);
+  setText(H_.merge, canMerge ? '🔗 합성 (' + mergeable + ')' : '🔗 합성');
   if (sel){
     const def = TOWERS[sel.kind], g = def.grades[sel.grade];
     const dmg = Math.round(towerDmg(sel));
     const PL = { first: '선두', strong: '강한적', close: '근접' };
     const coversCross = CROSS.some(([c, r]) => { const dx = px(c) - sel.x, dy = py(r) - sel.y; return dx*dx + dy*dy <= g.range * g.range; });
-    let mergeable = 0; for (const k in state.towers){ const o = state.towers[k]; if (o !== sel && o.kind === sel.kind && o.grade === sel.grade) mergeable++; }
     const mergeHint = sel.grade >= MAX_GRADE ? ' · <span style="color:#ff7be0;font-weight:800;">최고 등급</span>'
       : mergeable > 0 ? ' · <span style="color:#86d6a8;font-weight:800;">🔗 합성 가능 ' + mergeable + '</span>'
       : ' · <span style="color:#8f81c4;">같은 종류·등급 1개 더</span>';
@@ -865,7 +884,7 @@ function refreshSelected(){
       mergeHint + (coversCross ? ' · <span style="color:#ffd96b;font-weight:800;">✦ 교차 2× 커버</span>' : '');
     H_.target.textContent = '타깃: ' + PL[sel.priority];
   } else {
-    H_.sel.innerHTML = '빈 칸을 눌러 <b>랜덤 룬</b> 건설 (' + buildCost() + 'G) · 룬을 눌러 선택 · 같은 <b>종류·등급</b>끼리 합성';
+    H_.sel.innerHTML = '빈 칸을 눌러 <b>랜덤 룬</b> 건설 (' + buildCost() + 'G) · 룬을 눌러 선택 후 <b>🔗 합성</b>';
     H_.target.textContent = '타깃: 선두';
   }
 }
@@ -898,7 +917,7 @@ let debugOn = false;
 function toggleDebug(){ debugOn = !debugOn; if (H_.dbg) H_.dbg.hidden = !debugOn; if (debugOn) log('🐞 디버그 모드 ON'); }
 function dbgKillAll(){ if (!state || state.over) return; let n = 0; for (const e of state.enemies){ if (!e.dead){ e.split = 0; e.hp = 0; e.flash = 1; n++; } } log('🐞 전멸 ' + n + '체'); }
 function dbgGod(){ if (!state) return; state.god = !state.god; setText(H_.dgod, '무적: ' + (state.god ? 'ON' : 'OFF')); H_.dgod.classList.toggle('act', state.god); refreshHud(); }
-function dbgBoss(){ if (!state || state.over) return; state.bossCooldown = 0; spawnEnemy('boss', { summoned: true, hpMult: 0.8 }); SFX.boss(); log('🐞 보스 소환' + (state.phase === 'wave' ? '' : ' (웨이브 시작 시 이동)')); refreshControls(); }
+function dbgBoss(){ if (!state || state.over) return; state.bossCooldown = 0; spawnEnemy('boss', { summoned: true, hpMult: 0.8 }); SFX.boss(); log('🐞 보스 소환'); refreshControls(); }
 function dbgWave(){ if (!state || state.over) return;
   if (state.phase === 'wave'){ for (const e of state.enemies){ e.split = 0; e.hp = 0; } state.spawnQ = []; state.spawnI = 0; log('🐞 웨이브 강제 종료'); }
   else { state.waveIdx++; clearBanner(); refreshAll(); render(); log('🐞 웨이브 건너뛰기 → ' + (state.waveIdx + 1)); } }
@@ -916,6 +935,7 @@ function showTitle(){
 }
 function score(){ return state.waveIdx * 100 + state.kills * 5 + state.gold + state.star * 15; }
 function gameOver(won, victory){
+  if (state.over) return;                   // 중복 호출 방지 (2× 배속에 동시 누수 등)
   state.over = true; state.phase = 'over';
   const sc = score(); const best = loadBest(); const isBest = sc > (best.score || 0);
   if (isBest) saveBest({ score: sc, wave: state.waveIdx });
@@ -940,9 +960,13 @@ function loop(ts){
   if (!state) return;
   // 각 프레임을 안정적 고정 스텝(<=0.05s)으로 진행, 배속만큼 서브스텝 반복
   const frameDt = Math.min(0.05, lastTs ? (ts - lastTs) / 1000 : 0); lastTs = ts;
-  if (!state.over){ for (let i = 0; i < state.speed; i++) step(frameDt); }
+  if (!state.over){ for (let i = 0; i < state.speed && !state.over; i++) step(frameDt); }
   if (state.shake > 0) state.shake = Math.max(0, state.shake - frameDt);   // 흔들림 감쇠 (페이즈 무관)
-  if (state.phase === 'wave'){ refreshHud(); if (state.bossCooldown > 0 || H_.boss.disabled !== !(state.phase === 'wave' && state.bossCooldown <= 0)) refreshControls(); }
+  if (!state.over){
+    refreshHud();
+    const cd = Math.ceil(state.bossCooldown);
+    if (cd !== bossCdShown){ bossCdShown = cd; refreshControls(); }   // 쿨다운 카운트다운 라벨 갱신
+  }
   render();
 }
 function onKey(e){
@@ -951,6 +975,7 @@ function onKey(e){
   if (k === 'enter' || k === ' '){ if (state.phase === 'prepare') startWave(); e.preventDefault(); }
   else if (k === 'escape'){ state.selected = null; refreshSelected(); render(); }
   else if (k === 's'){ sellSelected(); }
+  else if (k === 'm'){ mergeSelected(); }
   else if (k === 'b'){ summonBoss(); }
   else if (k === 'f'){ toggleSpeed(); }
   else if (k === 'p'){ togglePause(); }
@@ -972,7 +997,7 @@ function init(){
   H_ = {
     wave: id('h-wave'), life: id('h-life'), gold: id('h-gold'), star: id('h-star'), alive: id('h-alive'),
     overlay: id('overlay'), banner: id('wave-banner'), sel: id('sel-info'), quests: id('quests'), log: id('log'),
-    sell: id('b-sell'), target: id('b-target'), boss: id('b-boss'),
+    merge: id('b-merge'), sell: id('b-sell'), target: id('b-target'), boss: id('b-boss'),
     wave_: id('b-wave'), speed: id('b-speed'), pause: id('b-pause'), mute: id('b-mute'),
     ufire: id('u-fire'), ufrost: id('u-frost'), utesla: id('u-tesla'),
     ufiret: id('u-fire-t'), ufrostt: id('u-frost-t'), uteslat: id('u-tesla-t'),
@@ -986,6 +1011,7 @@ function init(){
   H_.ufire.onclick = () => upgradeElem('fire');
   H_.ufrost.onclick = () => upgradeElem('frost');
   H_.utesla.onclick = () => upgradeElem('tesla');
+  H_.merge.onclick = mergeSelected;
   H_.sell.onclick = sellSelected;
   H_.target.onclick = cyclePriority;
   H_.boss.onclick = summonBoss;
