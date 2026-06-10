@@ -9,9 +9,14 @@
     "game:new": "node tools/scaffold-brain-game.mjs",
     "build": "node tools/build-sitemap.mjs",
     "check": "node tools/check-site.mjs",
-    "verify": "npm run build && npm run check"
+    "verify": "npm run build && npm run check",
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "wrangler": "^4.99.0"
   }
 }
